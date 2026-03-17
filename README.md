@@ -31,5 +31,6 @@ No SPA rewrite rules are needed — Next.js static export generates an `index.ht
 ## Test
 
 ```sh
-npm test            # vitest
+npm test            # unit tests + static export verification
+npm run test:unit   # vitest only
 ```

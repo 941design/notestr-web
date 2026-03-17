@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "next dev --port 3000",
     "build": "next build",
-    "test": "vitest run",
+    "test": "npm run test:unit && npm run test:export",
+    "test:unit": "vitest run",
+    "test:export": "node ./scripts/verify-static-export.mjs",
     "relay:up": "docker compose up -d",
     "relay:down": "docker compose down"
   },

@@ -42,8 +42,8 @@ build: node_modules ## Build for production
 	npm run build
 	@echo "Static files available in $(LOCAL_DIST)/"
 
-test: build ## Run tests (Vitest)
-	npx vitest run
+test: node_modules ## Run unit and export verification tests
+	npm test
 
 dev: node_modules relay-up clean ## Start development server
 	npx next dev --port 3000 --hostname 0.0.0.0
