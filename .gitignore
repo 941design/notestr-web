@@ -1,4 +1,5 @@
 node_modules/
+node_modules/.platform
 dist/
 out/
 .next/
@@ -6,3 +7,5 @@ public/sw.js
 public/workbox-*.js
 *.local
 .DS_Store
+.env
+*~

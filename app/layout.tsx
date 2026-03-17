@@ -1,14 +1,16 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
+const basePath = process.env.NODE_ENV === "production" ? "/notestr" : "";
+
 export const metadata: Metadata = {
   title: "notestr — encrypted task manager",
   description: "Encrypted task manager on Nostr with MLS groups",
   icons: {
-    icon: "/notestr/favicon.svg",
-    apple: "/notestr/icon.svg",
+    icon: `${basePath}/favicon.svg`,
+    apple: `${basePath}/icon.svg`,
   },
-  manifest: "/notestr/manifest.json",
+  manifest: `${basePath}/manifest.json`,
 };
 
 export const viewport: Viewport = {

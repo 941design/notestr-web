@@ -1,10 +1,13 @@
 import type { NextConfig } from "next";
 import withPWAInit from "@ducanh2912/next-pwa";
 
+const isProduction = process.env.NODE_ENV === "production";
+const basePath = isProduction ? "/notestr" : "";
+
 const withPWA = withPWAInit({
   dest: "public",
   register: true,
-  scope: "/notestr/",
+  scope: `${basePath}/`,
   sw: "sw.js",
   workboxOptions: {
     runtimeCaching: [
@@ -18,7 +21,7 @@ const withPWA = withPWAInit({
 
 const nextConfig: NextConfig = {
   output: "export",
-  basePath: "/notestr",
+  basePath: basePath || undefined,
   images: {
     unoptimized: true,
   },

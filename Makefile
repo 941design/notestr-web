@@ -26,9 +26,19 @@ help: ## Show this help message
 	@echo "Targets:"
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-15s %s\n", $$1, $$2}'
 
+# Re-install when dependencies change OR when the platform changes
+# (native bindings like rolldown and @next/swc are platform-specific)
+PLATFORM_STAMP := node_modules/.platform
+CURRENT_PLATFORM := $(shell uname -sm)
+
 node_modules: package.json package-lock.json
 	npm install
+	@echo "$(CURRENT_PLATFORM)" > $(PLATFORM_STAMP)
 	@touch node_modules
+
+ifneq ($(shell cat $(PLATFORM_STAMP) 2>/dev/null),$(CURRENT_PLATFORM))
+.PHONY: node_modules
+endif
 
 build: node_modules ## Build for production
 	npx next build
