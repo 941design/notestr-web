@@ -11,3 +11,4 @@ public/workbox-*.js
 *~
 test-results/
 e2e/.state.json
+.ssl/

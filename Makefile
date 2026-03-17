@@ -2,7 +2,7 @@
 -include .env
 export
 
-.PHONY: help build test dev relay-up relay-down clean deploy deploy-check deploy-dryrun e2e-up e2e-down e2e-install e2e
+.PHONY: help build test dev relay-up relay-down clean deploy deploy-check deploy-dryrun e2e-up e2e-down e2e-install e2e ssl-cert
 
 # Default target
 .DEFAULT_GOAL := help
@@ -123,3 +123,57 @@ deploy-dryrun: ## Show what would be deployed (no upload)
 	@echo "  HOSTEUROPE_FTP_HOST=$(FTP_HOST)"
 	@echo "  HOSTEUROPE_FTP_USER=$(FTP_USER)"
 	@if [ -n "$(FTP_PASS)" ]; then echo "  HOSTEUROPE_FTP_PASS=****"; else echo "  HOSTEUROPE_FTP_PASS=[NOT SET]"; fi
+
+# =============================================================================
+# SSL Certificate (Let's Encrypt for HostEurope)
+# =============================================================================
+# Generates a Let's Encrypt certificate using Certbot DNS manual challenge.
+# Output goes to .ssl/ — upload to HostEurope KIS:
+#   Webhosting → Sicherheit & SSL → SSL Administrieren → Ersetzen
+#
+#   ┌──────────────┬─────────────────────────┬───────────────────────────────┐
+#   │ KIS Field    │ File                    │ Contents                      │
+#   ├──────────────┼─────────────────────────┼───────────────────────────────┤
+#   │ Zertifikat   │ .ssl/fullchain.pem      │ Certificate + intermediates   │
+#   │ Key          │ .ssl/privkey.pem        │ Private key (keep secret!)    │
+#   │ Passwort     │ (leave empty)           │ Not encrypted                 │
+#   │ CA           │ (leave empty)           │ Already in fullchain.pem      │
+#   └──────────────┴─────────────────────────┴───────────────────────────────┘
+#
+# Renewal: re-run every ~60-90 days, then re-upload in KIS.
+# Requires: certbot (brew install certbot / apt install certbot)
+
+SSL_DOMAIN := notestr.941design.de
+SSL_DIR := .ssl
+
+ssl-cert: ## Generate Let's Encrypt certificate for HostEurope
+	@if ! command -v certbot >/dev/null 2>&1; then \
+		echo "ERROR: certbot not installed."; \
+		echo "  macOS:  brew install certbot"; \
+		echo "  Linux:  sudo apt install certbot"; \
+		exit 1; \
+	fi
+	@echo "Generating Let's Encrypt certificate for $(SSL_DOMAIN)..."
+	@echo ""
+	@echo "This will use a manual DNS challenge — you'll need to create a"
+	@echo "TXT record in your DNS settings when prompted."
+	@echo ""
+	certbot certonly \
+		--manual \
+		--preferred-challenges dns \
+		--key-type rsa \
+		--config-dir $(SSL_DIR)/config \
+		--work-dir $(SSL_DIR)/work \
+		--logs-dir $(SSL_DIR)/logs \
+		-d $(SSL_DOMAIN)
+	@echo ""
+	@echo "=== Certificate generated ==="
+	@echo ""
+	@echo "Files for HostEurope KIS upload:"
+	@echo "  Zertifikat:  $$(find $(SSL_DIR)/config/live/$(SSL_DOMAIN) -name fullchain.pem)"
+	@echo "  Key:         $$(find $(SSL_DIR)/config/live/$(SSL_DOMAIN) -name privkey.pem)"
+	@echo "  Passwort:    (leave empty)"
+	@echo "  CA:          (leave empty)"
+	@echo ""
+	@echo "Upload at: Webhosting → Sicherheit & SSL → SSL Administrieren → Ersetzen"
+	@echo "Renew in ~60-90 days by running: make ssl-cert"
