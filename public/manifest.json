@@ -1,0 +1,18 @@
+{
+  "name": "notestr — encrypted task manager",
+  "short_name": "notestr",
+  "description": "Encrypted task manager on Nostr with MLS groups",
+  "theme_color": "#0d1117",
+  "background_color": "#0d1117",
+  "display": "standalone",
+  "scope": "/notestr/",
+  "start_url": "/notestr/",
+  "icons": [
+    {
+      "src": "/notestr/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

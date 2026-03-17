@@ -3,8 +3,8 @@ import { decode, npubEncode } from "nostr-tools/nip19";
 import NDK, { NDKNip46Signer, NDKPrivateKeySigner, NDKUser } from "@nostr-dev-kit/ndk";
 import { getEventHash } from "nostr-tools/pure";
 
-const NIP46_LOCAL_KEY = "notetastr-nip46-local-key";
-const NIP46_PAYLOAD = "notetastr-nip46-payload";
+const NIP46_LOCAL_KEY = "notestr-nip46-local-key";
+const NIP46_PAYLOAD = "notestr-nip46-payload";
 
 export function getNip07Signer(): EventSigner | null {
   if (!window.nostr) return null;

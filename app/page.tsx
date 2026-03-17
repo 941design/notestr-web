@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState, useEffect, useCallback } from "react";
 import {
   getNip07Signer,
@@ -5,20 +7,19 @@ import {
   restoreNip46Session,
   clearNip46Session,
   hasNip46Session,
-} from "./lib/nostr";
-import { MarmotProvider, useMarmot } from "./marmot/client";
-import { TaskStoreProvider } from "./store/task-store";
-import { ConnectionStatus } from "./components/ConnectionStatus";
-import { GroupManager } from "./components/GroupManager";
-import { Board } from "./components/Board";
+} from "../src/lib/nostr";
+import { MarmotProvider } from "../src/marmot/client";
+import { TaskStoreProvider } from "../src/store/task-store";
+import { ConnectionStatus } from "../src/components/ConnectionStatus";
+import { GroupManager } from "../src/components/GroupManager";
+import { Board } from "../src/components/Board";
 import type { EventSigner } from "applesauce-core";
-import "./App.css";
 
 const DEFAULT_RELAYS = ["ws://localhost:7777"];
 
 type AuthMethod = "nip07" | "nip46" | null;
 
-function AppContent() {
+export default function Page() {
   const [signer, setSigner] = useState<EventSigner | null>(null);
   const [pubkey, setPubkey] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
@@ -113,7 +114,7 @@ function AppContent() {
     return (
       <div className="app">
         <header className="topbar">
-          <h1 className="app-title">notetastr</h1>
+          <h1 className="app-title">notestr</h1>
         </header>
         <main className="main-area">
           <div className="placeholder">
@@ -121,7 +122,7 @@ function AppContent() {
               <p>Connecting...</p>
             ) : (
               <div className="login-options">
-                <h2>Sign in to notetastr</h2>
+                <h2>Sign in to notestr</h2>
                 <p className="login-subtitle">
                   Choose how to connect your Nostr identity
                 </p>
@@ -187,7 +188,7 @@ function AppContent() {
     <MarmotProvider signer={signer!} pubkey={pubkey}>
       <div className="app">
         <header className="topbar">
-          <h1 className="app-title">notetastr</h1>
+          <h1 className="app-title">notestr</h1>
           <ConnectionStatus
             pubkey={pubkey}
             authMethod={authMethod}
@@ -220,8 +221,4 @@ function AppContent() {
       </div>
     </MarmotProvider>
   );
-}
-
-export default function App() {
-  return <AppContent />;
 }

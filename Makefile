@@ -13,13 +13,13 @@ FTP_USER := $(HOSTEUROPE_FTP_USER)
 FTP_PASS := $(HOSTEUROPE_FTP_PASS)
 
 # Remote path (hosteurope)
-REMOTE_ROOT := /notetastr
+REMOTE_ROOT := /notestr
 
 # Local paths
-LOCAL_DIST := dist
+LOCAL_DIST := out
 
 help: ## Show this help message
-	@echo "notetastr — Encrypted Task Manager on Nostr"
+	@echo "notestr — Encrypted Task Manager on Nostr"
 	@echo ""
 	@echo "Usage: make [target]"
 	@echo ""
@@ -31,15 +31,14 @@ node_modules: package.json package-lock.json
 	@touch node_modules
 
 build: node_modules ## Build for production
-	npx tsc --noEmit
-	npx vite build
+	npx next build
 	@echo "Static files available in $(LOCAL_DIST)/"
 
 test: node_modules ## Run tests (Vitest)
 	npx vitest run
 
 dev: node_modules ## Start development server
-	npx vite --host 0.0.0.0
+	npx next dev --port 3000 --hostname 0.0.0.0
 
 relay-up: ## Start local strfry relay (Docker)
 	docker compose up -d
@@ -48,7 +47,7 @@ relay-down: ## Stop local strfry relay
 	docker compose down
 
 clean: ## Remove build artifacts
-	rm -rf dist
+	rm -rf out .next
 
 # =============================================================================
 # Production Deployment (FTP to hosteurope)

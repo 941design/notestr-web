@@ -22,7 +22,7 @@ export interface KeyValueStoreBackend<T> {
  * Each name gets its own database to avoid IDB version conflicts.
  */
 export function createKVStore<T>(name: string): KeyValueStoreBackend<T> {
-  const store: UseStore = createStore(`notetastr-${name}`, name);
+  const store: UseStore = createStore(`notestr-${name}`, name);
 
   return {
     async getItem(key: string): Promise<T | null> {

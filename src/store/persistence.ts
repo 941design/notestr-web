@@ -1,7 +1,7 @@
 import { get, set } from "idb-keyval";
 import type { TaskEvent } from "./task-events";
 
-const EVENT_LOG_KEY = "notetastr:events";
+const EVENT_LOG_KEY = "notestr:events";
 
 function storageKey(groupId: string): string {
   return `${EVENT_LOG_KEY}:${groupId}`;
