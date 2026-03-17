@@ -11,7 +11,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await page.evaluate(() => {
     localStorage.clear();
-    for (const dbName of ['group-state', 'key-packages']) {
+    for (const dbName of ['notestr-group-state', 'notestr-key-packages', 'notestr-invite-received', 'notestr-invite-unread', 'notestr-invite-seen']) {
       indexedDB.deleteDatabase(dbName);
     }
   });

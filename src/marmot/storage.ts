@@ -49,6 +49,17 @@ export function createKVStore<T>(name: string): KeyValueStoreBackend<T> {
   };
 }
 
+/**
+ * Creates the 3 IndexedDB-backed KV stores needed by InviteReader.
+ */
+export function createInviteStore(): import("@internet-privacy/marmot-ts").InviteStore {
+  return {
+    received: createKVStore("invite-received"),
+    unread: createKVStore("invite-unread"),
+    seen: createKVStore("invite-seen"),
+  };
+}
+
 export function createInMemoryKVStore<T>(): KeyValueStoreBackend<T> {
   const data = new Map<string, T>();
 

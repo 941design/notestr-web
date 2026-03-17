@@ -18,6 +18,7 @@ import type { EventSigner } from "applesauce-core";
 
 import { createKVStore } from "./storage";
 import { NdkNetworkAdapter } from "./network";
+import { useDeviceSync } from "./device-sync";
 
 import type { MarmotGroup } from "@internet-privacy/marmot-ts";
 import { DEFAULT_RELAYS, NDK_CONNECT_TIMEOUT_MS } from "../config/relays";
@@ -141,6 +142,8 @@ export function MarmotProvider({
       ndkRef.current = null;
     };
   }, [init]);
+
+  useDeviceSync(state.client, pubkey, relays, signer);
 
   const contextValue: MarmotContextValue = {
     ...state,

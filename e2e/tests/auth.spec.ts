@@ -16,7 +16,7 @@ test.beforeEach(async ({ page }) => {
   await page.evaluate(() => {
     localStorage.clear();
     // Clear marmot-ts IndexedDB stores
-    for (const dbName of ['group-state', 'key-packages']) {
+    for (const dbName of ['notestr-group-state', 'notestr-key-packages', 'notestr-invite-received', 'notestr-invite-unread', 'notestr-invite-seen']) {
       indexedDB.deleteDatabase(dbName);
     }
   });
