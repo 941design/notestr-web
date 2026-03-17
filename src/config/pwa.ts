@@ -1,3 +1,5 @@
+import { getBasePath } from "./base-path";
+
 /**
  * PWA configuration for @ducanh2912/next-pwa.
  *
@@ -6,7 +8,7 @@
  * in the service worker context.
  */
 export function getPwaConfig(nodeEnv: string) {
-  const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+  const basePath = getBasePath();
 
   return {
     dest: "public" as const,

@@ -1,8 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
+import { getBasePath } from "@/config/base-path";
 import "./globals.css";
 
-const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+const basePath = getBasePath();
 
 export const metadata: Metadata = {
   title: "notestr — encrypted task manager",

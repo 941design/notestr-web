@@ -1,8 +1,9 @@
 import type { NextConfig } from "next";
 import withPWAInit from "@ducanh2912/next-pwa";
+import { getBasePath } from "./src/config/base-path";
 import { getPwaConfig } from "./src/config/pwa";
 
-const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+const basePath = getBasePath();
 
 const withPWA = withPWAInit(getPwaConfig(process.env.NODE_ENV ?? "development"));
 

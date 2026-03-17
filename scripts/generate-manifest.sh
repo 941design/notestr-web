@@ -4,6 +4,14 @@ set -euo pipefail
 
 BASE="${NEXT_PUBLIC_BASE_PATH:-}"
 
+if [ -n "${BASE}" ]; then
+  BASE="/${BASE#/}"
+  BASE="${BASE%/}"
+  if [ "${BASE}" = "/" ]; then
+    BASE=""
+  fi
+fi
+
 cat > public/manifest.json <<EOF
 {
   "name": "notestr — encrypted task manager",
