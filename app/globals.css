@@ -622,3 +622,103 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
+
+/* ===== Mobile ===== */
+@media (max-width: 768px) {
+  body {
+    font-size: 1.1rem;
+  }
+
+  .app-title {
+    font-size: 1.4rem;
+  }
+
+  .btn {
+    font-size: 1rem;
+    padding: 10px 18px;
+  }
+
+  .btn-sm {
+    font-size: 0.9rem;
+    padding: 6px 12px;
+  }
+
+  .input {
+    font-size: 1rem;
+    padding: 10px 14px;
+  }
+
+  .form-label {
+    font-size: 0.9rem;
+  }
+
+  .sidebar-title {
+    font-size: 1rem;
+  }
+
+  .group-item {
+    font-size: 1rem;
+    padding: 12px;
+  }
+
+  .board-title {
+    font-size: 1.4rem;
+  }
+
+  .column-title {
+    font-size: 1rem;
+  }
+
+  .task-title {
+    font-size: 1rem;
+  }
+
+  .task-description {
+    font-size: 0.9rem;
+  }
+
+  .task-assignee {
+    font-size: 0.85rem;
+  }
+
+  .badge {
+    font-size: 0.8rem;
+  }
+
+  .connection-status {
+    font-size: 0.95rem;
+  }
+
+  .text-muted,
+  .column-empty {
+    font-size: 0.95rem;
+  }
+
+  .placeholder p {
+    font-size: 1rem;
+  }
+
+  .login-section-title {
+    font-size: 1rem;
+  }
+
+  .login-hint {
+    font-size: 0.9rem;
+  }
+
+  .login-tab {
+    font-size: 0.9rem;
+  }
+
+  .modal-title {
+    font-size: 1.2rem;
+  }
+
+  .error-text {
+    font-size: 0.9rem;
+  }
+
+  .auth-badge {
+    font-size: 0.8rem;
+  }
+}
