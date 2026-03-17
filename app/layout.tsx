@@ -12,7 +12,7 @@ export const metadata: Metadata = {
     icon: `${basePath}/favicon.svg`,
     apple: `${basePath}/icon.svg`,
   },
-  manifest: `${basePath}/manifest.json`,
+  manifest: `${basePath}/manifest.webmanifest`,
 };
 
 export const viewport: Viewport = {
