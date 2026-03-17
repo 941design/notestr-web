@@ -20,7 +20,7 @@ npm run build       # static export to out/
 
 ## Deployment
 
-The build output in `out/` is plain HTML/JS/CSS served under the `/notestr/` base path (configured via `basePath` in `next.config.ts`). Deploy to any static host.
+The build output in `out/` is plain HTML/JS/CSS. Set `NEXT_PUBLIC_BASE_PATH` in `.env` to serve under a subdirectory (e.g. `/notestr`), or leave it empty for root. Deploy to any static host.
 
 ```sh
 make deploy         # FTP upload to hosteurope

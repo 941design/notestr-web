@@ -9,3 +9,5 @@ public/workbox-*.js
 .DS_Store
 .env
 *~
+test-results/
+e2e/.state.json

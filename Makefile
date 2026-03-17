@@ -41,6 +41,7 @@ ifneq ($(shell cat $(PLATFORM_STAMP) 2>/dev/null),$(CURRENT_PLATFORM))
 endif
 
 build: node_modules ## Build for production
+	./scripts/generate-manifest.sh
 	npx next build
 	@echo "Static files available in $(LOCAL_DIST)/"
 
