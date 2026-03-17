@@ -69,6 +69,12 @@ export function MarmotProvider({
 
   const init = useCallback(async () => {
     try {
+      if (typeof globalThis.crypto?.subtle?.generateKey !== "function") {
+        throw new Error(
+          "Web Crypto API is not available. Please access this app over HTTPS.",
+        );
+      }
+
       const ndk = new NDK({ explicitRelayUrls: relays });
       ndkRef.current = ndk;
       await ndk.connect(NDK_CONNECT_TIMEOUT_MS);

@@ -64,7 +64,7 @@ e2e-down: ## Stop ephemeral E2E relay and wipe state
 
 e2e-install: node_modules ## Install Playwright and browser binaries
 	npm install
-	npx playwright install --with-deps chromium
+	npx playwright install --with-deps chromium webkit
 
 e2e: node_modules ## Run end-to-end tests (relay up → playwright → relay down)
 	@$(MAKE) e2e-up; \
