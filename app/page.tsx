@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import { QrCode, Key, Link, Loader2 } from "lucide-react";
 import {
   getNip07Signer,
   connectBunker,
@@ -8,19 +9,27 @@ import {
   clearNip46Session,
   hasNip46Session,
   startNostrConnect,
-} from "../src/lib/nostr";
+} from "@/lib/nostr";
 import { QRCodeSVG } from "qrcode.react";
-import { MarmotProvider } from "../src/marmot/client";
-import { TaskStoreProvider } from "../src/store/task-store";
-import { ConnectionStatus } from "../src/components/ConnectionStatus";
-import { ThemeToggle } from "../src/components/ThemeToggle";
-import { GroupManager } from "../src/components/GroupManager";
-import { Board } from "../src/components/Board";
+import { MarmotProvider } from "@/marmot/client";
+import { TaskStoreProvider } from "@/store/task-store";
+import { ConnectionStatus } from "@/components/ConnectionStatus";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { GroupManager } from "@/components/GroupManager";
+import { Board } from "@/components/Board";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import type { EventSigner } from "applesauce-core";
-import { DEFAULT_RELAYS, NOSTRCONNECT_RELAY } from "../src/config/relays";
+import { DEFAULT_RELAYS, NOSTRCONNECT_RELAY } from "@/config/relays";
 
 type AuthMethod = "nip07" | "nip46" | null;
-type LoginTab = "amber" | "bunker";
 
 export default function Page() {
   const [signer, setSigner] = useState<EventSigner | null>(null);
@@ -28,9 +37,6 @@ export default function Page() {
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [signerChecked, setSignerChecked] = useState(false);
   const [authMethod, setAuthMethod] = useState<AuthMethod>(null);
-
-  // Login tab
-  const [loginTab, setLoginTab] = useState<LoginTab>("amber");
 
   // Bunker login state
   const [bunkerUrl, setBunkerUrl] = useState("");
@@ -51,7 +57,6 @@ export default function Page() {
     let cancelled = false;
 
     async function init() {
-      // Try NIP-46 restore first
       if (hasNip46Session()) {
         try {
           const conn = await restoreNip46Session(DEFAULT_RELAYS);
@@ -67,7 +72,6 @@ export default function Page() {
         }
       }
 
-      // Check NIP-07 after a short delay for extension injection
       await new Promise((r) => setTimeout(r, 300));
       if (!cancelled) {
         const s = getNip07Signer();
@@ -161,144 +165,164 @@ export default function Page() {
   // Not yet connected: show connect screen
   if (!pubkey) {
     return (
-      <div className="app">
-        <header className="topbar">
-          <h1 className="app-title">notestr</h1>
+      <div className="flex min-h-screen flex-col bg-background text-foreground">
+        <header className="flex shrink-0 items-center justify-between border-b bg-card px-6 py-3">
+          <h1 className="text-xl font-bold tracking-tight text-primary">
+            notestr
+          </h1>
           <ThemeToggle />
         </header>
-        <main className="main-area">
-          <div className="placeholder">
-            {!signerChecked ? (
-              <p>Connecting...</p>
-            ) : (
-              <div className="login-options">
-                <h2>Sign in to notestr</h2>
-                <p className="login-subtitle">
+        <main className="flex flex-1 items-center justify-center overflow-y-auto p-6">
+          {!signerChecked ? (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              Connecting...
+            </div>
+          ) : (
+            <div className="w-full max-w-md space-y-3 text-left">
+              <div className="text-center">
+                <h2 className="text-xl font-semibold">Sign in to notestr</h2>
+                <p className="text-sm text-muted-foreground">
                   Choose how to connect your Nostr identity
                 </p>
+              </div>
 
-                {/* NIP-07 option */}
-                <div className="login-section">
-                  <h3 className="login-section-title">Browser Extension</h3>
+              {/* NIP-07 option */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-sm">
+                    <Key className="size-4" />
+                    Browser Extension
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
                   {signer ? (
-                    <button
-                      className="btn btn-primary login-btn"
-                      onClick={handleNip07Connect}
-                    >
+                    <Button className="w-full" onClick={handleNip07Connect}>
                       Connect with NIP-07
-                    </button>
+                    </Button>
                   ) : (
-                    <p className="text-muted">
+                    <p className="text-sm text-muted-foreground">
                       No NIP-07 extension detected (nos2x, Alby, etc.)
                     </p>
                   )}
-                </div>
+                </CardContent>
+              </Card>
 
-                {/* NIP-46 remote signer options */}
-                <div className="login-section">
-                  <h3 className="login-section-title">Remote Signer</h3>
+              {/* NIP-46 remote signer options */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-sm">
+                    <Link className="size-4" />
+                    Remote Signer
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Tabs defaultValue="amber">
+                    <TabsList variant="line" className="w-full">
+                      <TabsTrigger value="amber">
+                        <QrCode className="size-3.5" />
+                        Amber / QR Code
+                      </TabsTrigger>
+                      <TabsTrigger value="bunker">
+                        <Link className="size-3.5" />
+                        bunker:// URL
+                      </TabsTrigger>
+                    </TabsList>
 
-                  <div className="login-tabs">
-                    <button
-                      className={`login-tab ${loginTab === "amber" ? "active" : ""}`}
-                      onClick={() => setLoginTab("amber")}
-                    >
-                      Amber / QR Code
-                    </button>
-                    <button
-                      className={`login-tab ${loginTab === "bunker" ? "active" : ""}`}
-                      onClick={() => setLoginTab("bunker")}
-                    >
-                      Paste bunker:// URL
-                    </button>
-                  </div>
-
-                  {loginTab === "amber" && (
-                    <div className="login-tab-content">
+                    <TabsContent value="amber" className="pt-3">
                       {!nostrConnectUri ? (
-                        <>
-                          <p className="text-muted login-hint">
+                        <div className="space-y-2">
+                          <p className="text-sm text-muted-foreground">
                             Scan a QR code with Amber or another NIP-46 signer
                           </p>
-                          <button
-                            className="btn btn-primary login-btn"
+                          <Button
+                            className="w-full"
                             onClick={handleNostrConnect}
                           >
+                            <QrCode className="size-4" />
                             Show QR Code
-                          </button>
+                          </Button>
                           {nostrConnectError && (
-                            <p className="error-text">{nostrConnectError}</p>
+                            <p className="text-sm text-destructive">
+                              {nostrConnectError}
+                            </p>
                           )}
-                        </>
+                        </div>
                       ) : (
-                        <div className="nostrconnect-qr">
+                        <div className="flex flex-col items-center gap-3 py-2">
                           <QRCodeSVG
                             value={nostrConnectUri}
                             size={200}
                             bgColor="transparent"
                             fgColor="currentColor"
+                            className="rounded-lg"
                           />
                           {/Android/i.test(
                             typeof navigator !== "undefined"
                               ? navigator.userAgent
                               : "",
                           ) && (
-                            <a
-                              href={nostrConnectUri}
-                              className="btn btn-primary login-btn"
-                            >
-                              Open in Amber
-                            </a>
+                            <Button className="w-full" asChild>
+                              <a href={nostrConnectUri}>Open in Amber</a>
+                            </Button>
                           )}
-                          <p className="text-muted nostrconnect-waiting">
+                          <p className="animate-pulse text-sm text-muted-foreground">
                             Waiting for signer to connect...
                           </p>
-                          <button
-                            className="btn btn-outline btn-sm"
+                          <Button
+                            variant="outline"
+                            size="sm"
                             onClick={handleNostrConnectCancel}
                           >
                             Cancel
-                          </button>
+                          </Button>
                         </div>
                       )}
-                    </div>
-                  )}
+                    </TabsContent>
 
-                  {loginTab === "bunker" && (
-                    <div className="login-tab-content">
-                      <p className="text-muted login-hint">
-                        Paste a bunker:// URL from nsec.app or another NIP-46
-                        signer
-                      </p>
-                      <div className="bunker-form">
-                        <input
-                          className="input"
-                          type="text"
-                          placeholder="bunker://..."
-                          value={bunkerUrl}
-                          onChange={(e) => setBunkerUrl(e.target.value)}
-                          onKeyDown={(e) =>
-                            e.key === "Enter" && handleBunkerConnect()
-                          }
-                          disabled={bunkerConnecting}
-                        />
-                        <button
-                          className="btn btn-primary"
-                          onClick={handleBunkerConnect}
-                          disabled={bunkerConnecting || !bunkerUrl.trim()}
-                        >
-                          {bunkerConnecting ? "Connecting..." : "Connect"}
-                        </button>
+                    <TabsContent value="bunker" className="pt-3">
+                      <div className="space-y-2">
+                        <p className="text-sm text-muted-foreground">
+                          Paste a bunker:// URL from nsec.app or another NIP-46
+                          signer
+                        </p>
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="bunker://..."
+                            value={bunkerUrl}
+                            onChange={(e) => setBunkerUrl(e.target.value)}
+                            onKeyDown={(e) =>
+                              e.key === "Enter" && handleBunkerConnect()
+                            }
+                            disabled={bunkerConnecting}
+                            className="flex-1"
+                          />
+                          <Button
+                            onClick={handleBunkerConnect}
+                            disabled={bunkerConnecting || !bunkerUrl.trim()}
+                          >
+                            {bunkerConnecting ? (
+                              <>
+                                <Loader2 className="size-4 animate-spin" />
+                                Connecting
+                              </>
+                            ) : (
+                              "Connect"
+                            )}
+                          </Button>
+                        </div>
+                        {bunkerError && (
+                          <p className="text-sm text-destructive">
+                            {bunkerError}
+                          </p>
+                        )}
                       </div>
-                      {bunkerError && (
-                        <p className="error-text">{bunkerError}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
+                    </TabsContent>
+                  </Tabs>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </main>
       </div>
     );
@@ -307,34 +331,38 @@ export default function Page() {
   // Connected: wrap in MarmotProvider
   return (
     <MarmotProvider signer={signer!} pubkey={pubkey}>
-      <div className="app">
-        <header className="topbar">
-          <h1 className="app-title">notestr</h1>
-          <div className="topbar-actions">
+      <div className="flex min-h-screen flex-col bg-background text-foreground">
+        <header className="flex shrink-0 items-center justify-between border-b bg-card px-6 py-3">
+          <h1 className="text-xl font-bold tracking-tight text-primary">
+            notestr
+          </h1>
+          <div className="flex items-center gap-2">
             <ThemeToggle />
             <ConnectionStatus
-            pubkey={pubkey}
-            authMethod={authMethod}
-            onDisconnect={handleDisconnect}
-          />
+              pubkey={pubkey}
+              authMethod={authMethod}
+              onDisconnect={handleDisconnect}
+            />
           </div>
         </header>
-        <div className="app-body">
-          <aside className="sidebar">
+        <div className="flex flex-1 overflow-hidden">
+          <aside className="w-[280px] shrink-0 overflow-y-auto border-r bg-card p-4">
             <GroupManager
               onGroupSelect={setSelectedGroupId}
               selectedGroupId={selectedGroupId}
             />
           </aside>
-          <main className="main-area">
+          <main className="flex-1 overflow-y-auto p-6">
             {selectedGroupId ? (
               <TaskStoreProvider groupId={selectedGroupId}>
                 <Board currentUserPubkey={pubkey} />
               </TaskStoreProvider>
             ) : (
-              <div className="placeholder">
-                <h2>Select a Group</h2>
-                <p>
+              <div className="flex h-full min-h-[300px] flex-col items-center justify-center text-center text-muted-foreground">
+                <h2 className="mb-2 text-xl font-semibold text-foreground">
+                  Select a Group
+                </h2>
+                <p className="max-w-sm text-sm leading-relaxed">
                   Pick a group from the sidebar or create a new one to start
                   managing tasks.
                 </p>

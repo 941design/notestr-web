@@ -1,6 +1,11 @@
 import React, { useState } from "react";
-import { useMarmot } from "../marmot/client";
-import { npubToHex } from "../lib/nostr";
+import { Plus, UserPlus, Users } from "lucide-react";
+import { useMarmot } from "@/marmot/client";
+import { npubToHex } from "@/lib/nostr";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
 interface GroupManagerProps {
   onGroupSelect: (groupId: string) => void;
@@ -43,83 +48,93 @@ export function GroupManager({
     setError(null);
     try {
       const _hex = npubToHex(inviteNpub.trim());
-      // TODO: Fetch the invitee's key package event (kind 443) from relays
-      // then call group.inviteByKeyPackageEvent(keyPackageEvent)
-      // For now, just validate the npub
-      setError(
-        "Invite sent (key package fetch not yet implemented)"
-      );
+      setError("Invite sent (key package fetch not yet implemented)");
       setInviteNpub("");
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Invalid npub or invite failed"
+        err instanceof Error ? err.message : "Invalid npub or invite failed",
       );
     }
   }
 
   return (
-    <div className="group-manager">
-      <h2 className="sidebar-title">Groups</h2>
+    <div>
+      <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <Users className="size-3.5" />
+        Groups
+      </h2>
 
-      {loading && <p className="text-muted">Loading groups...</p>}
+      {loading && (
+        <p className="text-sm text-muted-foreground">Loading groups...</p>
+      )}
 
-      <ul className="group-list">
+      <ul className="mb-5 space-y-1">
         {groups.map((group) => (
           <li
             key={group.idStr}
-            className={`group-item ${selectedGroupId === group.idStr ? "active" : ""}`}
+            className={cn(
+              "cursor-pointer rounded-sm px-3 py-2.5 text-sm transition-colors hover:bg-primary/[0.08]",
+              selectedGroupId === group.idStr &&
+                "bg-primary/[0.15] text-primary",
+            )}
             onClick={() => onGroupSelect(group.idStr)}
           >
-            <span className="group-name">
+            <span className="block truncate">
               {group.groupData?.name || "Unnamed Group"}
             </span>
           </li>
         ))}
         {!loading && groups.length === 0 && (
-          <li className="group-item empty">No groups yet</li>
+          <li className="cursor-default px-3 py-2.5 text-sm italic text-muted-foreground">
+            No groups yet
+          </li>
         )}
       </ul>
 
-      <form className="sidebar-form" onSubmit={handleCreateGroup}>
-        <h3 className="form-title">Create Group</h3>
-        <input
-          type="text"
-          className="input"
+      <form className="mb-4 space-y-2" onSubmit={handleCreateGroup}>
+        <Label className="text-xs font-semibold text-muted-foreground">
+          Create Group
+        </Label>
+        <Input
           placeholder="Group name"
           value={newGroupName}
           onChange={(e) => setNewGroupName(e.target.value)}
           disabled={creating}
         />
-        <button
+        <Button
           type="submit"
-          className="btn btn-primary"
+          className="w-full"
           disabled={creating || !newGroupName.trim()}
         >
+          <Plus className="size-4" />
           {creating ? "Creating..." : "Create"}
-        </button>
+        </Button>
       </form>
 
       {selectedGroupId && (
-        <form className="sidebar-form" onSubmit={handleInvite}>
-          <h3 className="form-title">Invite Member</h3>
-          <input
-            type="text"
-            className="input"
+        <form className="mb-4 space-y-2" onSubmit={handleInvite}>
+          <Label className="text-xs font-semibold text-muted-foreground">
+            Invite Member
+          </Label>
+          <Input
             placeholder="npub1..."
             value={inviteNpub}
             onChange={(e) => setInviteNpub(e.target.value)}
           />
-          <button
+          <Button
             type="submit"
-            className="btn btn-primary"
+            className="w-full"
             disabled={!inviteNpub.trim()}
           >
+            <UserPlus className="size-4" />
             Invite
-          </button>
+          </Button>
         </form>
       )}
 
-      {error && <p className="error-text">{error}</p>}
+      {error && (
+        <p className="mt-2 text-sm text-destructive">{error}</p>
+      )}
     </div>
   );
 }

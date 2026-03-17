@@ -1,4 +1,16 @@
 import React, { useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 
 interface CreateTaskModalProps {
   isOpen: boolean;
@@ -14,8 +26,6 @@ export function CreateTaskModal({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
 
-  if (!isOpen) return null;
-
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
@@ -25,25 +35,20 @@ export function CreateTaskModal({
     onClose();
   }
 
-  function handleOverlayClick(e: React.MouseEvent) {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  }
-
   return (
-    <div className="modal-overlay" onClick={handleOverlayClick}>
-      <div className="modal">
-        <h2 className="modal-title">Create Task</h2>
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label className="form-label" htmlFor="task-title">
-              Title
-            </label>
-            <input
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create Task</DialogTitle>
+          <DialogDescription>
+            Add a new task to the board.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="task-title">Title</Label>
+            <Input
               id="task-title"
-              type="text"
-              className="input"
               placeholder="Task title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -51,37 +56,26 @@ export function CreateTaskModal({
               required
             />
           </div>
-          <div className="form-group">
-            <label className="form-label" htmlFor="task-description">
-              Description
-            </label>
-            <textarea
+          <div className="space-y-2">
+            <Label htmlFor="task-description">Description</Label>
+            <Textarea
               id="task-description"
-              className="input textarea"
               placeholder="Optional description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={4}
             />
           </div>
-          <div className="modal-actions">
-            <button
-              type="button"
-              className="btn btn-outline"
-              onClick={onClose}
-            >
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
               Cancel
-            </button>
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={!title.trim()}
-            >
+            </Button>
+            <Button type="submit" disabled={!title.trim()}>
               Create
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

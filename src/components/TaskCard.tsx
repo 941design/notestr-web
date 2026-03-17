@@ -1,6 +1,10 @@
 import React from "react";
-import { shortenPubkey } from "../lib/nostr";
-import type { Task, TaskStatus } from "../store/task-events";
+import { ArrowRight, UserCheck, UserX } from "lucide-react";
+import { shortenPubkey } from "@/lib/nostr";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import type { Task, TaskStatus } from "@/store/task-events";
 
 interface TaskCardProps {
   task: Task;
@@ -16,11 +20,11 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
   cancelled: "Cancelled",
 };
 
-const STATUS_CLASSES: Record<TaskStatus, string> = {
-  open: "badge-open",
-  in_progress: "badge-in-progress",
-  done: "badge-done",
-  cancelled: "badge-cancelled",
+const STATUS_STYLES: Record<TaskStatus, string> = {
+  open: "bg-primary/15 text-primary border-transparent",
+  in_progress: "bg-warning/15 text-warning border-transparent",
+  done: "bg-success/15 text-success border-transparent",
+  cancelled: "bg-destructive/15 text-destructive border-transparent",
 };
 
 function getNextStatus(current: TaskStatus): TaskStatus | null {
@@ -45,52 +49,60 @@ export function TaskCard({
     currentUserPubkey != null && task.assignee === currentUserPubkey;
 
   return (
-    <div className="task-card">
-      <div className="task-card-header">
-        <h4 className="task-title">{task.title}</h4>
-        <span className={`badge ${STATUS_CLASSES[task.status]}`}>
+    <div className="rounded-lg border bg-background p-3 transition-colors hover:border-muted-foreground">
+      <div className="mb-1.5 flex items-start justify-between gap-2">
+        <h4 className="min-w-0 flex-1 text-sm font-semibold leading-snug">
+          {task.title}
+        </h4>
+        <Badge className={cn("shrink-0", STATUS_STYLES[task.status])}>
           {STATUS_LABELS[task.status]}
-        </span>
+        </Badge>
       </div>
 
       {task.description && (
-        <p className="task-description">
+        <p className="mb-2 text-xs leading-relaxed text-muted-foreground">
           {task.description.length > 120
             ? task.description.slice(0, 120) + "..."
             : task.description}
         </p>
       )}
 
-      <div className="task-meta">
-        <span className="task-assignee">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="font-mono text-xs text-muted-foreground">
           {task.assignee ? shortenPubkey(task.assignee) : "Unassigned"}
         </span>
       </div>
 
-      <div className="task-actions">
+      <div className="flex flex-wrap gap-1.5">
         {nextStatus && (
-          <button
-            className="btn btn-sm btn-outline"
+          <Button
+            variant="outline"
+            size="xs"
             onClick={() => onStatusChange(task.id, nextStatus)}
           >
-            Move to {STATUS_LABELS[nextStatus]}
-          </button>
+            <ArrowRight className="size-3" />
+            {STATUS_LABELS[nextStatus]}
+          </Button>
         )}
         {currentUserPubkey && !isAssignedToMe && (
-          <button
-            className="btn btn-sm btn-outline"
+          <Button
+            variant="outline"
+            size="xs"
             onClick={() => onAssign(task.id, currentUserPubkey)}
           >
+            <UserCheck className="size-3" />
             Assign to me
-          </button>
+          </Button>
         )}
         {isAssignedToMe && (
-          <button
-            className="btn btn-sm btn-outline"
+          <Button
+            variant="outline"
+            size="xs"
             onClick={() => onAssign(task.id, null)}
           >
+            <UserX className="size-3" />
             Unassign
-          </button>
+          </Button>
         )}
       </div>
     </div>
