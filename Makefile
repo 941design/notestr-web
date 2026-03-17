@@ -11,9 +11,7 @@ export
 FTP_HOST := $(HOSTEUROPE_FTP_HOST)
 FTP_USER := $(HOSTEUROPE_FTP_USER)
 FTP_PASS := $(HOSTEUROPE_FTP_PASS)
-
-# Remote path (hosteurope)
-REMOTE_ROOT := /
+FTP_PATH := $(or $(HOSTEUROPE_FTP_PATH),/)
 
 # Local paths
 LOCAL_DIST := out
@@ -93,12 +91,12 @@ deploy-check: ## Verify deployment prerequisites
 	@echo "All prerequisites satisfied."
 
 deploy: build deploy-check ## Deploy to production (FTP)
-	@echo "Deploying to $(FTP_HOST)$(REMOTE_ROOT)..."
+	@echo "Deploying to $(FTP_HOST)$(FTP_PATH)..."
 	@lftp -u "$(FTP_USER),$(FTP_PASS)" "$(FTP_HOST)" -e "\
 		set ssl:verify-certificate no; \
-		mkdir -p $(REMOTE_ROOT); \
+		mkdir -p $(FTP_PATH); \
 		mirror -R --verbose --only-newer --parallel=4 \
-			$(LOCAL_DIST)/ $(REMOTE_ROOT)/; \
+			$(LOCAL_DIST)/ $(FTP_PATH)/; \
 		bye"
 	@echo ""
 	@echo "Deployment complete!"
@@ -106,7 +104,7 @@ deploy: build deploy-check ## Deploy to production (FTP)
 deploy-dryrun: ## Show what would be deployed (no upload)
 	@echo "=== Deployment Dry Run ==="
 	@echo ""
-	@echo "Target: $(FTP_HOST)$(REMOTE_ROOT)"
+	@echo "Target: $(FTP_HOST)$(FTP_PATH)"
 	@echo ""
 	@echo "Local build output: $(LOCAL_DIST)/"
 	@if [ -d $(LOCAL_DIST) ]; then \
@@ -123,6 +121,7 @@ deploy-dryrun: ## Show what would be deployed (no upload)
 	@echo "  HOSTEUROPE_FTP_HOST=$(FTP_HOST)"
 	@echo "  HOSTEUROPE_FTP_USER=$(FTP_USER)"
 	@if [ -n "$(FTP_PASS)" ]; then echo "  HOSTEUROPE_FTP_PASS=****"; else echo "  HOSTEUROPE_FTP_PASS=[NOT SET]"; fi
+	@echo "  HOSTEUROPE_FTP_PATH=$(FTP_PATH)"
 
 # =============================================================================
 # SSL Certificate (Let's Encrypt for HostEurope)
