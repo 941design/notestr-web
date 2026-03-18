@@ -8,11 +8,12 @@ import {
   type ReactNode,
 } from "react";
 
-import NDK from "@nostr-dev-kit/ndk";
+import NDK, { NDKEvent, NDKRelaySet } from "@nostr-dev-kit/ndk";
 import {
   MarmotClient,
   KeyValueGroupStateBackend,
   KeyPackageStore,
+  createKeyPackageRelayListEvent,
 } from "@internet-privacy/marmot-ts";
 import type { EventSigner } from "applesauce-core";
 
@@ -116,6 +117,20 @@ export function MarmotProvider({
       const existingPackages = await client.keyPackages.list();
       if (existingPackages.length === 0 && relays.length > 0) {
         await client.keyPackages.create({ relays });
+      }
+
+      // Publish kind 10051 relay list so other users can send us Welcomes
+      if (relays.length > 0 && ndk) {
+        const unsigned = createKeyPackageRelayListEvent({
+          pubkey,
+          relays,
+        });
+        const signed = await signer.signEvent(unsigned);
+        const ndkEvent = new NDKEvent(ndk, signed);
+        const relaySet = NDKRelaySet.fromRelayUrls(relays, ndk);
+        await ndkEvent.publish(relaySet).catch(() => {
+          // Non-fatal: invite flow degrades gracefully
+        });
       }
     } catch (err) {
       if (mountedRef.current) {

@@ -102,8 +102,8 @@ export default async function globalSetup() {
   });
   console.log('[setup] Build complete.');
 
-  // 2. Start the NIP-46 bunker
-  console.log('[setup] Starting bunker...');
+  // 2. Start the NIP-46 bunkers (User A + User B)
+  console.log('[setup] Starting bunker A...');
   const bunkerProc = await spawnAndWaitForOutput(
     'node',
     [path.join(PROJECT_ROOT, 'e2e', 'fixtures', 'bunker.mjs')],
@@ -111,7 +111,21 @@ export default async function globalSetup() {
     10000,
     PROJECT_ROOT,
   );
-  console.log('[setup] Bunker ready.');
+  console.log('[setup] Bunker A ready.');
+
+  console.log('[setup] Starting bunker B...');
+  const bunkerBProc = await spawnAndWaitForOutput(
+    'node',
+    [path.join(PROJECT_ROOT, 'e2e', 'fixtures', 'bunker.mjs')],
+    'Ready',
+    10000,
+    PROJECT_ROOT,
+    {
+      BUNKER_PRIVATE_KEY: '3ad635dc380ed603e85842e163bb6a0f6af83110cf61c78785fab7bce173c105',
+      BUNKER_LABEL: 'bunker-B',
+    },
+  );
+  console.log('[setup] Bunker B ready.');
 
   // 3. Start the static file server
   console.log('[setup] Starting serve on port 3100...');
@@ -132,6 +146,10 @@ export default async function globalSetup() {
   const { writeFileSync } = await import('fs');
   writeFileSync(
     STATE_FILE,
-    JSON.stringify({ bunkerPid: bunkerProc.pid, servePid: serveProc.pid }),
+    JSON.stringify({
+      bunkerPid: bunkerProc.pid,
+      bunkerBPid: bunkerBProc.pid,
+      servePid: serveProc.pid,
+    }),
   );
 }

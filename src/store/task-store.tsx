@@ -73,9 +73,8 @@ export const TaskStoreProvider: React.FC<TaskStoreProviderProps> = ({
         const nextState = applyEvent(stateRef.current, taskEvent);
         setState(nextState);
 
-        appendEvent(groupId, taskEvent).catch((err) => {
-          console.error("Failed to persist incoming task event:", err);
-        });
+        // Persistence is handled by device-sync's applicationMessage listener
+        // which runs even when this provider isn't mounted.
       } catch (err) {
         console.error("Failed to process application message:", err);
       }

@@ -20,6 +20,7 @@ export function GroupManager({
   const [newGroupName, setNewGroupName] = useState("");
   const [inviteNpub, setInviteNpub] = useState("");
   const [creating, setCreating] = useState(false);
+  const [inviting, setInviting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleCreateGroup(e: React.FormEvent) {
@@ -46,14 +47,30 @@ export function GroupManager({
     if (!client || !selectedGroupId || !inviteNpub.trim()) return;
 
     setError(null);
+    setInviting(true);
     try {
-      const _hex = npubToHex(inviteNpub.trim());
-      setError("Invite sent (key package fetch not yet implemented)");
+      const hex = npubToHex(inviteNpub.trim());
+      const group = groups.find((g) => g.idStr === selectedGroupId);
+      if (!group) throw new Error("Group not found");
+
+      // Fetch the invitee's key package (kind 443) from relays
+      const keyPackageEvents = await client.network.request(relays, [
+        { kinds: [443], authors: [hex], limit: 1 },
+      ]);
+      if (keyPackageEvents.length === 0) {
+        throw new Error(
+          "No key package found for this user. They may not have published one yet.",
+        );
+      }
+
+      await group.inviteByKeyPackageEvent(keyPackageEvents[0]);
       setInviteNpub("");
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Invalid npub or invite failed",
       );
+    } finally {
+      setInviting(false);
     }
   }
 
@@ -126,14 +143,15 @@ export function GroupManager({
             placeholder="npub1..."
             value={inviteNpub}
             onChange={(e) => setInviteNpub(e.target.value)}
+            disabled={inviting}
           />
           <Button
             type="submit"
             className="w-full"
-            disabled={!inviteNpub.trim()}
+            disabled={!inviteNpub.trim() || inviting}
           >
             <UserPlus className="size-4" />
-            Invite
+            {inviting ? "Inviting..." : "Invite"}
           </Button>
         </form>
       )}

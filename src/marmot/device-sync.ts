@@ -2,8 +2,10 @@ import { useEffect, useRef } from "react";
 
 import {
   getGroupMembers,
+  getNostrGroupIdHex,
   InviteReader,
   isAdmin,
+  deserializeApplicationData,
   type MarmotClient,
   type MarmotGroup,
   type Unsubscribable,
@@ -11,12 +13,15 @@ import {
 } from "@internet-privacy/marmot-ts";
 import type { NostrEvent } from "applesauce-core/helpers/event";
 import type { EventSigner } from "applesauce-core";
+import type { Rumor } from "applesauce-common/helpers/gift-wrap";
 
 import {
   addSyncedGroupEventIds,
   createInviteStore,
   getSyncedGroupEventIds,
 } from "./storage";
+import { TASK_EVENT_KIND, type TaskEvent } from "../store/task-events";
+import { appendEvent } from "../store/persistence";
 
 function mergeIds(existing: Set<string>, incoming: Iterable<string>): string[] {
   for (const id of incoming) {
@@ -30,6 +35,11 @@ function groupHasMember(group: MarmotGroup, pubkey: string): boolean {
   return getGroupMembers(group.state).some(
     (memberPubkey) => memberPubkey === pubkey,
   );
+}
+
+/** Get the Nostr group ID used in kind 445 event `#h` tags. */
+function nostrGroupId(group: MarmotGroup): string {
+  return getNostrGroupIdHex(group.state);
 }
 
 /**
@@ -155,11 +165,33 @@ export function useDeviceSync(
       await addSyncedGroupEventIds(group.idStr, processed);
     };
 
+    // Persist task-related application messages so they survive regardless
+    // of whether the TaskStoreProvider is mounted when the message arrives.
+    const appMsgListeners = new Set<string>();
+    const attachAppMsgListener = (group: MarmotGroup) => {
+      if (appMsgListeners.has(group.idStr)) return;
+      appMsgListeners.add(group.idStr);
+
+      group.on("applicationMessage", (data: Uint8Array) => {
+        try {
+          const rumor: Rumor = deserializeApplicationData(data);
+          if (rumor.kind !== TASK_EVENT_KIND) return;
+          const taskEvent: TaskEvent = JSON.parse(rumor.content);
+          appendEvent(group.idStr, taskEvent).catch(() => {});
+        } catch {
+          // Not a task event or malformed — ignore
+        }
+      });
+    };
+
     const syncGroup = async (group: MarmotGroup): Promise<void> => {
       if (!mountedRef.current || groupSubs.has(group.idStr)) return;
 
+      attachAppMsgListener(group);
+
       const relaysForGroup = group.relays ?? relays;
-      const filter = { kinds: [445], "#h": [group.idStr] };
+      const hTag = nostrGroupId(group);
+      const filter = { kinds: [445], "#h": [hTag] };
 
       try {
         const initialEvents = await client.network.request(relaysForGroup, [filter]);
