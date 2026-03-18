@@ -1,11 +1,12 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Plus, UserPlus, Users } from "lucide-react";
 import { useMarmot } from "@/marmot/client";
-import { npubToHex } from "@/lib/nostr";
+import { npubToHex, shortenPubkey, hexToNpub } from "@/lib/nostr";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { getGroupMembers } from "@internet-privacy/marmot-ts";
 
 interface GroupManagerProps {
   onGroupSelect: (groupId: string) => void;
@@ -22,6 +23,57 @@ export function GroupManager({
   const [creating, setCreating] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [members, setMembers] = useState<string[]>([]);
+  const [profileNames, setProfileNames] = useState<Map<string, string>>(new Map());
+  const profileCacheRef = useRef<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    if (!selectedGroupId || !client) {
+      setMembers([]);
+      return;
+    }
+
+    const group = groups.find((g) => g.idStr === selectedGroupId);
+    if (!group?.state) {
+      setMembers([]);
+      return;
+    }
+
+    const hexPubkeys = getGroupMembers(group.state);
+    setMembers(hexPubkeys);
+
+    // Fetch profiles for members not yet in cache
+    const uncached = hexPubkeys.filter(
+      (hex) => !profileCacheRef.current.has(hex),
+    );
+    if (uncached.length === 0) {
+      setProfileNames(new Map(profileCacheRef.current));
+      return;
+    }
+
+    (async () => {
+      try {
+        const events = await client.network.request(relays, [
+          { kinds: [0], authors: uncached, limit: uncached.length },
+        ]);
+        for (const event of events) {
+          try {
+            const content = JSON.parse(event.content as string);
+            const name: string | undefined =
+              content.name || content.displayName;
+            if (name && event.pubkey) {
+              profileCacheRef.current.set(event.pubkey as string, name);
+            }
+          } catch {
+            // skip malformed profile content
+          }
+        }
+      } catch {
+        // network error — fall back to shortened pubkeys
+      }
+      setProfileNames(new Map(profileCacheRef.current));
+    })();
+  }, [selectedGroupId, groups, client, relays]);
 
   async function handleCreateGroup(e: React.FormEvent) {
     e.preventDefault();
@@ -154,6 +206,26 @@ export function GroupManager({
             {inviting ? "Inviting..." : "Invite"}
           </Button>
         </form>
+      )}
+
+      {selectedGroupId && members.length > 0 && (
+        <section data-testid="members-section" className="mb-4">
+          <Label className="mb-2 block text-xs font-semibold text-muted-foreground">
+            Members
+          </Label>
+          <ul className="space-y-1">
+            {members.map((hex) => (
+              <li
+                key={hex}
+                data-testid="member-item"
+                className="truncate px-3 py-1.5 text-sm font-mono text-muted-foreground"
+                title={hexToNpub(hex)}
+              >
+                {profileNames.get(hex) ?? shortenPubkey(hex)}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {error && (

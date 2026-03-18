@@ -1,0 +1,178 @@
+{
+  "created_at": "2026-03-18T15:38:00Z",
+  "story_id": "01",
+  "story_title": "Show member list with profile names in sidebar",
+  "questions": [
+    {
+      "id": "VQ-01-001",
+      "category": "SPEC",
+      "question": "Does GroupManager.tsx import getGroupMembers from @internet-privacy/marmot-ts and use it to derive the member list from group.state?",
+      "actionable_check": "Read src/components/GroupManager.tsx. Verify the import of getGroupMembers and that it is called with group.state inside the useEffect.",
+      "evidence_required": [
+        "Import line in GroupManager.tsx",
+        "useEffect call: getGroupMembers(group.state)"
+      ],
+      "pass_criteria": "Both the import and the call to getGroupMembers(group.state) are present.",
+      "added_in_round": 1
+    },
+    {
+      "id": "VQ-01-002",
+      "category": "SPEC",
+      "question": "Does the Members section have data-testid=\"members-section\" and each member li have data-testid=\"member-item\"?",
+      "actionable_check": "Read src/components/GroupManager.tsx JSX. Confirm data-testid attributes on the section element and on each li inside the members list.",
+      "evidence_required": [
+        "data-testid=\"members-section\" on section element",
+        "data-testid=\"member-item\" on each member li"
+      ],
+      "pass_criteria": "Both testids present as specified.",
+      "added_in_round": 1
+    },
+    {
+      "id": "VQ-01-003",
+      "category": "SPEC",
+      "question": "Is the Members section hidden when no group is selected (selectedGroupId is null)?",
+      "actionable_check": "Read GroupManager.tsx JSX. Verify that the members section render is gated on selectedGroupId being truthy and members.length > 0.",
+      "evidence_required": [
+        "Conditional render: {selectedGroupId && members.length > 0 && (...)}"
+      ],
+      "pass_criteria": "Members section only renders when selectedGroupId is truthy and at least one member exists.",
+      "added_in_round": 1
+    },
+    {
+      "id": "VQ-01-004",
+      "category": "SPEC",
+      "question": "Does the component fall back to shortenPubkey(hex) when no profile name is available for a member?",
+      "actionable_check": "Read GroupManager.tsx. Verify that the member display expression is profileNames.get(hex) ?? shortenPubkey(hex).",
+      "evidence_required": [
+        "Expression: profileNames.get(hex) ?? shortenPubkey(hex)"
+      ],
+      "pass_criteria": "Fallback to shortenPubkey is used via nullish coalescing.",
+      "added_in_round": 1
+    },
+    {
+      "id": "VQ-01-005",
+      "category": "ARCHITECTURE",
+      "question": "Is a profile cache (Map<string, string>) used to avoid redundant network fetches?",
+      "actionable_check": "Read GroupManager.tsx. Verify profileCacheRef (useRef holding a Map) is used to skip already-fetched pubkeys in the useEffect.",
+      "evidence_required": [
+        "profileCacheRef declared with useRef<Map<string, string>>(new Map())",
+        "Filter: hexPubkeys.filter((hex) => !profileCacheRef.current.has(hex))"
+      ],
+      "pass_criteria": "Cache ref exists and is checked before making network requests.",
+      "added_in_round": 1
+    },
+    {
+      "id": "VQ-01-006",
+      "category": "ARCHITECTURE",
+      "question": "Does the useEffect re-run reactively when selectedGroupId or groups changes, ensuring the member list updates when a different group is selected?",
+      "actionable_check": "Read GroupManager.tsx. Verify useEffect dependency array includes selectedGroupId, groups, client, and relays.",
+      "evidence_required": [
+        "useEffect dependency array: [selectedGroupId, groups, client, relays]"
+      ],
+      "pass_criteria": "Dependency array contains all four values.",
+      "added_in_round": 1
+    },
+    {
+      "id": "VQ-01-007",
+      "category": "TEST",
+      "question": "Does e2e/tests/members.spec.ts contain at least 2 tests that navigate real app routes and interact with actual UI elements (no test.skip, no title-only assertions)?",
+      "actionable_check": "Read e2e/tests/members.spec.ts. Count tests, verify no test.skip(), verify page.locator/getByRole/getByPlaceholder interactions, verify assertions on [data-testid=\"members-section\"] and [data-testid=\"member-item\"].",
+      "evidence_required": [
+        "File path: e2e/tests/members.spec.ts",
+        "Count of test() calls (must be >= 2)",
+        "Zero test.skip() calls",
+        "Locator calls on members-section and member-item"
+      ],
+      "pass_criteria": "At least 2 tests, zero skips, real UI interactions, assertions on members-section and member-item testids.",
+      "added_in_round": 1
+    }
+  ],
+  "mandatory_questions": [
+    {
+      "id": "VQ-01-DEAD",
+      "category": "QUALITY",
+      "question": "Is there any dead code introduced by this story?",
+      "actionable_check": "Search for unused functions, classes, imports in src/components/GroupManager.tsx introduced by this story (members state, profileNames state, profileCacheRef, useEffect, Members JSX section).",
+      "evidence_required": [
+        "Confirmation that all imports (getGroupMembers, shortenPubkey, hexToNpub, useEffect, useRef) are referenced in the file"
+      ],
+      "pass_criteria": "No unused code in story scope.",
+      "added_in_round": 1
+    },
+    {
+      "id": "VQ-01-DUP",
+      "category": "QUALITY",
+      "question": "Are there any duplicate implementations?",
+      "actionable_check": "Check whether profile fetching logic or member list logic is duplicated elsewhere in the codebase.",
+      "evidence_required": [
+        "Search result for getGroupMembers usages across src/",
+        "Confirmation only GroupManager.tsx implements this logic"
+      ],
+      "pass_criteria": "No duplicate implementations of member fetching or profile resolution logic.",
+      "added_in_round": 1
+    },
+    {
+      "id": "VQ-01-INT",
+      "category": "TEST",
+      "question": "Do integration tests (E2E) validate the story's workflow end-to-end?",
+      "actionable_check": "Verify e2e/tests/members.spec.ts exists and covers: auth -> create group -> members section appears -> member item listed.",
+      "evidence_required": [
+        "e2e/tests/members.spec.ts exists",
+        "Test: 'members section appears after group creation with at least one member'"
+      ],
+      "pass_criteria": "At least one E2E test covers the happy path end-to-end.",
+      "added_in_round": 1
+    },
+    {
+      "id": "VQ-01-SCOPE",
+      "category": "SPEC",
+      "question": "Does every item in scope.includes have corresponding implementation AND verification?",
+      "actionable_check": "Check each specified requirement: (1) Members section below invite form, (2) getGroupMembers usage, (3) kind:0 profile fetch, (4) name/displayName parsing, (5) shortenPubkey fallback, (6) hidden when no group, (7) reactive on group change, (8) profile cache, (9) data-testid attributes.",
+      "evidence_required": [
+        "GroupManager.tsx implementation evidence for each item",
+        "Test or VQ referencing each item"
+      ],
+      "pass_criteria": "All 9 spec requirements have both implementation evidence and test/verification evidence.",
+      "added_in_round": 1
+    },
+    {
+      "id": "VQ-01-STUB",
+      "category": "QUALITY",
+      "question": "Does any code in this story contain stub markers indicating incomplete implementation?",
+      "actionable_check": "Grep src/components/GroupManager.tsx and e2e/tests/members.spec.ts for: TODO, FIXME, HACK, XXX, placeholder, stub, 'not yet implemented', 'not yet integrated', 'will be implemented', 'would call'.",
+      "evidence_required": [
+        "Grep output showing zero matches in production code"
+      ],
+      "pass_criteria": "Zero stub/placeholder markers in production code.",
+      "added_in_round": 1
+    },
+    {
+      "id": "VQ-01-M001",
+      "category": "TEST",
+      "question": "Do E2E tests exist and pass for the member list feature?",
+      "actionable_check": "Check e2e/tests/members.spec.ts exists and run `make e2e`",
+      "evidence_required": [
+        "e2e/tests/members.spec.ts exists",
+        "make e2e exits 0"
+      ],
+      "pass_criteria": "File exists and all E2E tests pass.",
+      "added_in_round": 1
+    },
+    {
+      "id": "VQ-01-E2E",
+      "category": "TEST",
+      "question": "Do Playwright E2E tests exercise real user workflows through the actual application UI, with no skipped tests, no title-only assertions, and real UI interaction?",
+      "actionable_check": "1. Read e2e/tests/members.spec.ts and verify tests navigate to real app routes (/). 2. Verify tests use page.getByPlaceholder, page.getByRole, page.locator for UI interactions. 3. Verify zero test.skip() calls. 4. Verify tests assert on data-testid elements (members-section, member-item), not just page title. 5. Verify Playwright config uses baseURL env var. 6. Verify tests run against Docker Compose full stack via make e2e.",
+      "evidence_required": [
+        "e2e/tests/members.spec.ts route: / (real app route)",
+        "UI interactions: getByPlaceholder, getByRole, locator",
+        "Count of test.skip() occurrences (must be 0)",
+        "Assertions on [data-testid=\"members-section\"] and [data-testid=\"member-item\"]",
+        "playwright.config.ts baseURL configuration",
+        "make e2e exit code"
+      ],
+      "pass_criteria": "All E2E tests: (a) navigate real app routes, (b) perform user actions, (c) assert observable outcomes via testid, (d) have zero test.skip(), (e) run against Docker Compose stack.",
+      "added_in_round": 1
+    }
+  ]
+}

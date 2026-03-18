@@ -1,0 +1,68 @@
+{
+  "story_id": "01",
+  "status": "done",
+  "completed_at": "2026-03-18T15:48:00Z",
+  "created_at": "2026-03-18T00:00:00Z",
+  "updated_at": "2026-03-18T15:47:00Z",
+  "implementation": {
+    "status": "done",
+    "started_at": "2026-03-18T00:00:00Z",
+    "architect_session_id": "ae5415a5959316013",
+    "files_created": ["e2e/tests/members.spec.ts"],
+    "files_modified": ["src/components/GroupManager.tsx"],
+    "mocks_introduced": []
+  },
+  "verification_rounds": [
+    {
+      "round": 1,
+      "timestamp": "2026-03-18T15:47:00Z",
+      "results": [
+        {"question_id": "VQ-01-001", "result": "pass", "confidence": 1.0},
+        {"question_id": "VQ-01-002", "result": "pass", "confidence": 1.0},
+        {"question_id": "VQ-01-003", "result": "pass", "confidence": 1.0},
+        {"question_id": "VQ-01-004", "result": "pass", "confidence": 1.0},
+        {"question_id": "VQ-01-005", "result": "pass", "confidence": 1.0},
+        {"question_id": "VQ-01-006", "result": "pass", "confidence": 1.0},
+        {"question_id": "VQ-01-007", "result": "pass", "confidence": 1.0},
+        {"question_id": "VQ-01-DEAD", "result": "pass", "confidence": 1.0},
+        {"question_id": "VQ-01-DUP", "result": "pass", "confidence": 1.0},
+        {"question_id": "VQ-01-INT", "result": "pass", "confidence": 1.0},
+        {"question_id": "VQ-01-SCOPE", "result": "pass", "confidence": 1.0},
+        {"question_id": "VQ-01-STUB", "result": "pass", "confidence": 1.0},
+        {"question_id": "VQ-01-M001", "result": "pass", "confidence": 1.0},
+        {"question_id": "VQ-01-E2E", "result": "pass", "confidence": 1.0}
+      ],
+      "summary": {
+        "total": 13,
+        "passed": 13,
+        "failed": 0,
+        "partial": 0
+      },
+      "verification_passed": true,
+      "test_gate": {
+        "ran_at": "2026-03-18T15:47:00Z",
+        "command": "make test",
+        "passed": true,
+        "total_tests": 24,
+        "passed_tests": 24,
+        "failed_tests": 0,
+        "failures": [],
+        "evidence": "24/24 unit tests pass, static export build succeeds",
+        "e2e_tests": {
+          "ran_at": "2026-03-18T15:47:00Z",
+          "command": "make e2e",
+          "passed": true,
+          "total_tests": 9,
+          "passed_tests": 9,
+          "failed_tests": 0,
+          "test_files": ["e2e/tests/members.spec.ts"],
+          "evidence": "9/9 member E2E tests pass across chromium, Mobile Chrome, Mobile Safari. 36 total E2E tests pass, 6 pre-existing skips."
+        }
+      },
+      "all_passed": true
+    }
+  ],
+  "remediation_attempts": [],
+  "escalation": null,
+  "final_outcome": "accepted"
+}

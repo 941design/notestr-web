@@ -1,0 +1,63 @@
+{
+  "epic_name": "group-member-list",
+  "created_at": "2026-03-18T00:00:00Z",
+  "updated_at": "2026-03-18T00:00:00Z",
+  "total_stories": 1,
+  "stories": [
+    {
+      "id": "01",
+      "name": "member-list-section",
+      "title": "Show member list with profile names in sidebar",
+      "description": "Add a Members section to GroupManager that displays all group members. Use getGroupMembers() to get hex pubkeys, fetch kind:0 metadata for profile names, fall back to shortenPubkey() format. Section only visible when a group is selected. Updates reactively when group state changes.",
+      "acceptance_criteria": ["AC-001", "AC-002", "AC-003", "AC-004", "AC-005", "AC-006"],
+      "scope": {
+        "includes": [
+          "Members section UI in GroupManager",
+          "getGroupMembers integration",
+          "Kind:0 profile name fetching and caching",
+          "Abbreviated pubkey fallback",
+          "Reactive updates on group state change",
+          "data-testid attributes for E2E"
+        ],
+        "excludes": [
+          "Member avatars",
+          "Click actions on members",
+          "Online/offline status",
+          "Member removal UI"
+        ]
+      },
+      "complexity": "medium",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "status": "in_progress",
+      "e2e_test_plan": {
+        "scenarios": [
+          {
+            "name": "Member list shows creator after group creation",
+            "steps": [
+              "Authenticate via bunker",
+              "Create a new group",
+              "Verify Members section appears with 1 member"
+            ],
+            "playwright_file": "e2e/tests/members.spec.ts"
+          },
+          {
+            "name": "Member list updates after invite",
+            "steps": [
+              "Authenticate via bunker",
+              "Create group",
+              "Invite second user (NDK fixture)",
+              "Verify member count increases to 2"
+            ],
+            "playwright_file": "e2e/tests/members.spec.ts"
+          }
+        ]
+      },
+      "notes": "Single story since all requirements are tightly coupled — member list, profile resolution, and reactive updates are all part of the same component."
+    }
+  ],
+  "story_order": ["01"],
+  "dependency_notes": "Single story, no dependencies.",
+  "mock_resolution_plan": "No mocks needed."
+}

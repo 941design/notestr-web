@@ -1,0 +1,37 @@
+{
+  "created_at": "2026-03-18T00:00:00Z",
+  "key_files": [
+    { "path": "src/components/GroupManager.tsx", "relevance": "Sidebar component where member list will be added", "source": "similar-features" },
+    { "path": "src/marmot/client.tsx", "relevance": "MarmotProvider, useMarmot, useGroup hooks", "source": "architecture" },
+    { "path": "src/lib/nostr.ts", "relevance": "shortenPubkey, hexToNpub utilities", "source": "similar-features" },
+    { "path": "src/components/ConnectionStatus.tsx", "relevance": "Existing pattern for displaying abbreviated pubkey", "source": "similar-features" },
+    { "path": "app/page.tsx", "relevance": "Page layout with sidebar, passes selectedGroupId to GroupManager", "source": "architecture" }
+  ],
+  "patterns": [
+    { "name": "useMarmot hook", "description": "React context providing client, groups, relays, pubkey", "reference": "src/marmot/client.tsx:223" },
+    { "name": "useGroup hook", "description": "Finds a MarmotGroup by ID from useMarmot context", "reference": "src/marmot/client.tsx:227" },
+    { "name": "network.request", "description": "Fetches Nostr events from relays with filters", "reference": "src/components/GroupManager.tsx:57" },
+    { "name": "getGroupMembers", "description": "Gets hex pubkeys from MLS group state", "reference": "node_modules/@internet-privacy/marmot-ts/dist/core/group-members.d.ts:4" }
+  ],
+  "similar_features": [
+    { "name": "ConnectionStatus pubkey display", "description": "Shows shortenPubkey(hex) with hexToNpub tooltip", "reference": "src/components/ConnectionStatus.tsx:42-47" }
+  ],
+  "architecture": {
+    "sidebar": "GroupManager component rendered in aside element in page.tsx",
+    "data_flow": "MarmotProvider -> useMarmot()/useGroup() -> getGroupMembers(state) -> hex pubkeys",
+    "profile_fetch": "client.network.request(relays, [{kinds:[0], authors:[hex]}]) -> kind:0 event -> JSON.parse(content).name"
+  },
+  "extension_points": [
+    "GroupManager can be extended with a new section below the invite form"
+  ],
+  "testing": {
+    "framework": "Playwright (@playwright/test)",
+    "e2e_dir": "e2e/tests/",
+    "config": "playwright.config.ts"
+  },
+  "conventions": [
+    "All dev commands via make",
+    "Tailwind CSS for styling",
+    "data-testid attributes for E2E selectors"
+  ]
+}
