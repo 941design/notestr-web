@@ -12,3 +12,7 @@ public/workbox-*.js
 test-results/
 e2e/.state.json
 .ssl/
+.mcp.json
+.claude/worktrees/
+tsconfig.tsbuildinfo
+screenshot.png
