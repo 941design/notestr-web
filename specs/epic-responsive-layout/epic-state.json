@@ -1,0 +1,16 @@
+{
+  "epic_name": "responsive-layout",
+  "created_at": "2026-03-18T22:51:43Z",
+  "updated_at": "2026-03-18T22:54:00Z",
+  "status": "done",
+  "phase": "COMPLETE",
+  "current_story": null,
+  "completed_stories": ["01"],
+  "blocked_stories": [],
+  "escalated_stories": [],
+  "phase_history": [
+    {"phase": "SPEC_VALIDATED", "timestamp": "2026-03-18T22:51:43Z", "trigger": "validation_passed"},
+    {"phase": "STORIES_DEFINED", "timestamp": "2026-03-18T22:51:50Z", "trigger": "stories_created"},
+    {"phase": "COMPLETE", "timestamp": "2026-03-18T22:54:00Z", "trigger": "all_stories_done"}
+  ]
+}

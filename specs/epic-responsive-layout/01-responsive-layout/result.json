@@ -1,0 +1,10 @@
+{
+  "completed_at": "2026-03-18T22:54:00Z",
+  "story_id": "01",
+  "status": "done",
+  "summary": "Three-tier responsive layout implemented. Mobile drawer with backdrop, tablet 56px icon rail with expand overlay, mobile tab navigation on Board. Desktop layout unchanged. Build passes.",
+  "files_changed": [
+    "app/page.tsx",
+    "src/components/Board.tsx"
+  ]
+}

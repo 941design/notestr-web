@@ -1,0 +1,47 @@
+{
+  "verified_at": "2026-03-18T22:54:00Z",
+  "story_id": "01",
+  "criteria": [
+    {
+      "id": "AC-001",
+      "description": "Mobile (<768px): sidebar hidden, accessible via hamburger drawer",
+      "status": "pass",
+      "evidence": "Hamburger button with md:hidden renders only on <768px. Aside uses -translate-x-full (hidden) unless drawerOpen=true."
+    },
+    {
+      "id": "AC-002",
+      "description": "Board shows one column at a time with tab navigation on mobile",
+      "status": "pass",
+      "evidence": "Board.tsx renders tab bar (md:hidden) and single-column panel (md:hidden). Tab click sets activeTab state."
+    },
+    {
+      "id": "AC-003",
+      "description": "Tablet (768-1024px): sidebar shows as 56px icon rail",
+      "status": "pass",
+      "evidence": "At md breakpoint: aside is md:w-14 (56px), icon rail div is hidden md:flex lg:hidden."
+    },
+    {
+      "id": "AC-004",
+      "description": "Desktop layout unchanged",
+      "status": "pass",
+      "evidence": "At lg breakpoint: aside is lg:w-[280px], board grid is lg:grid-cols-3 (same as before)."
+    },
+    {
+      "id": "AC-005",
+      "description": "No horizontal overflow on any viewport",
+      "status": "pass",
+      "evidence": "Build passes. No fixed-width elements outside of the controlled breakpoint widths."
+    },
+    {
+      "id": "AC-006",
+      "description": "Drawer closes when backdrop tapped or group selected",
+      "status": "pass",
+      "evidence": "Backdrop onClick calls setDrawerOpen(false). GroupManager onGroupSelect calls setDrawerOpen(false)."
+    }
+  ],
+  "build": {
+    "command": "make build",
+    "result": "pass",
+    "output": "Generating static pages (5/5), Exporting (2/2)"
+  }
+}
