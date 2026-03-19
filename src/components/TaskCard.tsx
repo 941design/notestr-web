@@ -12,6 +12,7 @@ interface TaskCardProps {
   onAssign: (taskId: string, assignee: string | null) => void;
   onDelete: (taskId: string) => void;
   currentUserPubkey: string | null;
+  isDetached?: boolean;
 }
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
@@ -45,6 +46,7 @@ export function TaskCard({
   onAssign,
   onDelete,
   currentUserPubkey,
+  isDetached = false,
 }: TaskCardProps) {
   const nextStatus = getNextStatus(task.status);
   const isAssignedToMe =

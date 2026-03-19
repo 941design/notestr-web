@@ -1,0 +1,59 @@
+{
+  "created_at": "2026-03-19T00:00:00Z",
+  "key_files": [
+    { "path": "app/page.tsx", "lines": "54-58, 230, 417, 489-495, 526-528", "relevance": "Top-level state owner: pubkey, signer, selectedGroupId; gates authenticated UI; passes currentUserPubkey to Board", "source": "architecture" },
+    { "path": "src/marmot/client.tsx", "lines": "27-38, 195, 210-217, 226-236", "relevance": "MarmotProvider context: exposes pubkey, groups, client; useGroup hook filters by idStr; re-inits on signer change", "source": "architecture" },
+    { "path": "src/components/GroupManager.tsx", "lines": "35, 50-97, 187-198, 349-372", "relevance": "Group sidebar: calls getGroupMembers for selected group, renders member list, leave button with AlertDialog confirmation", "source": "similar-features" },
+    { "path": "src/components/Board.tsx", "lines": "37-38, 99-150, 207, 284-306", "relevance": "Task board: consumes TaskStoreContext, renders columns with data-column, delete confirmation AlertDialog, loading skeleton", "source": "similar-features" },
+    { "path": "src/components/TaskCard.tsx", "lines": "14, 42, 100-121", "relevance": "Task card: receives currentUserPubkey as prop, conditionally renders assign/unassign buttons based on pubkey match", "source": "similar-features" },
+    { "path": "src/store/task-store.tsx", "lines": "23-28, 34, 43-59, 91-115, 126-133", "relevance": "TaskStoreProvider: loads events from IndexedDB by groupId, dispatch applies optimistically then sends to MLS (no-op if group undefined)", "source": "architecture" },
+    { "path": "src/store/persistence.ts", "lines": "4-8, 34", "relevance": "IndexedDB event log keyed by groupId only (not pubkey-scoped)", "source": "architecture" },
+    { "path": "src/marmot/device-sync.ts", "lines": "40-44, 353, 410, 457", "relevance": "groupHasMember() helper: boolean membership check using getGroupMembers; useDeviceSync hook lifecycle", "source": "similar-features" },
+    { "path": "src/marmot/storage.ts", "lines": "25, 57-63, 108", "relevance": "IndexedDB store factory: all stores identity-blind (no pubkey prefix)", "source": "architecture" },
+    { "path": "src/components/ui/alert-dialog.tsx", "lines": "7", "relevance": "Radix AlertDialog primitive: existing modal/overlay infrastructure for confirmations", "source": "similar-features" },
+    { "path": "src/components/ui/dialog.tsx", "lines": "8", "relevance": "Radix Dialog primitive: used in NpubQrModal, available for overlay patterns", "source": "similar-features" },
+    { "path": "src/components/ui/button.tsx", "lines": "8", "relevance": "Button disabled state: disabled:pointer-events-none disabled:opacity-50 via Tailwind", "source": "testing-and-conventions" },
+    { "path": "src/lib/nostr.ts", "lines": "7-9, 202, 209", "relevance": "Auth localStorage keys (identity-blind); hexToNpub utility", "source": "architecture" }
+  ],
+  "patterns": [
+    { "name": "Null-check top-level gate", "description": "if (!pubkey) return <ConnectScreen/> gates entire authenticated UI", "reference": "app/page.tsx:230" },
+    { "name": "Prop-drilled pubkey", "description": "currentUserPubkey flows Page → Board → TaskCard as explicit props", "reference": "app/page.tsx:527" },
+    { "name": "Context pubkey", "description": "selfPubkey available via useMarmot().pubkey in any component under MarmotProvider", "reference": "src/components/GroupManager.tsx:35" },
+    { "name": "groupHasMember helper", "description": "Boolean membership check using getGroupMembers(group.state).some()", "reference": "src/marmot/device-sync.ts:40-44" },
+    { "name": "Conditional buttons", "description": "TaskCard renders action buttons only when pubkey conditions are met", "reference": "src/components/TaskCard.tsx:100-121" },
+    { "name": "AlertDialog confirmation", "description": "Radix AlertDialog with open={pendingState !== null} for destructive actions", "reference": "src/components/GroupManager.tsx:349-372" },
+    { "name": "Loading skeleton", "description": "Board renders full skeleton UI with animate-pulse when loading", "reference": "src/components/Board.tsx:99-150" },
+    { "name": "Cancelled-flag pattern", "description": "Async useEffect handlers use let cancelled = false guard", "reference": "src/marmot/client.tsx:73" }
+  ],
+  "similar_features": [
+    { "name": "Conditional button rendering in TaskCard", "description": "Assign/unassign buttons shown only when pubkey matches/doesn't match assignee", "reference": "src/components/TaskCard.tsx:100-121" },
+    { "name": "Leave group confirmation", "description": "AlertDialog modal for destructive leave action with pending state management", "reference": "src/components/GroupManager.tsx:349-372" },
+    { "name": "Mobile drawer backdrop", "description": "fixed inset-0 z-20 bg-black/50 overlay div as click-catcher", "reference": "app/page.tsx:452-458" }
+  ],
+  "architecture": {
+    "context_hierarchy": "ThemeProvider → Page (pubkey, selectedGroupId) → MarmotProvider (client, groups, signer, pubkey) → [GroupManager, TaskStoreProvider → Board]",
+    "identity_boundary": "Pubkey lives in Page state, passed as prop to MarmotProvider. MarmotProvider only renders when pubkey is non-null.",
+    "storage_namespacing": "All IndexedDB stores and localStorage keys are identity-blind — no pubkey prefix. Two identities on same browser share same group-state and task event logs.",
+    "group_selection_flow": "GroupManager lifts selection to Page → Page stores in state + localStorage → Page passes groupId to TaskStoreProvider → TaskStoreProvider loads events from IndexedDB"
+  },
+  "extension_points": [
+    "MarmotContext can be extended to expose detachedGroupIds Set",
+    "GroupManager already has members state per selected group; can compute isDetached per group",
+    "Board receives currentUserPubkey as prop; can also receive isDetached boolean",
+    "TaskStoreProvider dispatch can be wrapped to no-op when detached"
+  ],
+  "testing": {
+    "framework": "@playwright/test",
+    "e2e_config": "playwright.config.ts, baseURL http://localhost:3100",
+    "fixtures": "e2e/fixtures/bunker.mjs (single keypair), e2e/fixtures/auth-helper.ts, e2e/fixtures/ndk-client.ts",
+    "existing_tests": "e2e/tests/auth.spec.ts, e2e/tests/groups.spec.ts, e2e/tests/tasks.spec.ts",
+    "data_testids": "pubkey-chip, disconnect-button, data-column={status}, group-leave-btn, task-delete-btn"
+  },
+  "conventions": [
+    "Tailwind CSS v4 only, no CSS modules",
+    "cn() for conditional class merging",
+    "data-testid on interactive elements for E2E",
+    "idb-keyval via createKVStore for all IndexedDB access",
+    "PascalCase React components, camelCase utilities"
+  ]
+}

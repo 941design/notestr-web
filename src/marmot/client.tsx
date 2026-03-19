@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -20,6 +21,7 @@ import type { EventSigner } from "applesauce-core";
 import { createKVStore } from "./storage";
 import { NdkNetworkAdapter } from "./network";
 import { useDeviceSync } from "./device-sync";
+import { computeDetachedGroupIds } from "./detached-groups";
 
 import type { MarmotGroup } from "@internet-privacy/marmot-ts";
 import { DEFAULT_RELAYS, NDK_CONNECT_TIMEOUT_MS } from "../config/relays";
@@ -33,6 +35,7 @@ interface MarmotContextValue {
   loading: boolean;
   error: Error | null;
   discoverable: boolean;
+  detachedGroupIds: Set<string>;
 }
 
 const MarmotContext = createContext<MarmotContextValue>({
@@ -44,6 +47,7 @@ const MarmotContext = createContext<MarmotContextValue>({
   loading: true,
   error: null,
   discoverable: false,
+  detachedGroupIds: new Set(),
 });
 
 interface MarmotProviderProps {
@@ -209,11 +213,17 @@ export function MarmotProvider({
 
   useDeviceSync(state.client, pubkey, relays, signer);
 
+  const detachedGroupIds = useMemo(
+    () => computeDetachedGroupIds(state.groups, pubkey),
+    [state.groups, pubkey],
+  );
+
   const contextValue: MarmotContextValue = {
     ...state,
     signer,
     pubkey,
     relays,
+    detachedGroupIds,
   };
 
   return (
@@ -234,3 +244,4 @@ export function useGroup(
   if (!groupId) return undefined;
   return groups.find((g) => g.idStr === groupId);
 }
+

@@ -1,0 +1,84 @@
+{
+  "story_id": "01",
+  "status": "done",
+  "created_at": "2026-03-19T00:00:00Z",
+  "updated_at": "2026-03-19T00:00:00Z",
+  "completed_at": "2026-03-19T00:00:00Z",
+
+  "implementation": {
+    "status": "done",
+    "started_at": "2026-03-19T00:00:00Z",
+    "completed_at": "2026-03-19T00:00:00Z",
+    "architect_session_id": null,
+    "files_created": [
+      "src/marmot/detached-groups.ts",
+      "src/marmot/client.test.ts"
+    ],
+    "files_modified": [
+      "src/marmot/client.tsx",
+      "src/components/Board.tsx",
+      "src/components/TaskCard.tsx",
+      "app/page.tsx"
+    ],
+    "mocks_introduced": []
+  },
+
+  "verification_rounds": [
+    {
+      "round": 1,
+      "timestamp": "2026-03-19T00:00:00Z",
+      "results": [
+        { "question_id": "VQ-01-001", "result": "pass", "evidence": { "findings": "getGroupMembers imported in detached-groups.ts, computeDetachedGroupIds exported, called via useMemo in client.tsx, detachedGroupIds in interface and contextValue" } },
+        { "question_id": "VQ-01-002", "result": "pass", "evidence": { "findings": "isDetached in BoardProps, destructured with default false, passed to all TaskCard renders" } },
+        { "question_id": "VQ-01-003", "result": "pass", "evidence": { "findings": "isDetached in TaskCardProps, destructured with default false" } },
+        { "question_id": "VQ-01-004", "result": "pass", "evidence": { "findings": "DetachedBoard wrapper uses useMarmot() for detachedGroupIds, computes isDetached, passes to Board" } },
+        { "question_id": "VQ-01-005", "result": "pass", "evidence": { "findings": "Null state guard present, dependency array correct" } },
+        { "question_id": "VQ-01-REGR", "result": "pass", "evidence": { "findings": "110 E2E tests pass (same as baseline), 29 unit tests pass" } }
+      ],
+      "summary": { "total": 6, "passed": 6, "failed": 0, "partial": 0 },
+      "verification_passed": true,
+      "test_gate": {
+        "ran_at": "2026-03-19T00:00:00Z",
+        "command": "npx vitest run && make e2e",
+        "passed": true,
+        "total_tests": 185,
+        "passed_tests": 139,
+        "failed_tests": 0,
+        "new_failures": 0,
+        "pre_existing_failures": 25,
+        "failures": [],
+        "evidence": "29/29 unit tests pass. 110/156 E2E pass — 0 new failures vs baseline (25 pre-existing failures documented in baseline.json, identical set)",
+        "e2e_tests": {
+          "ran_at": "2026-03-19T00:00:00Z",
+          "command": "make e2e",
+          "passed": true,
+          "total_tests": 156,
+          "passed_tests": 110,
+          "failed_tests": 0,
+          "new_failures": 0,
+          "pre_existing_failures": 25,
+          "test_files": ["e2e/tests/auth.spec.ts", "e2e/tests/groups.spec.ts", "e2e/tests/tasks.spec.ts"],
+          "evidence": "All core E2E tests pass. 0 new failures vs baseline. 25 pre-existing failures identical to baseline."
+        }
+      },
+      "codex_review": {
+        "ran_at": "2026-03-19T00:00:00Z",
+        "thread_id": "019d065e-c942-73e0-9ea0-e3367f9b8924",
+        "verdict": "pass",
+        "error": null,
+        "total_findings": 2,
+        "filtered_findings": 2,
+        "actionable_findings": 0,
+        "findings": [],
+        "filtered": [
+          "Board.tsx: isDetached prop has no effect (deferred to story 03)",
+          "TaskCard.tsx: isDetached prop unused (deferred to story 03)"
+        ]
+      },
+      "all_passed": true
+    }
+  ],
+  "remediation_attempts": [],
+  "escalation": null,
+  "final_outcome": "accepted"
+}

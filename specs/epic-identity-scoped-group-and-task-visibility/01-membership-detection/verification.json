@@ -1,0 +1,56 @@
+{
+  "created_at": "2026-03-19T00:00:00Z",
+  "story_id": "01",
+  "questions": [
+    {
+      "id": "VQ-01-001",
+      "category": "SPEC",
+      "question": "Does MarmotProvider compute detachedGroupIds using getGroupMembers() and expose it via MarmotContext?",
+      "actionable_check": "Read src/marmot/client.tsx. Verify getGroupMembers is imported, useMemo computes detachedGroupIds from state.groups and pubkey, and it's included in contextValue.",
+      "evidence_required": ["import statement for getGroupMembers", "useMemo computation with getGroupMembers call", "detachedGroupIds in MarmotContextValue interface", "detachedGroupIds in contextValue object"],
+      "pass_criteria": "All four elements present: import, useMemo, interface field, context value inclusion."
+    },
+    {
+      "id": "VQ-01-002",
+      "category": "SPEC",
+      "question": "Does Board accept an isDetached prop and pass it to all TaskCard instances?",
+      "actionable_check": "Read src/components/Board.tsx. Verify isDetached is in BoardProps interface, destructured with default false, and passed to every TaskCard render.",
+      "evidence_required": ["isDetached in BoardProps interface", "destructured in function signature", "passed to TaskCard in mobile render", "passed to TaskCard in desktop render"],
+      "pass_criteria": "isDetached prop defined, accepted with default=false, passed to all TaskCard instances."
+    },
+    {
+      "id": "VQ-01-003",
+      "category": "SPEC",
+      "question": "Does TaskCard accept an isDetached prop in its interface?",
+      "actionable_check": "Read src/components/TaskCard.tsx. Verify isDetached is in TaskCardProps and destructured in the function signature.",
+      "evidence_required": ["isDetached in TaskCardProps interface", "destructured in function signature with default false"],
+      "pass_criteria": "isDetached prop defined and accepted."
+    },
+    {
+      "id": "VQ-01-004",
+      "category": "SPEC",
+      "question": "Does page.tsx correctly derive isDetached from MarmotContext and pass it to Board?",
+      "actionable_check": "Read app/page.tsx. Verify DetachedBoard wrapper component uses useMarmot() to get detachedGroupIds, computes isDetached from groupId, and passes it to Board.",
+      "evidence_required": ["DetachedBoard component definition", "useMarmot() call", "detachedGroupIds.has(groupId) check", "isDetached prop passed to Board"],
+      "pass_criteria": "DetachedBoard wrapper correctly bridges MarmotContext to Board's isDetached prop."
+    },
+    {
+      "id": "VQ-01-005",
+      "category": "QUALITY",
+      "question": "Does the detachedGroupIds computation correctly handle edge cases (no state, empty groups)?",
+      "actionable_check": "Read the useMemo in client.tsx. Verify it skips groups with no state (if (!group.state) continue) and handles empty groups array.",
+      "evidence_required": ["null state guard in useMemo loop", "dependency array includes state.groups and pubkey"],
+      "pass_criteria": "Groups without state are skipped, dependency array is correct."
+    }
+  ],
+  "mandatory_questions": [
+    {
+      "id": "VQ-01-REGR",
+      "category": "REGRESSION",
+      "question": "Do all existing E2E tests pass without regression?",
+      "actionable_check": "Run make e2e and verify the same tests pass as in baseline (110 passing).",
+      "evidence_required": ["E2E test output showing pass count"],
+      "pass_criteria": "At least 110 tests pass, no new failures compared to baseline."
+    }
+  ]
+}

@@ -13,7 +13,7 @@ import {
   setSavedAuthMethod,
 } from "@/lib/nostr";
 import { QRCodeSVG } from "qrcode.react";
-import { MarmotProvider } from "@/marmot/client";
+import { MarmotProvider, useMarmot } from "@/marmot/client";
 import { TaskStoreProvider } from "@/store/task-store";
 import { ConnectionStatus } from "@/components/ConnectionStatus";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -49,6 +49,12 @@ function loadLastGroup(): { id: string; name: string } | null {
 }
 function clearLastGroup() {
   try { localStorage.removeItem(LAST_GROUP_KEY); } catch {}
+}
+
+function DetachedBoard({ groupId, pubkey }: { groupId: string; pubkey: string }) {
+  const { detachedGroupIds } = useMarmot();
+  const isDetached = detachedGroupIds.has(groupId);
+  return <Board currentUserPubkey={pubkey} isDetached={isDetached} />;
 }
 
 export default function Page() {
@@ -524,7 +530,7 @@ export default function Page() {
           <main className="flex-1 overflow-y-auto overscroll-contain p-4 md:p-6" style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}>
             {selectedGroupId ? (
               <TaskStoreProvider groupId={selectedGroupId}>
-                <Board currentUserPubkey={pubkey} />
+                <DetachedBoard groupId={selectedGroupId} pubkey={pubkey} />
               </TaskStoreProvider>
             ) : (
               <div className="flex h-full min-h-[300px] flex-col items-center justify-center gap-4 text-center">

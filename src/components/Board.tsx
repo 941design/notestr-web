@@ -19,6 +19,7 @@ import {
 
 interface BoardProps {
   currentUserPubkey: string | null;
+  isDetached?: boolean;
 }
 
 const COLUMNS: { status: TaskStatus; label: string }[] = [
@@ -34,7 +35,7 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
   cancelled: "Cancelled",
 };
 
-export function Board({ currentUserPubkey }: BoardProps) {
+export function Board({ currentUserPubkey, isDetached = false }: BoardProps) {
   const { tasks, dispatch, loading } = useTaskStore();
   const [modalOpen, setModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TaskStatus>("open");
@@ -222,6 +223,7 @@ export function Board({ currentUserPubkey }: BoardProps) {
                     onAssign={handleAssign}
                     onDelete={handleDelete}
                     currentUserPubkey={currentUserPubkey}
+                    isDetached={isDetached}
                   />
                 ))}
                 {columnTasks.length === 0 && (
@@ -262,6 +264,7 @@ export function Board({ currentUserPubkey }: BoardProps) {
                     onAssign={handleAssign}
                     onDelete={handleDelete}
                     currentUserPubkey={currentUserPubkey}
+                    isDetached={isDetached}
                   />
                 ))}
                 {columnTasks.length === 0 && (

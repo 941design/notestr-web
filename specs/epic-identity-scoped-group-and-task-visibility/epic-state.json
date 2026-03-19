@@ -1,0 +1,16 @@
+{
+  "epic_name": "identity-scoped-group-and-task-visibility",
+  "created_at": "2026-03-19T00:00:00Z",
+  "updated_at": "2026-03-19T00:00:00Z",
+  "status": "in_progress",
+  "phase": "STORY_BASELINE",
+  "current_story": "01",
+  "completed_stories": [],
+  "blocked_stories": [],
+  "escalated_stories": [],
+  "phase_history": [
+    {"phase": "SPEC_VALIDATED", "timestamp": "2026-03-19T00:00:00Z", "trigger": "validation_passed"},
+    {"phase": "STORIES_DEFINED", "timestamp": "2026-03-19T00:00:00Z", "trigger": "stories_created"},
+    {"phase": "STORY_BASELINE", "timestamp": "2026-03-19T00:00:00Z", "trigger": "story_01_started"}
+  ]
+}

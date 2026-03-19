@@ -1,0 +1,259 @@
+{
+  "epic_name": "identity-scoped-group-and-task-visibility",
+  "created_at": "2026-03-19T00:00:00Z",
+  "updated_at": "2026-03-19T00:00:00Z",
+  "total_stories": 4,
+
+  "stories": [
+    {
+      "id": "01",
+      "name": "membership-detection",
+      "title": "Compute detachedGroupIds and thread isDetached prop",
+      "description": "Add the membership detection logic that produces a Set<string> of group IDs where the current pubkey is not a member. Compute this in GroupManager (or page.tsx) using getGroupMembers() and groupHasMember() patterns already present in device-sync.ts. Thread an isDetached boolean prop from GroupManager down to Board and TaskCard so later stories can consume it without re-deriving the check.",
+      "acceptance_criteria": ["AC-001"],
+      "scope": {
+        "includes": [
+          "detachedGroupIds useMemo in GroupManager.tsx (or page.tsx) using getGroupMembers(group.state) compared against selfPubkey",
+          "isDetached boolean prop added to Board component interface",
+          "isDetached boolean prop added to TaskCard component interface",
+          "isDetached derived from detachedGroupIds and selectedGroupId and passed from call site to Board",
+          "isDetached passed from Board down to TaskCard render calls"
+        ],
+        "excludes": [
+          "Any visual changes to sidebar or board (story 02 and 03)",
+          "Overlay component (story 03)",
+          "E2E tests for the full detached behaviour (story 04)"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "e2e_test_plan": {
+        "scenarios": [
+          {
+            "name": "isDetached-prop-wired",
+            "description": "Smoke check: app loads without runtime errors after the prop is threaded. No visual assertion yet — this is covered by later story E2E tests.",
+            "user_steps": [
+              "Run make e2e — the existing auth, groups, and tasks E2E suites must continue to pass without regression"
+            ],
+            "docker_services": ["strfry (docker-compose.e2e.yml)"],
+            "assertions": [
+              "Existing e2e/tests/auth.spec.ts, groups.spec.ts, and tasks.spec.ts pass with no failures"
+            ]
+          }
+        ],
+        "playwright_file": "e2e/tests/identity-visibility.spec.ts"
+      },
+      "status": "pending",
+      "notes": "Foundation story. Board and TaskCard receive isDetached but do nothing with it yet — the prop addition is the deliverable. All existing tests must remain green."
+    },
+    {
+      "id": "02",
+      "name": "sidebar-detached-styling",
+      "title": "Sidebar visual treatment for detached groups",
+      "description": "Apply the detached visual treatment to group list items in GroupManager.tsx: add opacity-50 and data-detached='true' to the <li> element when the group is detached; override the group name click handler to show an inline no-op (no onGroupSelect call); keep the leave button fully functional; hide the invite form when the selected group is detached; keep the member list visible.",
+      "acceptance_criteria": ["AC-002", "AC-003", "AC-004", "AC-012", "AC-013"],
+      "scope": {
+        "includes": [
+          "GroupManager.tsx: apply cn('opacity-50') and data-detached='true' attribute on detached <li> elements",
+          "GroupManager.tsx: replace group name onClick with a no-op (or an inline overlay message) when group is detached",
+          "GroupManager.tsx: leave button (group-leave-btn) click handler unchanged for detached groups",
+          "GroupManager.tsx: hide invite form section when selected group is detached (conditional render gated on isDetached of selected group)",
+          "GroupManager.tsx: member list section (members-section) remains rendered when selected group is detached",
+          "detachedGroupIds lookup for each group in the groups.map() render"
+        ],
+        "excludes": [
+          "Board overlay (story 03)",
+          "TaskCard action blocking (story 03)",
+          "E2E multi-identity test (story 04)"
+        ]
+      },
+      "complexity": "medium",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "e2e_test_plan": {
+        "scenarios": [
+          {
+            "name": "detached-sidebar-styling",
+            "description": "User A creates a group, disconnects. User B authenticates. The group list item should have data-detached='true' and opacity-50 class. Clicking the group name should not select the group.",
+            "user_steps": [
+              "clearAppState(page)",
+              "authenticateViaBunker(page) — User A",
+              "Create group 'Alpha' via sidebar form",
+              "Wait for 'Alpha' in sidebar",
+              "Click [data-testid='disconnect-button']",
+              "authenticateAsBunkerB(page) — User B",
+              "Inspect <li> for 'Alpha'",
+              "Click the 'Alpha' group name span"
+            ],
+            "docker_services": ["strfry (docker-compose.e2e.yml)"],
+            "assertions": [
+              "page.locator('[data-detached=\"true\"]').first() is visible",
+              "page.locator('[data-detached=\"true\"]').first() has class opacity-50",
+              "No [data-column='open'] element visible (group was not selected)",
+              "No [data-testid='detached-overlay'] visible (board overlay is story 03)"
+            ]
+          },
+          {
+            "name": "detached-leave-works",
+            "description": "User B clicks leave on a detached group and confirms — group is removed from sidebar.",
+            "user_steps": [
+              "Continue from detached-sidebar-styling state (User B authenticated, 'Alpha' detached)",
+              "Click [data-testid='group-leave-btn'] on 'Alpha'",
+              "Confirm in AlertDialog"
+            ],
+            "docker_services": ["strfry (docker-compose.e2e.yml)"],
+            "assertions": [
+              "'Alpha' is no longer visible in sidebar within 15 seconds"
+            ]
+          }
+        ],
+        "playwright_file": "e2e/tests/identity-visibility.spec.ts"
+      },
+      "status": "pending",
+      "notes": "GroupManager already has the detachedGroupIds set from story 01. This story only adds conditional class/attribute application and click-handler override. The leave button path is intentionally unchanged."
+    },
+    {
+      "id": "03",
+      "name": "board-task-detached-blocking",
+      "title": "Board overlay and task action blocking for detached groups",
+      "description": "When isDetached is true for the selected group, Board renders a detached-overlay element covering the task columns instead of showing the interactive board. All task action buttons (Add Task, delete, status change, assign/unassign) are hidden. TaskCard receives isDetached and conditionally omits its action buttons.",
+      "acceptance_criteria": ["AC-005", "AC-006", "AC-007", "AC-008", "AC-009", "AC-010", "AC-011"],
+      "scope": {
+        "includes": [
+          "Board.tsx: conditional render — when isDetached is true, replace task columns with a div[data-testid='detached-overlay'] containing the message text",
+          "Board.tsx: 'Add Task' button hidden when isDetached is true",
+          "Board.tsx: CreateTaskModal not rendered when isDetached is true",
+          "Board.tsx: handleCreate, handleStatusChange, handleDelete, handleAssign not reachable when isDetached is true (buttons absent)",
+          "TaskCard.tsx: when isDetached is true, omit task-delete-btn, the 'Move to ...' button, 'Assign to me' button, and 'Unassign' button",
+          "Overlay message text: 'This group belongs to another Nostr identity. Connect with the original identity to interact with this group.'"
+        ],
+        "excludes": [
+          "Sidebar visual treatment (story 02)",
+          "Membership detection logic (story 01)",
+          "E2E multi-identity test (story 04)"
+        ]
+      },
+      "complexity": "medium",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "e2e_test_plan": {
+        "scenarios": [
+          {
+            "name": "detached-board-overlay",
+            "description": "User A creates a group, selects it (setting lastGroup), disconnects. User B authenticates — the board auto-selects the lastGroup which is detached. The detached-overlay is shown and Add Task button is absent.",
+            "user_steps": [
+              "clearAppState(page)",
+              "authenticateViaBunker(page) — User A",
+              "Create group 'Beta' via sidebar form",
+              "Click on 'Beta' in sidebar to select it (sets lastGroup in localStorage)",
+              "Click [data-testid='disconnect-button']",
+              "authenticateAsBunkerB(page) — User B"
+            ],
+            "docker_services": ["strfry (docker-compose.e2e.yml)"],
+            "assertions": [
+              "page.locator('[data-testid=\"detached-overlay\"]') is visible",
+              "page.locator('[data-testid=\"detached-overlay\"]').toContainText('different identity')",
+              "page.locator('button', { hasText: 'Add Task' }) is not visible"
+            ]
+          }
+        ],
+        "playwright_file": "e2e/tests/identity-visibility.spec.ts"
+      },
+      "status": "pending",
+      "notes": "Board receives isDetached from story 01's prop threading. The overlay is a simple conditional render replacing the column grid — not a modal or dialog. TaskCard receives isDetached via its existing props interface extended in story 01."
+    },
+    {
+      "id": "04",
+      "name": "e2e-identity-switch",
+      "title": "E2E test: switching to member identity restores full interactivity",
+      "description": "Write the multi-identity E2E test that proves AC-014: User A creates a group and invites User B; User A disconnects; User B authenticates; the group is NOT detached for User B (full board access). This story also acts as the integration test that exercises the full feature end-to-end and validates all prior stories work together.",
+      "acceptance_criteria": ["AC-014"],
+      "scope": {
+        "includes": [
+          "e2e/tests/identity-visibility.spec.ts: 'identity-switch-restores' test scenario",
+          "Using auth-helper-b.ts authenticateAsBunkerB() and USER_B_NPUB for invite",
+          "Wait logic for MLS welcome message processing after invite (may need polling for group to appear for User B)",
+          "Assertions: no data-detached='true' on the group, data-column='open' visible, no detached-overlay"
+        ],
+        "excludes": [
+          "New fixture infrastructure (Bunker B already exists in global-setup.ts and auth-helper-b.ts)",
+          "Any implementation changes (stories 01-03 deliver the implementation)"
+        ]
+      },
+      "complexity": "medium",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [
+        {
+          "fixture_id": "FIXTURE-04-001",
+          "description": "Bunker B — second NIP-46 signer using deterministic private key 3ad635dc..., already spawned in global-setup.ts as bunker-B",
+          "interface": "NIP-46 bunker:// URL at ws://localhost:7777",
+          "reason": "Permanent E2E test infrastructure for second identity — not replaced by a real implementation",
+          "permanent": true
+        }
+      ],
+      "e2e_test_plan": {
+        "scenarios": [
+          {
+            "name": "identity-switch-restores",
+            "description": "User A creates group 'Gamma' and invites User B by pasting USER_B_NPUB. After invite succeeds, User A disconnects. User B authenticates and the group should appear fully interactive (not detached).",
+            "user_steps": [
+              "clearAppState(page)",
+              "authenticateViaBunker(page) — User A",
+              "Create group 'Gamma'",
+              "Click 'Gamma' to select it",
+              "Paste USER_B_NPUB into invite input, click Invite",
+              "Wait for invite success (error text absent, input cleared)",
+              "Click [data-testid='disconnect-button']",
+              "Wait for connect screen",
+              "authenticateAsBunkerB(page) — User B",
+              "Wait for 'Gamma' to appear in sidebar (User B may need to receive welcome event)",
+              "Click 'Gamma' group name span"
+            ],
+            "docker_services": ["strfry (docker-compose.e2e.yml)"],
+            "assertions": [
+              "page.locator('[data-detached=\"true\"]') is not visible (Gamma not detached)",
+              "page.locator('[data-column=\"open\"]').first() is visible",
+              "page.locator('[data-testid=\"detached-overlay\"]') is not visible",
+              "page.locator('button', { hasText: 'Add Task' }) is visible"
+            ]
+          }
+        ],
+        "playwright_file": "e2e/tests/identity-visibility.spec.ts"
+      },
+      "status": "pending",
+      "notes": "Bunker B is already wired in global-setup.ts (spawned as bunker-B) and auth-helper-b.ts exists. USER_B_NPUB is exported from auth-helper-b.ts. The invite flow triggers a NIP-44 snapshot publish (existing device-sync code) and an MLS welcome — the test may need a generous timeout (30-45s) for User B to receive and process the welcome event before the group appears in the sidebar."
+    }
+  ],
+
+  "story_order": ["01", "02", "03", "04"],
+
+  "seams": [
+    {
+      "data": "isDetached boolean (derived from detachedGroupIds Set)",
+      "source": { "story": "01", "artifact": "detachedGroupIds useMemo in GroupManager.tsx" },
+      "intermediaries": [],
+      "destination": { "story": "02", "artifact": "GroupManager.tsx <li> render and click handler" }
+    },
+    {
+      "data": "isDetached boolean prop",
+      "source": { "story": "01", "artifact": "isDetached prop on Board component" },
+      "intermediaries": [],
+      "destination": { "story": "03", "artifact": "Board.tsx conditional render of detached-overlay" }
+    },
+    {
+      "data": "isDetached boolean prop",
+      "source": { "story": "01", "artifact": "isDetached prop on TaskCard component" },
+      "intermediaries": [],
+      "destination": { "story": "03", "artifact": "TaskCard.tsx conditional button rendering" }
+    }
+  ],
+
+  "dependency_notes": "Stories 02 and 03 both consume the isDetached prop added in story 01. They are logically independent of each other (sidebar vs. board) and can be implemented and verified in isolation once story 01's props are in place. Story 04 is a pure E2E test with no implementation changes — it depends on stories 01-03 being deployed but can be written in parallel and run after those are complete.",
+
+  "mock_resolution_plan": "No temporary mocks introduced. Stories 02 and 03 both consume the isDetached prop from story 01 directly via the React component tree — no mocking needed between stories. Story 04 uses only permanent test fixtures (Bunker B) that already exist in the codebase."
+}
