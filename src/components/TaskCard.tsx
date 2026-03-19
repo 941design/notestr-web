@@ -49,7 +49,7 @@ export function TaskCard({
     currentUserPubkey != null && task.assignee === currentUserPubkey;
 
   return (
-    <div className="rounded-lg border bg-background p-3 transition-colors hover:border-muted-foreground">
+    <div className="rounded-lg border bg-background p-3 shadow-none transition-colors hover:border-muted-foreground dark:shadow-sm">
       <div className="mb-1.5 flex items-start justify-between gap-2">
         <h4 className="min-w-0 flex-1 text-sm font-semibold leading-snug">
           {task.title}
@@ -60,10 +60,8 @@ export function TaskCard({
       </div>
 
       {task.description && (
-        <p className="mb-2 text-xs leading-relaxed text-muted-foreground">
-          {task.description.length > 120
-            ? task.description.slice(0, 120) + "..."
-            : task.description}
+        <p className="mb-2 line-clamp-2 overflow-hidden text-xs leading-relaxed text-muted-foreground">
+          {task.description}
         </p>
       )}
 
@@ -76,18 +74,21 @@ export function TaskCard({
       <div className="flex flex-wrap gap-1.5">
         {nextStatus && (
           <Button
-            variant="outline"
+            variant="default"
             size="xs"
+            className="touch-target"
             onClick={() => onStatusChange(task.id, nextStatus)}
+            aria-label={`Move to ${STATUS_LABELS[nextStatus]}`}
           >
             <ArrowRight className="size-3" />
-            {STATUS_LABELS[nextStatus]}
+            Move to {STATUS_LABELS[nextStatus]}
           </Button>
         )}
         {currentUserPubkey && !isAssignedToMe && (
           <Button
             variant="outline"
             size="xs"
+            className="touch-target"
             onClick={() => onAssign(task.id, currentUserPubkey)}
           >
             <UserCheck className="size-3" />
@@ -98,6 +99,7 @@ export function TaskCard({
           <Button
             variant="outline"
             size="xs"
+            className="touch-target"
             onClick={() => onAssign(task.id, null)}
           >
             <UserX className="size-3" />

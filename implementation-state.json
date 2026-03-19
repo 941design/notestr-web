@@ -1,0 +1,87 @@
+{
+  "started_at": "2026-03-18T00:00:00Z",
+  "updated_at": "2026-03-18T00:00:00Z",
+  "status": "done",
+  "completed_at": "2026-03-18T00:12:57Z",
+  "source": "specs/design-audit.md",
+  "features": [
+    {
+      "id": "01",
+      "name": "responsive-layout",
+      "source": "specs/design-audit.md#1",
+      "description": "Three-tier responsive layout: mobile drawer+tabs, tablet icon rail, desktop unchanged",
+      "issues": [1],
+      "priority": "P0",
+      "effort": "Large",
+      "status": "done",
+      "started_at": "2026-03-18T00:00:00Z",
+      "completed_at": "2026-03-18T00:03:06Z",
+      "agent_task_id": "aaa6570a800974b42",
+      "error": null
+    },
+    {
+      "id": "02",
+      "name": "touch-and-pwa",
+      "source": "specs/design-audit.md#2,5,15",
+      "description": "Touch target sizing, safe area insets, overscroll-behavior",
+      "issues": [2, 5, 15],
+      "priority": "P0-P1",
+      "effort": "Small",
+      "status": "done",
+      "started_at": "2026-03-18T00:03:06Z",
+      "completed_at": "2026-03-18T00:05:46Z",
+      "agent_task_id": "ad471b258f82707ef",
+      "error": null
+    },
+    {
+      "id": "03",
+      "name": "aria-accessibility",
+      "source": "specs/design-audit.md#3,4",
+      "description": "ARIA landmarks on board and sidebar navigation",
+      "issues": [3, 4],
+      "priority": "P1",
+      "effort": "Medium",
+      "status": "done",
+      "started_at": "2026-03-18T00:05:46Z",
+      "completed_at": "2026-03-18T00:08:26Z",
+      "agent_task_id": "a75c29973d3b39c63",
+      "error": null
+    },
+    {
+      "id": "04",
+      "name": "visual-polish",
+      "source": "specs/design-audit.md#6,7,9,13",
+      "description": "Dark mode card contrast, header breadcrumb, empty state, loading skeletons",
+      "issues": [6, 7, 9, 13],
+      "priority": "P2",
+      "effort": "Medium",
+      "status": "done",
+      "started_at": "2026-03-18T00:08:26Z",
+      "completed_at": "2026-03-18T00:10:52Z",
+      "agent_task_id": "a7ae1cb18ac5aae1c",
+      "error": null
+    },
+    {
+      "id": "05",
+      "name": "minor-fixes",
+      "source": "specs/design-audit.md#8,10,11,12,14",
+      "description": "Connecting state, action buttons, Link icon rename, system font, CSS line-clamp",
+      "issues": [8, 10, 11, 12, 14],
+      "priority": "P3",
+      "effort": "Small",
+      "status": "done",
+      "started_at": "2026-03-18T00:10:52Z",
+      "completed_at": "2026-03-18T00:12:57Z",
+      "agent_task_id": "a91317c1d959d9dd2",
+      "error": null
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "pending": 0,
+    "in_progress": 0,
+    "done": 5,
+    "escalated": 0,
+    "error": 0
+  }
+}

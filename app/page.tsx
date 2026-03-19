@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { QrCode, Key, Link, Loader2 } from "lucide-react";
+import { QrCode, Key, Link as LinkIcon, Loader2, Menu, X, Users, ChevronRight } from "lucide-react";
 import {
   getNip07Signer,
   connectBunker,
@@ -37,9 +37,13 @@ export default function Page() {
   const [signer, setSigner] = useState<EventSigner | null>(null);
   const [pubkey, setPubkey] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [selectedGroupName, setSelectedGroupName] = useState<string | null>(null);
   const [signerChecked, setSignerChecked] = useState(false);
+  const [connectingTooSlow, setConnectingTooSlow] = useState(false);
+  const [showSpinner, setShowSpinner] = useState(false);
   const [authMethod, setAuthMethod] = useState<AuthMethod>(null);
   const [isAndroid, setIsAndroid] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Bunker login state
   const [bunkerUrl, setBunkerUrl] = useState("");
@@ -58,6 +62,16 @@ export default function Page() {
   // On mount: try restoring NIP-46 session, then check NIP-07
   useEffect(() => {
     let cancelled = false;
+
+    // Show spinner only after 300ms to avoid flash on fast loads
+    const spinnerTimer = setTimeout(() => {
+      if (!cancelled) setShowSpinner(true);
+    }, 300);
+
+    // Show "taking longer than expected" message after 5 seconds
+    const slowTimer = setTimeout(() => {
+      if (!cancelled) setConnectingTooSlow(true);
+    }, 5000);
 
     async function init() {
       if (hasNip46Session()) {
@@ -103,6 +117,8 @@ export default function Page() {
     init();
     return () => {
       cancelled = true;
+      clearTimeout(spinnerTimer);
+      clearTimeout(slowTimer);
     };
   }, []);
 
@@ -188,24 +204,49 @@ export default function Page() {
     setPubkey(null);
     setAuthMethod(null);
     setSelectedGroupId(null);
+    setSelectedGroupName(null);
   }, [authMethod]);
 
   // Not yet connected: show connect screen
   if (!pubkey) {
     return (
       <div className="flex min-h-screen flex-col bg-background text-foreground">
-        <header className="flex shrink-0 items-center justify-between border-b bg-card px-6 py-3">
+        <header className="flex shrink-0 items-center justify-between border-b bg-card px-6 py-3" style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top, 0px))" }}>
           <h1 className="text-xl font-bold tracking-tight text-primary">
             notestr
           </h1>
           <ThemeToggle />
         </header>
-        <main className="flex flex-1 items-center justify-center overflow-y-auto p-6">
+        <main className="flex flex-1 items-center justify-center overflow-y-auto p-6" style={{ paddingBottom: "calc(1.5rem + env(safe-area-inset-bottom, 0px))" }}>
           {!signerChecked ? (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" />
-              Connecting...
-            </div>
+            showSpinner ? (
+              <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="size-4 animate-spin" />
+                  <span>Checking for saved session...</span>
+                </div>
+                {connectingTooSlow && (
+                  <div className="flex flex-col items-center gap-2 text-center">
+                    <p className="text-sm text-muted-foreground">
+                      Taking longer than expected.
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        clearNip46Session();
+                        setSavedAuthMethod(null);
+                        setSignerChecked(true);
+                        setConnectingTooSlow(false);
+                        setShowSpinner(false);
+                      }}
+                    >
+                      Skip and sign in manually
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ) : null
           ) : (
             <div className="w-full max-w-md space-y-3 text-left">
               <div className="text-center">
@@ -240,19 +281,19 @@ export default function Page() {
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="flex items-center gap-2 text-sm">
-                    <Link className="size-4" />
+                    <LinkIcon className="size-4" />
                     Remote Signer
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <Tabs defaultValue="amber">
                     <TabsList variant="line" className="w-full">
-                      <TabsTrigger value="amber">
+                      <TabsTrigger value="amber" className="touch-target">
                         <QrCode className="size-3.5" />
                         Amber / QR Code
                       </TabsTrigger>
-                      <TabsTrigger value="bunker">
-                        <Link className="size-3.5" />
+                      <TabsTrigger value="bunker" className="touch-target">
+                        <LinkIcon className="size-3.5" />
                         bunker:// URL
                       </TabsTrigger>
                     </TabsList>
@@ -356,11 +397,29 @@ export default function Page() {
   return (
     <MarmotProvider signer={signer!} pubkey={pubkey}>
       <div className="flex min-h-screen flex-col bg-background text-foreground">
-        <header className="flex shrink-0 items-center justify-between border-b bg-card px-6 py-3">
-          <h1 className="text-xl font-bold tracking-tight text-primary">
-            notestr
-          </h1>
-          <div className="flex items-center gap-2">
+        <header className="flex shrink-0 items-center justify-between border-b bg-card px-4 py-3 md:px-6" style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top, 0px))" }}>
+          {/* Hamburger — visible only on mobile */}
+          <button
+            className="mr-2 flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent md:hidden"
+            aria-label={drawerOpen ? "Close menu" : "Open menu"}
+            onClick={() => setDrawerOpen((o) => !o)}
+          >
+            {drawerOpen ? <X className="size-5" /> : <Menu className="size-5" />}
+          </button>
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+            <h1 className="shrink-0 text-xl font-bold tracking-tight text-primary">
+              notestr
+            </h1>
+            {selectedGroupName && (
+              <>
+                <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                <span className="truncate text-sm font-medium text-foreground">
+                  {selectedGroupName}
+                </span>
+              </>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
             <ThemeToggle />
             <ConnectionStatus
               pubkey={pubkey}
@@ -370,25 +429,101 @@ export default function Page() {
           </div>
         </header>
         <div className="flex flex-1 overflow-hidden">
-          <aside className="w-[280px] shrink-0 overflow-y-auto border-r bg-card p-4">
-            <GroupManager
-              onGroupSelect={setSelectedGroupId}
-              selectedGroupId={selectedGroupId}
+          {/* Mobile drawer backdrop */}
+          {drawerOpen && (
+            <div
+              className="fixed inset-0 z-20 bg-black/50 md:hidden"
+              onClick={() => setDrawerOpen(false)}
+              aria-hidden="true"
             />
+          )}
+
+          {/* Sidebar — desktop: static 280px; tablet: icon rail 56px; mobile: overlay drawer */}
+          <aside
+            className={[
+              // Base: hidden on mobile unless drawer open
+              "fixed inset-y-0 left-0 z-30 flex flex-col overflow-y-auto overscroll-contain border-r bg-card transition-transform duration-200",
+              // Mobile: full-width drawer up to ~280px
+              "w-[280px]",
+              // Mobile open/closed
+              drawerOpen ? "translate-x-0" : "-translate-x-full",
+              // Tablet+: always visible as static element
+              "md:static md:translate-x-0 md:w-14 md:shrink-0",
+              // Desktop: full sidebar
+              "lg:w-[280px]",
+            ].join(" ")}
+          >
+            {/* Tablet icon rail — shown only at md breakpoint */}
+            <div className="hidden md:flex lg:hidden flex-col items-center gap-3 py-4">
+              {/* Rail is just a visual placeholder; clicking it will expand via overlay */}
+              <button
+                className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
+                aria-label="Expand sidebar"
+                onClick={() => setDrawerOpen(true)}
+              >
+                <Menu className="size-5" />
+              </button>
+            </div>
+
+            {/* Full sidebar content — shown on mobile drawer and desktop */}
+            <div className="flex-1 overflow-y-auto p-4 md:hidden lg:block">
+              <GroupManager
+                onGroupSelect={(id, name) => {
+                  setSelectedGroupId(id);
+                  setSelectedGroupName(name);
+                  setDrawerOpen(false);
+                }}
+                selectedGroupId={selectedGroupId}
+              />
+            </div>
           </aside>
-          <main className="flex-1 overflow-y-auto p-6">
+
+          {/* Tablet expanded sidebar overlay */}
+          {drawerOpen && (
+            <div className="hidden md:block lg:hidden">
+              <div
+                className="fixed inset-0 z-20 bg-black/50"
+                onClick={() => setDrawerOpen(false)}
+                aria-hidden="true"
+              />
+              <aside className="fixed inset-y-0 left-0 z-30 w-[280px] overflow-y-auto border-r bg-card p-4">
+                <GroupManager
+                  onGroupSelect={(id, name) => {
+                    setSelectedGroupId(id);
+                    setSelectedGroupName(name);
+                    setDrawerOpen(false);
+                  }}
+                  selectedGroupId={selectedGroupId}
+                />
+              </aside>
+            </div>
+          )}
+
+          <main className="flex-1 overflow-y-auto overscroll-contain p-4 md:p-6" style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}>
             {selectedGroupId ? (
               <TaskStoreProvider groupId={selectedGroupId}>
                 <Board currentUserPubkey={pubkey} />
               </TaskStoreProvider>
             ) : (
-              <div className="flex h-full min-h-[300px] flex-col items-center justify-center text-center text-muted-foreground">
-                <h2 className="mb-2 text-xl font-semibold text-foreground">
-                  Select a Group
-                </h2>
-                <p className="max-w-sm text-sm leading-relaxed">
-                  Pick a group from the sidebar or create a new one to start
-                  managing tasks.
+              <div className="flex h-full min-h-[300px] flex-col items-center justify-center gap-4 text-center">
+                <Users className="size-12 text-muted-foreground/50" aria-hidden="true" />
+                <div>
+                  <h2 className="mb-1 text-xl font-semibold text-foreground">
+                    No group selected
+                  </h2>
+                  <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">
+                    Select a group from the sidebar or create a new one to start
+                    managing tasks.
+                  </p>
+                </div>
+                <Button
+                  onClick={() => setDrawerOpen(true)}
+                  className="md:hidden"
+                >
+                  Create your first group
+                </Button>
+                <p className="hidden text-sm text-muted-foreground md:block">
+                  Use the sidebar to select or create a group.
                 </p>
               </div>
             )}

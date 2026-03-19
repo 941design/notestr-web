@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { getGroupMembers } from "@internet-privacy/marmot-ts";
 
 interface GroupManagerProps {
-  onGroupSelect: (groupId: string) => void;
+  onGroupSelect: (groupId: string, groupName: string) => void;
   selectedGroupId: string | null;
 }
 
@@ -87,7 +87,7 @@ export function GroupManager({
         relays,
       });
       setNewGroupName("");
-      onGroupSelect(group.idStr);
+      onGroupSelect(group.idStr, newGroupName.trim());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create group");
     } finally {
@@ -128,7 +128,7 @@ export function GroupManager({
   }
 
   return (
-    <div>
+    <nav aria-label="Groups">
       <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         <Users className="size-3.5" />
         Groups
@@ -148,12 +148,13 @@ export function GroupManager({
         {groups.map((group) => (
           <li
             key={group.idStr}
+            aria-current={selectedGroupId === group.idStr ? "true" : undefined}
             className={cn(
-              "cursor-pointer rounded-sm px-3 py-2.5 text-sm transition-colors hover:bg-primary/[0.08]",
+              "touch-target cursor-pointer rounded-sm px-3 py-2.5 text-sm transition-colors hover:bg-primary/[0.08] flex items-center",
               selectedGroupId === group.idStr &&
                 "bg-primary/[0.15] text-primary",
             )}
-            onClick={() => onGroupSelect(group.idStr)}
+            onClick={() => onGroupSelect(group.idStr, group.groupData?.name || "Unnamed Group")}
           >
             <span className="block truncate">
               {group.groupData?.name || "Unnamed Group"}
@@ -219,7 +220,7 @@ export function GroupManager({
               <li
                 key={hex}
                 data-testid="member-item"
-                className="truncate px-3 py-1.5 text-sm font-mono text-muted-foreground"
+                className="touch-target truncate px-3 py-1.5 text-sm font-mono text-muted-foreground flex items-center"
                 title={hexToNpub(hex)}
               >
                 {profileNames.get(hex) ?? shortenPubkey(hex)}
@@ -233,6 +234,6 @@ export function GroupManager({
       {error && (
         <p className="mt-2 text-sm text-destructive">{error}</p>
       )}
-    </div>
+    </nav>
   );
 }

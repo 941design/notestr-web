@@ -100,5 +100,18 @@
   }
   body {
     @apply bg-background text-foreground font-sans;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
   }
+}
+
+/* Touch target: minimum 44px height on coarse pointer (touch) devices */
+@media (any-pointer: coarse) {
+  .touch-target {
+    min-height: 44px;
+  }
+}
+
+/* PWA overscroll: prevent pull-to-refresh and scroll chaining */
+.overscroll-contain {
+  overscroll-behavior: contain;
 }
