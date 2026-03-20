@@ -87,10 +87,42 @@ test.describe.serial('multi-user', () => {
     await expect(sidebarB.getByText(GROUP_NAME)).toBeVisible({ timeout: 60000 });
   });
 
-  // Task propagation requires MLS epoch convergence across both clients.
-  // Currently, the selfUpdate commit from User B causes epoch divergence
-  // that prevents decryption of application messages. This is a known
-  // marmot-ts protocol limitation tracked separately.
-  test.skip('User A creates a task, User B sees it', async () => {});
-  test.skip('User B moves task to In Progress, User A sees it', async () => {});
+  test('User A creates a task, User B sees it', async () => {
+    // User A should have the group selected already (auto-selected on create)
+    await expect(pageA.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 10000 });
+
+    const TASK_TITLE = `Sync task ${Date.now()}`;
+    await pageA.getByRole('button', { name: 'Add Task' }).click();
+    await pageA.getByLabel('Title').fill(TASK_TITLE);
+    await pageA.getByRole('button', { name: 'Create' }).last().click();
+
+    // Verify task appears for User A
+    const openColumnA = pageA.locator('[data-column="open"]').first();
+    await expect(openColumnA).toContainText(TASK_TITLE, { timeout: 15000 });
+
+    // User B: select the group and wait for the task to appear
+    const sidebarB = pageB.locator('aside');
+    await sidebarB.getByText(GROUP_NAME).click();
+    await expect(pageB.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 10000 });
+
+    const openColumnB = pageB.locator('[data-column="open"]').first();
+    await expect(openColumnB).toContainText(TASK_TITLE, { timeout: 30000 });
+  });
+
+  test('User B moves task to In Progress, User A sees it', async () => {
+    // User B clicks "Move to In Progress" on the first task in Open column
+    const openColumnB = pageB.locator('[data-column="open"]').first();
+    await openColumnB
+      .getByRole('button', { name: /Move to In Progress/i })
+      .first()
+      .click();
+
+    // Verify it moved for User B
+    const inProgressB = pageB.locator('[data-column="in_progress"]').first();
+    await expect(inProgressB.locator('[data-testid="task-card"]')).toHaveCount(1, { timeout: 15000 });
+
+    // User A should see the task move to In Progress
+    const inProgressA = pageA.locator('[data-column="in_progress"]').first();
+    await expect(inProgressA.locator('[data-testid="task-card"]')).toHaveCount(1, { timeout: 30000 });
+  });
 });

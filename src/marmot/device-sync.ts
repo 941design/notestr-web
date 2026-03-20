@@ -72,8 +72,6 @@ export function useDeviceSync(
     mountedRef.current = true;
     const subs: Unsubscribable[] = [];
 
-    // Groups just joined via welcome — need pre-seed + selfUpdate
-    const pendingSelfUpdate = new Set<string>();
     // Barrier: resolves when the current join + pre-seed completes.
     // Set BEFORE joinGroupFromWelcome because that call fires the
     // synchronous "groupsUpdated" event which triggers syncGroup.
@@ -101,7 +99,6 @@ export function useDeviceSync(
               welcomeRumor: invite,
             });
 
-            pendingSelfUpdate.add(group.idStr);
             await inviteReader.markAsRead(invite.id);
 
             // Pre-seed syncedEventIds with all relay events for this group.
@@ -278,16 +275,6 @@ export function useDeviceSync(
       const relaysForGroup = group.relays ?? relays;
       const hTag = nostrGroupId(group);
       const filter = { kinds: [445], "#h": [hTag] };
-
-      // For groups just joined via welcome, selfUpdate first.
-      if (pendingSelfUpdate.has(group.idStr)) {
-        pendingSelfUpdate.delete(group.idStr);
-        try {
-          await group.selfUpdate();
-        } catch {
-          // selfUpdate may fail if epoch changed; non-fatal
-        }
-      }
 
       try {
         const initialEvents = await client.network.request(relaysForGroup, [filter]);

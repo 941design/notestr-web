@@ -53,7 +53,7 @@ export function TaskCard({
     currentUserPubkey != null && task.assignee === currentUserPubkey;
 
   return (
-    <div className="rounded-lg border bg-background p-3 shadow-none transition-colors hover:border-muted-foreground dark:shadow-sm">
+    <div data-testid="task-card" className="rounded-lg border bg-background p-3 shadow-none transition-colors hover:border-muted-foreground dark:shadow-sm">
       <div className="mb-1.5 flex items-start justify-between gap-2">
         <h4 className="min-w-0 flex-1 text-sm font-semibold leading-snug">
           {task.title}
