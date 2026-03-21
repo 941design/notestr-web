@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 
-import NDK, { NDKEvent, NDKRelaySet } from "@nostr-dev-kit/ndk";
+import NDK, { NDKEvent, NDKRelay, NDKRelaySet } from "@nostr-dev-kit/ndk";
 import {
   MarmotClient,
   KeyValueGroupStateBackend,
@@ -25,6 +25,7 @@ import { computeDetachedGroupIds } from "./detached-groups";
 
 import type { MarmotGroup } from "@internet-privacy/marmot-ts";
 import { DEFAULT_RELAYS, NDK_CONNECT_TIMEOUT_MS } from "../config/relays";
+import { computeAllGroupRelays } from "../lib/relay-utils";
 
 interface MarmotContextValue {
   client: MarmotClient | null;
@@ -114,11 +115,26 @@ export function MarmotProvider({
 
       if (!mountedRef.current) return;
 
+      // Ensure NDK pool covers all per-group relays
+      const allRelays = computeAllGroupRelays(groups, relays);
+      for (const url of allRelays) {
+        if (!ndk.pool.relays.has(url)) {
+          ndk.pool.addRelay(new NDKRelay(url, undefined, ndk), true);
+        }
+      }
+
       // Make client available immediately — key package work runs in background
       setState({ client, groups, loading: false, error: null, discoverable: false });
 
       client.on("groupsUpdated", (updatedGroups) => {
         if (mountedRef.current) {
+          // Add any new per-group relays to the NDK pool
+          const updated = computeAllGroupRelays(updatedGroups, relays);
+          for (const url of updated) {
+            if (!ndk.pool.relays.has(url)) {
+              ndk.pool.addRelay(new NDKRelay(url, undefined, ndk), true);
+            }
+          }
           setState((prev) => ({ ...prev, groups: updatedGroups }));
         }
       });

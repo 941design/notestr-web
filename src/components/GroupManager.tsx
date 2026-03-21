@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { LogOut, Plus, UserPlus, Users, QrCode, ScanLine } from "lucide-react";
+import { LogOut, Plus, UserPlus, Users, QrCode, ScanLine, X } from "lucide-react";
 import { useMarmot } from "@/marmot/client";
 import { npubToHex, shortenPubkey, hexToNpub } from "@/lib/nostr";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,8 @@ import { getGroupMembers, getNostrGroupIdHex } from "@internet-privacy/marmot-ts
 import { NpubQrModal } from "@/components/NpubQrModal";
 import { publishTaskSnapshot } from "@/marmot/device-sync";
 import { clearEvents } from "@/store/persistence";
+import { abbreviateRelay, isValidRelayUrl, getGroupRelays } from "@/lib/relay-utils";
+import { DEFAULT_RELAYS } from "@/config/relays";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,6 +48,8 @@ export function GroupManager({
   const [members, setMembers] = useState<string[]>([]);
   const [profileNames, setProfileNames] = useState<Map<string, string>>(new Map());
   const profileCacheRef = useRef<Map<string, string>>(new Map());
+  const [groupRelays, setGroupRelays] = useState<string[]>([...DEFAULT_RELAYS]);
+  const [relayInput, setRelayInput] = useState("");
 
   useEffect(() => {
     if (!selectedGroupId || !client) {
@@ -104,9 +108,11 @@ export function GroupManager({
     setError(null);
     try {
       const group = await client.createGroup(newGroupName.trim(), {
-        relays,
+        relays: groupRelays.length > 0 ? groupRelays : relays,
       });
       setNewGroupName("");
+      setGroupRelays([...DEFAULT_RELAYS]);
+      setRelayInput("");
       onGroupSelect(group.idStr, newGroupName.trim());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create group");
@@ -218,14 +224,28 @@ export function GroupManager({
               )}
             >
               <span
-                className={cn("block flex-1 truncate", !isDetached && "cursor-pointer")}
+                className={cn("block flex-1 min-w-0", !isDetached && "cursor-pointer")}
                 onClick={() => {
                   if (!isDetached) {
                     onGroupSelect(group.idStr, group.groupData?.name || "Unnamed Group");
                   }
                 }}
               >
-                {group.groupData?.name || "Unnamed Group"}
+                <span className="block truncate">
+                  {group.groupData?.name || "Unnamed Group"}
+                </span>
+                <span
+                  data-testid="group-relays"
+                  className="block truncate text-[10px] text-muted-foreground/70"
+                >
+                  {getGroupRelays(group, DEFAULT_RELAYS).map(abbreviateRelay).join(", ")}
+                </span>
+                <span
+                  data-testid="group-member-count"
+                  className="text-[10px] text-muted-foreground/70"
+                >
+                  {group.state ? getGroupMembers(group.state).length : 0} {group.state && getGroupMembers(group.state).length === 1 ? "member" : "members"}
+                </span>
               </span>
               <Button
                 variant="ghost"
@@ -260,6 +280,64 @@ export function GroupManager({
           onChange={(e) => setNewGroupName(e.target.value)}
           disabled={creating}
         />
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Relays</Label>
+          <div className="flex flex-wrap gap-1">
+            {groupRelays.map((relay) => (
+              <span
+                key={relay}
+                data-testid="relay-chip"
+                className="inline-flex items-center gap-0.5 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+              >
+                {abbreviateRelay(relay)}
+                <button
+                  type="button"
+                  className="ml-0.5 rounded-full hover:text-foreground"
+                  onClick={() => setGroupRelays((prev) => prev.filter((r) => r !== relay))}
+                  aria-label={`Remove ${relay}`}
+                >
+                  <X className="size-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+          <div className="flex gap-1">
+            <Input
+              data-testid="relay-input"
+              placeholder="wss://relay.example.com"
+              value={relayInput}
+              onChange={(e) => setRelayInput(e.target.value)}
+              disabled={creating}
+              className="flex-1 text-xs"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  const url = relayInput.trim();
+                  if (url && isValidRelayUrl(url) && !groupRelays.includes(url)) {
+                    setGroupRelays((prev) => [...prev, url]);
+                    setRelayInput("");
+                  }
+                }
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="relay-add-btn"
+              disabled={!relayInput.trim() || !isValidRelayUrl(relayInput.trim()) || groupRelays.includes(relayInput.trim())}
+              onClick={() => {
+                const url = relayInput.trim();
+                if (url && isValidRelayUrl(url) && !groupRelays.includes(url)) {
+                  setGroupRelays((prev) => [...prev, url]);
+                  setRelayInput("");
+                }
+              }}
+            >
+              Add
+            </Button>
+          </div>
+        </div>
         <Button
           type="submit"
           className="w-full"
@@ -315,6 +393,25 @@ export function GroupManager({
           />
         </form>
       )}
+
+      {selectedGroupId && !detachedGroupIds.has(selectedGroupId) && (() => {
+        const selectedGroup = groups.find((g) => g.idStr === selectedGroupId);
+        const selectedRelays = selectedGroup ? getGroupRelays(selectedGroup, DEFAULT_RELAYS) : DEFAULT_RELAYS;
+        return (
+          <section data-testid="group-relay-list" className="mb-4">
+            <Label className="mb-2 block text-xs font-semibold text-muted-foreground">
+              Relays
+            </Label>
+            <ul className="space-y-0.5">
+              {selectedRelays.map((relay) => (
+                <li key={relay} className="truncate px-3 py-0.5 text-xs font-mono text-muted-foreground">
+                  {abbreviateRelay(relay)}
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })()}
 
       {selectedGroupId && members.length > 0 && (
         <section data-testid="members-section" className="mb-4">
