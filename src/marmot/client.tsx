@@ -18,7 +18,7 @@ import {
 } from "@internet-privacy/marmot-ts";
 import type { EventSigner } from "applesauce-core";
 
-import { createKVStore } from "./storage";
+import { createKVStore, getOrCreateClientId } from "./storage";
 import { NdkNetworkAdapter } from "./network";
 import { useDeviceSync } from "./device-sync";
 import { computeDetachedGroupIds } from "./detached-groups";
@@ -99,13 +99,15 @@ export function MarmotProvider({
       const keyPackageKV = createKVStore<any>("key-packages");
       const keyPackageStore = new KeyPackageStore(keyPackageKV);
 
-      const network = new NdkNetworkAdapter(ndk);
+      const network = new NdkNetworkAdapter(ndk, relays);
+      const clientId = await getOrCreateClientId();
 
       const client = new MarmotClient({
         signer,
         groupStateBackend,
         keyPackageStore,
         network,
+        clientId,
       });
       clientRef.current = client;
 
@@ -123,6 +125,21 @@ export function MarmotProvider({
         }
       }
 
+      // Force re-render when any group's internal state changes (e.g. after
+      // invite, selfUpdate, or ingest). MarmotClient only emits groupsUpdated
+      // when groups are added/removed, not when a group mutates its MLS state.
+      const stateListenerGroups = new Set<string>();
+      const attachStateListener = (group: MarmotGroup) => {
+        if (stateListenerGroups.has(group.idStr)) return;
+        stateListenerGroups.add(group.idStr);
+        group.on("stateChanged", () => {
+          if (mountedRef.current) {
+            setState((prev) => ({ ...prev, groups: [...prev.groups] }));
+          }
+        });
+      };
+      for (const group of groups) attachStateListener(group);
+
       // Make client available immediately — key package work runs in background
       setState({ client, groups, loading: false, error: null, discoverable: false });
 
@@ -135,6 +152,7 @@ export function MarmotProvider({
               ndk.pool.addRelay(new NDKRelay(url, undefined, ndk), true);
             }
           }
+          for (const group of updatedGroups) attachStateListener(group);
           setState((prev) => ({ ...prev, groups: updatedGroups }));
         }
       });
@@ -184,6 +202,43 @@ export function MarmotProvider({
             console.debug("[marmot] creating key package for relays:", relays);
             await client.keyPackages.create({ relays });
             console.debug("[marmot] key package created successfully");
+          }
+
+          // Delete stale kind 443 events from relays whose private keys are
+          // no longer in local IndexedDB (e.g. after clearing browser data).
+          if (relays.length > 0 && ndk) {
+            try {
+              const remoteKPs = await network.request(relays, [
+                { kinds: [443 as any], authors: [pubkey] } as any,
+              ]);
+              const localList = await client.keyPackages.list();
+              const localPublishedIds = new Set(
+                localList.flatMap((kp) => kp.published.map((e) => e.id)),
+              );
+              const staleIds = remoteKPs
+                .map((e) => e.id as string)
+                .filter((id) => !localPublishedIds.has(id));
+
+              if (staleIds.length > 0) {
+                console.debug("[marmot] deleting", staleIds.length, "stale kind 443 KP events from relays");
+                const deleteEvent = {
+                  kind: 5,
+                  created_at: Math.floor(Date.now() / 1000),
+                  tags: [
+                    ...staleIds.map((id) => ["e", id]),
+                    ["k", "443"],
+                  ],
+                  content: "",
+                  pubkey,
+                };
+                const signed = await signer.signEvent(deleteEvent as any);
+                const ndkEvent = new NDKEvent(ndk, signed as any);
+                const relaySet = NDKRelaySet.fromRelayUrls(relays, ndk);
+                await ndkEvent.publish(relaySet).catch(() => {});
+              }
+            } catch {
+              // Non-fatal: stale KP cleanup is best-effort
+            }
           }
 
           // Publish kind 10051 relay list only if relay doesn't already have one

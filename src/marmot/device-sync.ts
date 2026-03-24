@@ -65,6 +65,12 @@ export function useDeviceSync(
   signer: EventSigner,
 ) {
   const mountedRef = useRef(true);
+  // Stores { group instance, handler } keyed by group.idStr so we can call
+  // group.off(handler) at cleanup time (the group is already absent from
+  // client.groups at that point, so the instance must be retained here).
+  const appMsgHandlersRef = useRef(
+    new Map<string, { group: MarmotGroup; handler: (data: Uint8Array) => void }>(),
+  );
 
   useEffect(() => {
     if (!client || !pubkey || relays.length === 0) return;
@@ -95,6 +101,12 @@ export function useDeviceSync(
           joinBarrier = new Promise<void>((r) => { resolveBarrier = r; });
 
           try {
+            // Log key package state for debugging Welcome join failures
+            const localKPs = await client.keyPackages.list();
+            console.debug("[device-sync] local KPs:", localKPs.length,
+              "unused:", localKPs.filter(p => !p.used).length,
+              "refs:", localKPs.map(p => Array.from(p.keyPackageRef).map(b => b.toString(16).padStart(2, "0")).join("").slice(0, 16)));
+
             const { group } = await client.joinGroupFromWelcome({
               welcomeRumor: invite,
             });
@@ -228,13 +240,18 @@ export function useDeviceSync(
       const processed = new Set<string>();
 
       for await (const result of group.ingest(pending)) {
+        console.debug("[device-sync] ingest result:", result.kind, result.event.id?.slice(0, 12));
         if (result.kind === "processed" || result.kind === "skipped") {
           processed.add(result.event.id);
           continue;
         }
 
         if (result.kind === "rejected") {
+          console.debug("[device-sync] rejected reason:", (result as any).reason);
           processed.add(result.event.id);
+        }
+        if (result.kind === "unreadable") {
+          console.debug("[device-sync] unreadable errors:", (result as any).errors);
         }
         // "unreadable" events are NOT added — they may become decryptable later
       }
@@ -247,12 +264,10 @@ export function useDeviceSync(
 
     // Persist task-related application messages so they survive regardless
     // of whether the TaskStoreProvider is mounted when the message arrives.
-    const appMsgListeners = new Set<string>();
     const attachAppMsgListener = (group: MarmotGroup) => {
-      if (appMsgListeners.has(group.idStr)) return;
-      appMsgListeners.add(group.idStr);
+      if (appMsgHandlersRef.current.has(group.idStr)) return;
 
-      group.on("applicationMessage", (data: Uint8Array) => {
+      const handler = (data: Uint8Array) => {
         try {
           const rumor: Rumor = deserializeApplicationData(data);
           if (rumor.kind !== TASK_EVENT_KIND) return;
@@ -263,7 +278,10 @@ export function useDeviceSync(
         } catch (err) {
           console.debug("[device-sync] applicationMessage parse error:", err);
         }
-      });
+      };
+
+      appMsgHandlersRef.current.set(group.idStr, { group, handler });
+      group.on("applicationMessage", handler);
     };
 
     const syncGroup = async (group: MarmotGroup): Promise<void> => {
@@ -315,6 +333,11 @@ export function useDeviceSync(
         sub.unsubscribe();
         groupSubs.delete(groupId);
         syncedEventIds.delete(groupId);
+        const entry = appMsgHandlersRef.current.get(groupId);
+        if (entry) {
+          entry.group.off("applicationMessage", entry.handler);
+          appMsgHandlersRef.current.delete(groupId);
+        }
       }
 
       for (const group of client.groups) {
@@ -395,6 +418,10 @@ export function useDeviceSync(
       for (const sub of subs) {
         sub.unsubscribe();
       }
+      for (const entry of appMsgHandlersRef.current.values()) {
+        entry.group.off("applicationMessage", entry.handler);
+      }
+      appMsgHandlersRef.current.clear();
     };
   }, [client, pubkey, relays, signer]);
 }

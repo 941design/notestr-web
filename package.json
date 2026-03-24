@@ -21,7 +21,7 @@
   "license": "MIT",
   "dependencies": {
     "@hpke/chacha20poly1305": "^1.7.1",
-    "@internet-privacy/marmot-ts": "^0.4.0",
+    "@internet-privacy/marmot-ts": "github:941design/marmot-ts#addressable-key-packages",
     "@nostr-dev-kit/ndk": "^3.0.3",
     "@tailwindcss/postcss": "^4.2.1",
     "class-variance-authority": "^0.7.1",

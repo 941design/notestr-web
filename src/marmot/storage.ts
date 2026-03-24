@@ -60,6 +60,21 @@ export function createInviteStore(): import("@internet-privacy/marmot-ts").Invit
   };
 }
 
+const identityStore = createKVStore<string>("identity");
+
+/**
+ * Returns a stable per-browser client ID for kind 30443 addressable key packages.
+ * Generated once and persisted in IndexedDB so it survives page reloads
+ * but is unique per browser/device.
+ */
+export async function getOrCreateClientId(): Promise<string> {
+  const existing = await identityStore.getItem("clientId");
+  if (existing) return existing;
+  const id = `notestr-${crypto.randomUUID()}`;
+  await identityStore.setItem("clientId", id);
+  return id;
+}
+
 const groupSyncStore = createKVStore<string[]>("group-sync");
 
 export async function getSyncedGroupEventIds(groupId: string): Promise<string[]> {

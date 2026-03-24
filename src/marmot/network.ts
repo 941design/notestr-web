@@ -24,7 +24,10 @@ import type {
  * underlying NDK pool is configured.
  */
 export class NdkNetworkAdapter implements NostrNetworkInterface {
-  constructor(private readonly ndk: NDK) {}
+  constructor(
+    private readonly ndk: NDK,
+    private readonly defaultRelays: string[] = [],
+  ) {}
 
   /**
    * Publishes a raw Nostr event to the specified relays.
@@ -180,7 +183,7 @@ export class NdkNetworkAdapter implements NostrNetworkInterface {
    * all "relay" tags.
    */
   async getUserInboxRelays(pubkey: string): Promise<string[]> {
-    const events = await this.request([], [
+    const events = await this.request(this.defaultRelays, [
       {
         kinds: [10051 as any],
         authors: [pubkey],
@@ -188,7 +191,7 @@ export class NdkNetworkAdapter implements NostrNetworkInterface {
       } as NDKFilter,
     ]);
 
-    if (events.length === 0) return [];
+    if (events.length === 0) return this.defaultRelays;
 
     // Sort descending by created_at to pick the freshest event
     const latest = events.sort(
