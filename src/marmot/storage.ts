@@ -61,6 +61,8 @@ export function createInviteStore(): import("@internet-privacy/marmot-ts").Invit
 }
 
 const identityStore = createKVStore<string>("identity");
+export const deviceNamesStore = createKVStore<import("./device-store").DeviceMetadata>("device-names");
+export const invitedKeysStore = createKVStore<true>("invited-keys");
 
 /**
  * Returns a stable per-browser client ID for kind 30443 addressable key packages.

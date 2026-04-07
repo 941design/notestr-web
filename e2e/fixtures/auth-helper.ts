@@ -9,9 +9,9 @@ import type { Page } from '@playwright/test';
 
 // Imported from bunker.mjs — keep in sync with that file.
 // bunker pubkey: 3e0057f09a2d9fcc231485409929af4f2c95479e5c369fade8ea0ed37e3c9ae0
-const BUNKER_PUBKEY_HEX = '3e0057f09a2d9fcc231485409929af4f2c95479e5c369fade8ea0ed37e3c9ae0';
+export const E2E_BUNKER_PUBKEY_HEX = '3e0057f09a2d9fcc231485409929af4f2c95479e5c369fade8ea0ed37e3c9ae0';
 const RELAY_URL = 'ws://localhost:7777';
-export const E2E_BUNKER_URL = `bunker://${BUNKER_PUBKEY_HEX}?relay=${encodeURIComponent(RELAY_URL)}`;
+export const E2E_BUNKER_URL = `bunker://${E2E_BUNKER_PUBKEY_HEX}?relay=${encodeURIComponent(RELAY_URL)}`;
 
 /**
  * Navigate to the app, select the "bunker:// URL" tab, paste the E2E_BUNKER_URL,

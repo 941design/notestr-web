@@ -9,17 +9,26 @@ import {
   type MarmotClient,
   type MarmotGroup,
   type Unsubscribable,
+  getKeyPackage,
+  getKeyPackageD,
   getKeyPackageNostrPubkey,
+  keyPackageFilters,
 } from "@internet-privacy/marmot-ts";
 import type { NostrEvent } from "applesauce-core/helpers/event";
 import type { EventSigner } from "applesauce-core";
 import type { Rumor } from "applesauce-common/helpers/gift-wrap";
+import {
+  defaultKeyPackageEqualityConfig,
+  nodeTypes,
+  type ClientState,
+} from "ts-mls";
 
 import {
   addSyncedGroupEventIds,
   createInviteStore,
   getSyncedGroupEventIds,
 } from "./storage";
+import { loadInvitedKeys, markDeviceSeen, persistInvitedKey } from "./device-store";
 import { TASK_EVENT_KIND, type TaskEvent } from "../store/task-events";
 import { appendEvent, loadEvents } from "../store/persistence";
 import { replayEvents } from "../store/task-reducer";
@@ -37,10 +46,38 @@ function mergeIds(existing: Set<string>, incoming: Iterable<string>): string[] {
   return Array.from(existing);
 }
 
-function groupHasMember(group: MarmotGroup, pubkey: string): boolean {
-  return getGroupMembers(group.state).some(
-    (memberPubkey) => memberPubkey === pubkey,
+export function groupHasKeyPackageLeaf(
+  state: ClientState,
+  keyPackageEvent: NostrEvent,
+): boolean {
+  const keyPackage = getKeyPackage(keyPackageEvent);
+
+  return state.ratchetTree.some(
+    (node) =>
+      node?.nodeType === nodeTypes.leaf &&
+      defaultKeyPackageEqualityConfig.compareKeyPackageToLeafNode(
+        keyPackage,
+        node.leaf,
+      ),
   );
+}
+
+export async function joinFromWelcomeInvite(
+  client: MarmotClient,
+  inviteReader: InviteReader,
+  invite: Rumor,
+): Promise<MarmotGroup | null> {
+  try {
+    const { group } = await client.joinGroupFromWelcome({
+      welcomeRumor: invite,
+    });
+    await inviteReader.markAsRead(invite.id);
+    return group;
+  } catch (err) {
+    console.debug("[device-sync] join from welcome failed:", err);
+    await inviteReader.markAsRead(invite.id);
+    return null;
+  }
 }
 
 /** Get the Nostr group ID used in kind 445 event `#h` tags. */
@@ -107,11 +144,10 @@ export function useDeviceSync(
               "unused:", localKPs.filter(p => !p.used).length,
               "refs:", localKPs.map(p => Array.from(p.keyPackageRef).map(b => b.toString(16).padStart(2, "0")).join("").slice(0, 16)));
 
-            const { group } = await client.joinGroupFromWelcome({
-              welcomeRumor: invite,
-            });
-
-            await inviteReader.markAsRead(invite.id);
+            const group = await joinFromWelcomeInvite(client, inviteReader, invite);
+            if (!group) {
+              continue;
+            }
 
             // Pre-seed syncedEventIds with all relay events for this group.
             // The welcome already incorporates group state up to the invite
@@ -132,13 +168,10 @@ export function useDeviceSync(
 
             // Fetch task snapshot (NIP-44 encrypted, sent by inviter)
             await fetchTaskSnapshot(group);
-          } catch (err) {
-            console.debug("[device-sync] join from welcome failed:", err);
-            await inviteReader.markAsRead(invite.id);
+          } finally {
+            resolveBarrier();
+            joinBarrier = null;
           }
-
-          resolveBarrier();
-          joinBarrier = null;
         }
       };
 
@@ -350,53 +383,103 @@ export function useDeviceSync(
       // Build set of local KP published event IDs
       const localPackages = await client.keyPackages.list();
       const localEventIds = new Set(
-        localPackages.flatMap((kp) => kp.published.map((e) => e.id)),
+        localPackages.flatMap((kp) => (kp.published ?? []).map((e) => e.id)),
       );
+      const knownEvents = new Map<string, NostrEvent>();
+      const invited = new Set(await loadInvitedKeys());
+      const pendingInvites = new Set<string>();
 
-      const invited = new Set<string>(); // "groupId:kpEventId"
+      for (const keyPackage of localPackages) {
+        if (keyPackage.d) {
+          await markDeviceSeen(keyPackage.d, { localClientId: keyPackage.d });
+        }
+      }
 
       const inviteToAllGroups = async (kpEvent: NostrEvent) => {
-        const inviteePubkey = getKeyPackageNostrPubkey(kpEvent);
+        const inviteeSlot = getKeyPackageD(kpEvent);
+
+        if (inviteeSlot) {
+          await markDeviceSeen(inviteeSlot);
+        }
 
         for (const group of client.groups) {
           if (!mountedRef.current) return;
           const gd = group.groupData;
           if (!gd || !isAdmin(gd, pubkey)) continue;
-          if (groupHasMember(group, inviteePubkey)) {
+          if (groupHasKeyPackageLeaf(group.state, kpEvent)) {
             continue;
           }
 
           const key = `${group.idStr}:${kpEvent.id}`;
-          if (invited.has(key)) continue;
-          invited.add(key);
+          if (invited.has(key) || pendingInvites.has(key)) continue;
+          pendingInvites.add(key);
 
           try {
             // Sequential to avoid MLS epoch conflicts
             await group.inviteByKeyPackageEvent(kpEvent);
+            invited.add(key);
+            await persistInvitedKey(key);
           } catch (err) {
             console.debug(
               `[device-sync] auto-invite to ${group.idStr} failed:`,
               err,
             );
+          } finally {
+            pendingInvites.delete(key);
           }
         }
       };
 
+      const syncKnownKeyPackages = async () => {
+        for (const event of knownEvents.values()) {
+          if (!mountedRef.current) return;
+          if (localEventIds.has(event.id)) continue;
+          if (getKeyPackageNostrPubkey(event) !== pubkey) continue;
+          await inviteToAllGroups(event);
+        }
+      };
+
+      const handleKeyPackageEvent = async (event: NostrEvent) => {
+        knownEvents.set(event.id, event);
+        if (localEventIds.has(event.id)) return;
+        if (getKeyPackageNostrPubkey(event) !== pubkey) return;
+
+        try {
+          await inviteToAllGroups(event);
+        } catch (err) {
+          console.debug("[device-sync] kp sync error:", err);
+        }
+      };
+
+      try {
+        const existing = await client.network.request(relays, keyPackageFilters([pubkey]));
+        for (const event of existing) {
+          knownEvents.set(event.id, event);
+        }
+        await syncKnownKeyPackages();
+      } catch (err) {
+        console.debug("[device-sync] initial kp sync failed:", err);
+      }
+
       if (!mountedRef.current) return;
       const kpSub = client.network
-        .subscription(relays, [{ kinds: [443], authors: [pubkey] }])
+        .subscription(relays, keyPackageFilters([pubkey]))
         .subscribe({
           next: async (event: NostrEvent) => {
-            // Skip our own KP events
-            if (localEventIds.has(event.id)) return;
-            try {
-              await inviteToAllGroups(event);
-            } catch (err) {
-              console.debug("[device-sync] kp sync error:", err);
-            }
+            await handleKeyPackageEvent(event);
           },
         });
       subs.push(kpSub);
+
+      const handleGroupsUpdated = async () => {
+        await syncKnownKeyPackages();
+      };
+      client.on("groupsUpdated", handleGroupsUpdated);
+      subs.push({
+        unsubscribe(): void {
+          client.off("groupsUpdated", handleGroupsUpdated);
+        },
+      });
     };
 
     // Launch both flows

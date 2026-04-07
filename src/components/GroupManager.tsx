@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { LogOut, Plus, UserPlus, Users, QrCode, ScanLine, X } from "lucide-react";
 import { useMarmot } from "@/marmot/client";
 import { npubToHex, shortenPubkey, hexToNpub } from "@/lib/nostr";
+import { DeviceList } from "@/components/DeviceList";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -34,7 +35,17 @@ export function GroupManager({
   onGroupLeft,
   selectedGroupId,
 }: GroupManagerProps) {
-  const { client, signer, groups, relays, pubkey: selfPubkey, loading, error: marmotError, detachedGroupIds } = useMarmot();
+  const {
+    client,
+    signer,
+    groups,
+    relays,
+    pubkey: selfPubkey,
+    clientId,
+    loading,
+    error: marmotError,
+    detachedGroupIds,
+  } = useMarmot();
   const [newGroupName, setNewGroupName] = useState("");
   const [inviteNpub, setInviteNpub] = useState("");
   const [creating, setCreating] = useState(false);
@@ -50,6 +61,9 @@ export function GroupManager({
   const profileCacheRef = useRef<Map<string, string>>(new Map());
   const [groupRelays, setGroupRelays] = useState<string[]>([...DEFAULT_RELAYS]);
   const [relayInput, setRelayInput] = useState("");
+  const selectedGroup = selectedGroupId
+    ? groups.find((group) => group.idStr === selectedGroupId)
+    : undefined;
 
   useEffect(() => {
     if (!selectedGroupId || !client) {
@@ -348,54 +362,7 @@ export function GroupManager({
         </Button>
       </form>
 
-      {selectedGroupId && !detachedGroupIds.has(selectedGroupId) && (
-        <form className="mb-4 space-y-2" onSubmit={handleInvite}>
-          <Label className="text-xs font-semibold text-muted-foreground">
-            Invite Member
-          </Label>
-          <div className="flex gap-1.5">
-            <Input
-              placeholder="npub1..."
-              value={inviteNpub}
-              onChange={(e) => setInviteNpub(e.target.value)}
-              disabled={inviting}
-              className="flex-1"
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setScanQrOpen(true)}
-              aria-label="Scan QR code"
-              data-testid="invite-scan-qr-btn"
-            >
-              <ScanLine className="size-4" />
-            </Button>
-          </div>
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={!inviteNpub.trim() || inviting}
-          >
-            <UserPlus className="size-4" />
-            {inviting ? "Inviting..." : "Invite"}
-          </Button>
-          <NpubQrModal
-            isOpen={scanQrOpen}
-            onClose={() => setScanQrOpen(false)}
-            title="Scan npub QR"
-            mode="scan"
-            onScan={(scannedNpub) => {
-              setInviteNpub(scannedNpub);
-              setError(null);
-              setScanQrOpen(false);
-            }}
-          />
-        </form>
-      )}
-
       {selectedGroupId && !detachedGroupIds.has(selectedGroupId) && (() => {
-        const selectedGroup = groups.find((g) => g.idStr === selectedGroupId);
         const selectedRelays = selectedGroup ? getGroupRelays(selectedGroup, DEFAULT_RELAYS) : DEFAULT_RELAYS;
         return (
           <section data-testid="group-relay-list" className="mb-4">
@@ -451,6 +418,62 @@ export function GroupManager({
             npub={memberQr ? hexToNpub(memberQr) : undefined}
           />
         </section>
+      )}
+
+      {selectedGroup && !detachedGroupIds.has(selectedGroup.idStr) && client && clientId && (
+        <DeviceList
+          client={client}
+          group={selectedGroup}
+          pubkey={selfPubkey}
+          localClientId={clientId}
+          relays={relays}
+        />
+      )}
+
+      {selectedGroupId && !detachedGroupIds.has(selectedGroupId) && (
+        <form className="mb-4 space-y-2" onSubmit={handleInvite}>
+          <Label className="text-xs font-semibold text-muted-foreground">
+            Invite Member
+          </Label>
+          <div className="flex gap-1.5">
+            <Input
+              placeholder="npub1..."
+              value={inviteNpub}
+              onChange={(e) => setInviteNpub(e.target.value)}
+              disabled={inviting}
+              className="flex-1"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setScanQrOpen(true)}
+              aria-label="Scan QR code"
+              data-testid="invite-scan-qr-btn"
+            >
+              <ScanLine className="size-4" />
+            </Button>
+          </div>
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={!inviteNpub.trim() || inviting}
+          >
+            <UserPlus className="size-4" />
+            {inviting ? "Inviting..." : "Invite"}
+          </Button>
+          <NpubQrModal
+            isOpen={scanQrOpen}
+            onClose={() => setScanQrOpen(false)}
+            title="Scan npub QR"
+            mode="scan"
+            onScan={(scannedNpub) => {
+              setInviteNpub(scannedNpub);
+              setError(null);
+              setScanQrOpen(false);
+            }}
+          />
+        </form>
       )}
 
       {error && (

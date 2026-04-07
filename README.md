@@ -2,6 +2,10 @@
 
 Encrypted task manager on Nostr with MLS groups.
 
+## Multi-Device Sync
+
+`notestr` now treats multiple clients using the same Nostr identity as separate devices. When two browsers or clients authenticate against the same bunker pubkey, new groups auto-invite the other device, and the group sidebar shows a per-group `Your devices` list with persisted device names.
+
 ## Development
 
 ```sh

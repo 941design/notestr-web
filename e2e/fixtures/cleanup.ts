@@ -9,11 +9,14 @@ import type { Page } from '@playwright/test';
 
 /** All IndexedDB database names used by the app (must match notestr- prefix in storage.ts). */
 const IDB_NAMES = [
+  'notestr-identity',
+  'notestr-device-names',
   'notestr-group-state',
   'notestr-key-packages',
   'notestr-invite-received',
   'notestr-invite-unread',
   'notestr-invite-seen',
+  'notestr-invited-keys',
   'notestr-group-sync',
 ];
 

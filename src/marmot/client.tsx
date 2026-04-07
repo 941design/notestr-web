@@ -32,6 +32,7 @@ interface MarmotContextValue {
   signer: EventSigner | null;
   groups: MarmotGroup[];
   pubkey: string;
+  clientId: string;
   relays: string[];
   loading: boolean;
   error: Error | null;
@@ -44,6 +45,7 @@ const MarmotContext = createContext<MarmotContextValue>({
   signer: null,
   groups: [],
   pubkey: "",
+  clientId: "",
   relays: DEFAULT_RELAYS,
   loading: true,
   error: null,
@@ -315,6 +317,7 @@ export function MarmotProvider({
     ...state,
     signer,
     pubkey,
+    clientId: state.client?.keyPackages.clientId ?? "",
     relays,
     detachedGroupIds,
   };
@@ -337,4 +340,3 @@ export function useGroup(
   if (!groupId) return undefined;
   return groups.find((g) => g.idStr === groupId);
 }
-
