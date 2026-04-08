@@ -14,6 +14,10 @@ import { TASK_EVENT_KIND, type Task, type TaskEvent } from "./task-events";
 import { applyEvent, replayEvents, type TaskState } from "./task-reducer";
 import { appendEvent, loadEvents } from "./persistence";
 
+function isTestRuntime(): boolean {
+  return process.env.NEXT_PUBLIC_E2E === "1" || process.env.NODE_ENV === "test";
+}
+
 interface TaskStoreContextValue {
   tasks: Task[];
   dispatch: (event: TaskEvent) => Promise<void>;
@@ -108,11 +112,51 @@ export const TaskStoreProvider: React.FC<TaskStoreProviderProps> = ({
           pubkey: "",
         };
 
-        await group.sendApplicationRumor(rumor);
+        try {
+          const forcedError = isTestRuntime()
+            ? window.__notestrTestPublishFailureOnce
+            : null;
+          if (forcedError) {
+            window.__notestrTestPublishFailureOnce = null;
+            throw new Error(forcedError);
+          }
+
+          await group.sendApplicationRumor(rumor);
+        } catch (err) {
+          console.error("[task-store] sendApplicationRumor failed:", err);
+          window.dispatchEvent(
+            new CustomEvent("notestr:taskPublishFailed", {
+              detail: {
+                groupId,
+                taskEvent,
+                error: err instanceof Error ? err.message : String(err),
+              },
+            }),
+          );
+        }
       }
     },
     [group, groupId],
   );
+
+  useEffect(() => {
+    if (!isTestRuntime()) return;
+
+    window.__notestrTestDispatchTaskEvent = (taskEvent) => dispatch(taskEvent);
+    window.__notestrTestTasks = () => Array.from(stateRef.current.values());
+    window.__notestrTestPersistedTaskEvents = () => loadEvents(groupId);
+    window.__notestrTestArmPublishFailure = (message = "forced publish failure") => {
+      window.__notestrTestPublishFailureOnce = message;
+    };
+
+    return () => {
+      delete window.__notestrTestDispatchTaskEvent;
+      delete window.__notestrTestTasks;
+      delete window.__notestrTestPersistedTaskEvents;
+      delete window.__notestrTestArmPublishFailure;
+      delete window.__notestrTestPublishFailureOnce;
+    };
+  }, [dispatch, groupId]);
 
   const tasks = Array.from(state.values());
 

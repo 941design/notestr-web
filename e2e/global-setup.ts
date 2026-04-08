@@ -115,6 +115,7 @@ export default async function globalSetup() {
       env: {
         ...process.env,
         NODE_ENV: 'test',
+        NEXT_PUBLIC_E2E: '1',
         NEXT_PUBLIC_RELAYS: 'ws://localhost:7777',
       },
     });

@@ -15,6 +15,12 @@ import {
   KeyValueGroupStateBackend,
   KeyPackageStore,
   createKeyPackageRelayListEvent,
+  deserializeApplicationData,
+  getNostrGroupIdHex,
+} from "@internet-privacy/marmot-ts";
+import type {
+  BaseGroupHistory,
+  GroupHistoryFactory,
 } from "@internet-privacy/marmot-ts";
 import type { EventSigner } from "applesauce-core";
 
@@ -26,6 +32,53 @@ import { computeDetachedGroupIds } from "./detached-groups";
 import type { MarmotGroup } from "@internet-privacy/marmot-ts";
 import { DEFAULT_RELAYS, NDK_CONNECT_TIMEOUT_MS } from "../config/relays";
 import { computeAllGroupRelays } from "../lib/relay-utils";
+
+function isTestRuntime(): boolean {
+  return process.env.NEXT_PUBLIC_E2E === "1" || process.env.NODE_ENV === "test";
+}
+
+// Test-only in-memory history store. When `isTestRuntime()` is true, the
+// MarmotClient is constructed with `testHistoryFactory` so that every call
+// to `sendApplicationRumor` also saves the serialized application bytes into
+// `testHistories`, keyed by the MLS group id (hex). The Playwright publish
+// contract test reads these back via `window.__notestrTestSentRumors` and
+// cross-checks that the bytes the web actually serialized match what was
+// dispatched — i.e. the per-variant AC-*-1 matchers in
+// `specs/epic-task-sync-publish-contract/acceptance-criteria.md`.
+class TestGroupHistory implements BaseGroupHistory {
+  messages: Uint8Array[] = [];
+
+  async saveMessage(message: Uint8Array): Promise<void> {
+    // Copy so later mutations to the caller's buffer do not leak in.
+    this.messages.push(new Uint8Array(message));
+  }
+
+  async purgeMessages(): Promise<void> {
+    this.messages = [];
+  }
+}
+
+const testHistories = new Map<string, TestGroupHistory>();
+
+function bytesToHexLower(bytes: Uint8Array): string {
+  let out = "";
+  for (const byte of bytes) {
+    out += byte.toString(16).padStart(2, "0");
+  }
+  return out;
+}
+
+const testHistoryFactory: GroupHistoryFactory<TestGroupHistory> = (
+  groupId: Uint8Array,
+) => {
+  const idStr = bytesToHexLower(groupId);
+  let history = testHistories.get(idStr);
+  if (!history) {
+    history = new TestGroupHistory();
+    testHistories.set(idStr, history);
+  }
+  return history;
+};
 
 interface MarmotContextValue {
   client: MarmotClient | null;
@@ -104,13 +157,24 @@ export function MarmotProvider({
       const network = new NdkNetworkAdapter(ndk, relays);
       const clientId = await getOrCreateClientId();
 
-      const client = new MarmotClient({
+      // In test runtime, install the in-memory history factory so the
+      // publish contract test can read back the rumor bytes that were
+      // serialized for each dispatched TaskEvent. The factory is cast to the
+      // default-generic shape the rest of the app uses; the extra methods on
+      // TestGroupHistory are not consumed outside the test hook.
+      const baseOptions = {
         signer,
         groupStateBackend,
         keyPackageStore,
         network,
         clientId,
-      });
+      };
+      const client = isTestRuntime()
+        ? (new MarmotClient({
+            ...baseOptions,
+            historyFactory: testHistoryFactory,
+          }) as unknown as MarmotClient)
+        : new MarmotClient(baseOptions);
       clientRef.current = client;
 
       if (!mountedRef.current) return;
@@ -315,6 +379,90 @@ export function MarmotProvider({
   }, [init]);
 
   useDeviceSync(state.client, pubkey, relays, signer);
+
+  useEffect(() => {
+    if (!isTestRuntime() || !state.client) return;
+
+    window.__notestrTestGroups = () =>
+      state.groups.map((group) => ({
+        idStr: group.idStr,
+        nostrGroupIdHex: getNostrGroupIdHex(group.state),
+        relays: group.relays ?? relays,
+      }));
+    window.__notestrTestPubkey = () => pubkey;
+    window.__notestrTestSentRumors = (groupId: string) => {
+      const history = testHistories.get(groupId);
+      if (!history) return [];
+      return history.messages.map((bytes) => deserializeApplicationData(bytes));
+    };
+    window.__notestrTestResetSentRumors = (groupId: string) => {
+      const history = testHistories.get(groupId);
+      if (history) history.messages = [];
+    };
+    window.__notestrTestInspectGroupEvent = async (groupId, eventId) => {
+      const group = state.groups.find((entry) => entry.idStr === groupId);
+      if (!group) {
+        return {
+          event: null,
+          firstIngest: [],
+          secondIngest: [],
+          rumor: null,
+        };
+      }
+
+      const [event] = await state.client!.network.request(
+        group.relays ?? relays,
+        [{ ids: [eventId] }],
+      );
+      if (!event) {
+        return {
+          event: null,
+          firstIngest: [],
+          secondIngest: [],
+          rumor: null,
+        };
+      }
+
+      const collect = async () => {
+        const results: Array<{ kind: string; reason?: string }> = [];
+        for await (const result of group.ingest([event])) {
+          results.push({
+            kind: result.kind,
+            reason: "reason" in result ? result.reason : undefined,
+          });
+        }
+        return results;
+      };
+
+      // The sender sees its own kind-445 as a `self-echo` and `ingest` skips
+      // it without emitting `applicationMessage`, so we can't round-trip the
+      // ciphertext to plaintext via the live group. Instead we pull the
+      // serialized application bytes straight out of the test-only history
+      // store — those bytes are exactly what went into the ChaCha20-Poly1305
+      // envelope, so deserializing them yields the rumor that was published.
+      const history = testHistories.get(group.idStr);
+      const rumor = history?.messages.length
+        ? deserializeApplicationData(
+            history.messages[history.messages.length - 1]!,
+          )
+        : null;
+
+      return {
+        event,
+        firstIngest: await collect(),
+        secondIngest: await collect(),
+        rumor,
+      };
+    };
+
+    return () => {
+      delete window.__notestrTestGroups;
+      delete window.__notestrTestPubkey;
+      delete window.__notestrTestInspectGroupEvent;
+      delete window.__notestrTestSentRumors;
+      delete window.__notestrTestResetSentRumors;
+    };
+  }, [pubkey, relays, state.client, state.groups]);
 
   const detachedGroupIds = useMemo(
     () => computeDetachedGroupIds(state.groups, pubkey),
