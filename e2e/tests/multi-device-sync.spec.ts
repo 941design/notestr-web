@@ -61,6 +61,25 @@ test.describe.serial("multi-device sync", () => {
     ndkClient,
   }) => {
     test.skip(skipMobile, "Multi-context MLS tests require desktop viewport");
+    // Known limitations that block this test from being green today:
+    //
+    //   1. Test-pollution sensitivity: earlier tests in the suite leave
+    //      live kind-30443 key packages on the shared e2e relay. When
+    //      multi-device-sync runs after them, pageA's auto-invite picks
+    //      up those stale slots and the initial 2-device assertion fails
+    //      with 4–5 "leaf-*" ghost rows. Runs in isolation pass this
+    //      gate.
+    //
+    //   2. MLS remove semantics: once pageA forgets pageB's leaf, pageB
+    //      is no longer a member of the group, so the final assertion
+    //      that pageB still has `data-local="true"` count == 1 cannot
+    //      hold. The test needs to be redesigned — either by forgetting
+    //      a third sibling or by not checking pageB's local count after
+    //      it has been removed.
+    //
+    // Marking fixme until the test is redesigned and/or the e2e harness
+    // wipes relay state between test files.
+    test.fixme(true, "multi-device auto-sync test needs redesign — see inline comment");
 
     await authenticate(pageB);
     await pageB.waitForTimeout(3000);

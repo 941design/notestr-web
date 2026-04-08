@@ -9,7 +9,7 @@ import {
   type MarmotClient,
   type MarmotGroup,
 } from "@internet-privacy/marmot-ts";
-import { defaultKeyPackageEqualityConfig } from "ts-mls";
+import { defaultKeyPackageEqualityConfig, getOwnLeafNode } from "ts-mls";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,12 @@ import { removeLeafByIndex } from "@/marmot/per-leaf-remove";
 
 type DeviceRow = {
   clientId: string;
+  /**
+   * Stable identifier for persisted device names: derived from the leaf's
+   * signature key so it survives key-package rotations (which change the
+   * relay event but not the in-tree leaf material).
+   */
+  storageKey: string;
   leafIndex: number | null;
   isLocal: boolean;
   name: string;
@@ -70,6 +76,30 @@ export function DeviceList({
           keyPackageFilters([pubkey]),
         );
 
+        // Identify our own leaf via the MLS state's own-leaf-node helper.
+        // After a key-package rotation, the in-tree leaf no longer matches
+        // any current local KeyPackage event (the relay's addressable
+        // event has been replaced), so signature-key matching from the
+        // store would mis-classify the local leaf as remote and lead to
+        // forbidden self-removes when the user tries to forget another
+        // device.
+        const ownLeaf = (() => {
+          try {
+            return getOwnLeafNode(group.state);
+          } catch {
+            return undefined;
+          }
+        })();
+        const ownSignatureKey = ownLeaf?.signaturePublicKey;
+        const isOwnLeaf = (leaf: typeof leaves[number]): boolean => {
+          if (!ownSignatureKey) return false;
+          if (leaf.signaturePublicKey.length !== ownSignatureKey.length) return false;
+          for (let i = 0; i < ownSignatureKey.length; i++) {
+            if (leaf.signaturePublicKey[i] !== ownSignatureKey[i]) return false;
+          }
+          return true;
+        };
+
         const nextDevices = await Promise.all(
           leaves.map(async (leaf, index): Promise<DeviceRow> => {
             const matchingEvent = keyPackageEvents.find((event) =>
@@ -82,16 +112,24 @@ export function DeviceList({
               (matchingEvent ? getKeyPackageD(matchingEvent) : undefined) ??
               `leaf-${toShortHex(leaf.signaturePublicKey)}`;
 
-            await markDeviceSeen(clientId, {
+            // Persistent storage key: derived from the leaf's signature
+            // key so renames survive key-package rotations and reloads
+            // (the relay event id and `d` slot may stop matching the
+            // leaf material after a rotation, but the leaf signature
+            // key only changes via an explicit Update commit).
+            const storageKey = `leafkey-${toShortHex(leaf.signaturePublicKey)}-${leaf.signaturePublicKey.length}`;
+
+            await markDeviceSeen(storageKey, {
               localClientId,
               fallbackName: defaultDeviceName(clientId, localClientId),
             });
 
             return {
               clientId,
+              storageKey,
               leafIndex: leafIndexes[index] ?? null,
-              isLocal: clientId === localClientId,
-              name: await getDeviceName(clientId, localClientId),
+              isLocal: isOwnLeaf(leaf) || clientId === localClientId,
+              name: await getDeviceName(storageKey, localClientId),
             };
           }),
         );
@@ -101,7 +139,7 @@ export function DeviceList({
         setDevices(nextDevices);
         setDraftNames(
           Object.fromEntries(
-            nextDevices.map((device) => [device.clientId, device.name]),
+            nextDevices.map((device) => [device.storageKey, device.name]),
           ),
         );
       } finally {
@@ -118,22 +156,22 @@ export function DeviceList({
     };
   }, [client, group, group.state, localClientId, pubkey, relays]);
 
-  const saveName = async (clientId: string) => {
-    const nextName = draftNames[clientId] ?? "";
-    await setDeviceName(clientId, nextName);
-    const resolved = await getDeviceName(clientId, localClientId);
+  const saveName = async (storageKey: string) => {
+    const nextName = draftNames[storageKey] ?? "";
+    await setDeviceName(storageKey, nextName);
+    const resolved = await getDeviceName(storageKey, localClientId);
     setDevices((current) =>
       current.map((device) =>
-        device.clientId === clientId ? { ...device, name: resolved } : device,
+        device.storageKey === storageKey ? { ...device, name: resolved } : device,
       ),
     );
-    setDraftNames((current) => ({ ...current, [clientId]: resolved }));
+    setDraftNames((current) => ({ ...current, [storageKey]: resolved }));
   };
 
   const forgetDevice = async (device: DeviceRow) => {
     if (device.isLocal || device.leafIndex === null) return;
 
-    setRemovingClientId(device.clientId);
+    setRemovingClientId(device.storageKey);
     try {
       await removeLeafByIndex(group, device.leafIndex);
     } finally {
@@ -171,20 +209,20 @@ export function DeviceList({
 
             <div className="flex gap-2">
               <Input
-                value={draftNames[device.clientId] ?? device.name}
+                value={draftNames[device.storageKey] ?? device.name}
                 onChange={(event) =>
                   setDraftNames((current) => ({
                     ...current,
-                    [device.clientId]: event.target.value,
+                    [device.storageKey]: event.target.value,
                   }))
                 }
                 onBlur={() => {
-                  void saveName(device.clientId);
+                  void saveName(device.storageKey);
                 }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault();
-                    void saveName(device.clientId);
+                    void saveName(device.storageKey);
                   }
                 }}
                 aria-label={`Device name for ${device.clientId}`}
@@ -198,9 +236,9 @@ export function DeviceList({
                   onClick={() => {
                     void forgetDevice(device);
                   }}
-                  disabled={removingClientId === device.clientId}
+                  disabled={removingClientId === device.storageKey}
                 >
-                  {removingClientId === device.clientId ? "Forgetting..." : "Forget"}
+                  {removingClientId === device.storageKey ? "Forgetting..." : "Forget"}
                 </Button>
               )}
             </div>

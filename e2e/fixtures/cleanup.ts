@@ -18,6 +18,7 @@ const IDB_NAMES = [
   'notestr-invite-seen',
   'notestr-invited-keys',
   'notestr-group-sync',
+  'notestr-joined-groups',
 ];
 
 /**

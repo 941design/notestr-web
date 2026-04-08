@@ -7,7 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { getGroupMembers, getNostrGroupIdHex } from "@internet-privacy/marmot-ts";
+import {
+  getGroupMembers,
+  getNostrGroupIdHex,
+  keyPackageFilters,
+} from "@internet-privacy/marmot-ts";
 import { NpubQrModal } from "@/components/NpubQrModal";
 import { publishTaskSnapshot } from "@/marmot/device-sync";
 import { clearEvents } from "@/store/persistence";
@@ -146,17 +150,24 @@ export function GroupManager({
       const group = groups.find((g) => g.idStr === selectedGroupId);
       if (!group) throw new Error("Group not found");
 
-      // Fetch the invitee's key package (kind 443) from relays
-      const keyPackageEvents = await client.network.request(relays, [
-        { kinds: [443], authors: [hex], limit: 1 },
-      ]);
+      // Fetch the invitee's key package from relays.
+      // Matches both legacy kind 443 and current addressable kind 30443.
+      const keyPackageEvents = await client.network.request(
+        relays,
+        keyPackageFilters([hex]),
+      );
       if (keyPackageEvents.length === 0) {
         throw new Error(
           "No key package found for this user. They may not have published one yet.",
         );
       }
 
-      await group.inviteByKeyPackageEvent(keyPackageEvents[0]);
+      // Prefer the most recently published key package.
+      const freshestKeyPackage = keyPackageEvents
+        .slice()
+        .sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0))[0];
+
+      await group.inviteByKeyPackageEvent(freshestKeyPackage);
 
       // Publish NIP-44 encrypted task snapshot for the invitee.
       // MLS application messages from before the invite epoch are

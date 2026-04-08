@@ -206,8 +206,12 @@ export function MarmotProvider({
             console.debug("[marmot] key package created successfully");
           }
 
-          // Delete stale kind 443 events from relays whose private keys are
-          // no longer in local IndexedDB (e.g. after clearing browser data).
+          // Delete stale legacy kind 443 key package events whose private
+          // keys are no longer in local IndexedDB (e.g. after clearing
+          // browser data). Kind 30443 events are addressable and may belong
+          // to other live sibling devices of the same identity, so they
+          // must NOT be deleted here — auto-invite handles dedup by `d`
+          // slot instead.
           if (relays.length > 0 && ndk) {
             try {
               const remoteKPs = await network.request(relays, [
@@ -222,7 +226,11 @@ export function MarmotProvider({
                 .filter((id) => !localPublishedIds.has(id));
 
               if (staleIds.length > 0) {
-                console.debug("[marmot] deleting", staleIds.length, "stale kind 443 KP events from relays");
+                console.debug(
+                  "[marmot] deleting",
+                  staleIds.length,
+                  "stale legacy kind 443 KP events from relays",
+                );
                 const deleteEvent = {
                   kind: 5,
                   created_at: Math.floor(Date.now() / 1000),

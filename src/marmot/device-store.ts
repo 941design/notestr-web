@@ -1,4 +1,4 @@
-import { deviceNamesStore, invitedKeysStore } from "./storage";
+import { deviceNamesStore, invitedKeysStore, joinedGroupsStore } from "./storage";
 
 export interface DeviceMetadata {
   clientId: string;
@@ -110,4 +110,23 @@ export async function clearInvitedKeysForGroup(groupId: string): Promise<void> {
       .filter((key) => key.startsWith(`${groupId}:`))
       .map((key) => invitedKeysStore.removeItem(key)),
   );
+}
+
+/**
+ * Records that the local context joined the given group via a Welcome
+ * message (i.e. it is not the originating creator). Survives page reloads
+ * via IndexedDB so the auto-invite logic can suppress sibling-device
+ * invites even after key-package rotations have removed the proof from
+ * the live KP list.
+ */
+export async function markGroupJoinedFromWelcome(groupId: string): Promise<void> {
+  await joinedGroupsStore.setItem(groupId, true);
+}
+
+export async function isGroupJoinedFromWelcome(groupId: string): Promise<boolean> {
+  return (await joinedGroupsStore.getItem(groupId)) === true;
+}
+
+export async function forgetJoinedGroup(groupId: string): Promise<void> {
+  await joinedGroupsStore.removeItem(groupId);
 }

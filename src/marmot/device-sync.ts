@@ -28,7 +28,13 @@ import {
   createInviteStore,
   getSyncedGroupEventIds,
 } from "./storage";
-import { loadInvitedKeys, markDeviceSeen, persistInvitedKey } from "./device-store";
+import {
+  isGroupJoinedFromWelcome,
+  loadInvitedKeys,
+  markDeviceSeen,
+  markGroupJoinedFromWelcome,
+  persistInvitedKey,
+} from "./device-store";
 import { TASK_EVENT_KIND, type TaskEvent } from "../store/task-events";
 import { appendEvent, loadEvents } from "../store/persistence";
 import { replayEvents } from "../store/task-reducer";
@@ -72,6 +78,9 @@ export async function joinFromWelcomeInvite(
       welcomeRumor: invite,
     });
     await inviteReader.markAsRead(invite.id);
+    // Persist that this context is a joiner (not the creator) so the
+    // auto-invite suppression survives KP rotations and page reloads.
+    await markGroupJoinedFromWelcome(group.idStr);
     return group;
   } catch (err) {
     console.debug("[device-sync] join from welcome failed:", err);
@@ -380,23 +389,84 @@ export function useDeviceSync(
 
     // ── Effect 2: Auto-invite new devices ───────────────────────────
     const runKeyPackageSync = async () => {
-      // Build set of local KP published event IDs
-      const localPackages = await client.keyPackages.list();
-      const localEventIds = new Set(
-        localPackages.flatMap((kp) => (kp.published ?? []).map((e) => e.id)),
-      );
       const knownEvents = new Map<string, NostrEvent>();
       const invited = new Set(await loadInvitedKeys());
       const pendingInvites = new Set<string>();
 
-      for (const keyPackage of localPackages) {
+      // Re-reads local key packages every call so events from freshly
+      // rotated/published key packages are not mistaken for foreign devices.
+      // Tracks both event ids AND d slots: a rotation publishes a new event
+      // BEFORE the event id is recorded locally, so the slot check is the
+      // authoritative "this is one of my own devices" marker.
+      const getLocalKnownIds = async (): Promise<{
+        eventIds: Set<string>;
+        slots: Set<string>;
+      }> => {
+        const currentLocal = await client.keyPackages.list();
+        const eventIds = new Set(
+          currentLocal.flatMap((kp) => (kp.published ?? []).map((e) => e.id)),
+        );
+        const slots = new Set(
+          currentLocal
+            .map((kp) => kp.d)
+            .filter((d): d is string => typeof d === "string" && d.length > 0),
+        );
+        return { eventIds, slots };
+      };
+
+      const isLocalDevice = (
+        event: NostrEvent,
+        local: { eventIds: Set<string>; slots: Set<string> },
+      ): boolean => {
+        if (local.eventIds.has(event.id)) return true;
+        const slot = getKeyPackageD(event);
+        if (slot && local.slots.has(slot)) return true;
+        return false;
+      };
+
+      const initialLocal = await client.keyPackages.list();
+      for (const keyPackage of initialLocal) {
         if (keyPackage.d) {
           await markDeviceSeen(keyPackage.d, { localClientId: keyPackage.d });
         }
       }
 
+      // True iff this context joined the group via a Welcome message
+      // (rather than creating it). Joiners must NOT auto-invite siblings
+      // of their own pubkey: the creator's auto-invite already handles
+      // sibling devices, and a second wave of invites from joiners would
+      // just stack duplicate leaves for the same identity.
+      //
+      // The flag is checked from IDB on every call so it stays correct
+      // after KP rotations have removed the in-tree proof from
+      // `client.keyPackages.list()` (deprecated entries are excluded
+      // from that listing).
+      const isJoinerOfGroup = async (group: MarmotGroup): Promise<boolean> => {
+        if (await isGroupJoinedFromWelcome(group.idStr)) return true;
+        // Fallback: also derive from current key packages so the very
+        // first invite-cycle (immediately after joinGroupFromWelcome,
+        // before the IDB write may have settled) is correctly suppressed.
+        const localPkgs = await client.keyPackages.list();
+        for (const pkg of localPkgs) {
+          if (!pkg.publicPackage) continue;
+          for (const node of group.state.ratchetTree) {
+            if (node?.nodeType !== nodeTypes.leaf) continue;
+            if (
+              defaultKeyPackageEqualityConfig.compareKeyPackageToLeafNode(
+                pkg.publicPackage,
+                node.leaf,
+              )
+            ) {
+              return true;
+            }
+          }
+        }
+        return false;
+      };
+
       const inviteToAllGroups = async (kpEvent: NostrEvent) => {
         const inviteeSlot = getKeyPackageD(kpEvent);
+        const inviteePubkey = getKeyPackageNostrPubkey(kpEvent);
 
         if (inviteeSlot) {
           await markDeviceSeen(inviteeSlot);
@@ -410,30 +480,53 @@ export function useDeviceSync(
             continue;
           }
 
-          const key = `${group.idStr}:${kpEvent.id}`;
-          if (invited.has(key) || pendingInvites.has(key)) continue;
-          pendingInvites.add(key);
+          // Joiner-suppression: if this device joined the group via
+          // Welcome, the original creator is responsible for inviting
+          // sibling devices. Re-inviting from a joiner just adds
+          // duplicate leaves for the same identity.
+          if (
+            inviteePubkey === pubkey &&
+            (await isJoinerOfGroup(group))
+          ) {
+            continue;
+          }
+
+          // Deduplication key: per group + device slot (stable across rotations).
+          // Falls back to event id for legacy kind 443 events that lack a slot.
+          // Without slot-level dedup, a rotated key package for the same device
+          // would be treated as a fresh invitee and added as a duplicate leaf,
+          // forming an infinite auto-invite loop across sibling devices.
+          const dedupKey = `${group.idStr}:${inviteeSlot ?? kpEvent.id}`;
+          if (invited.has(dedupKey) || pendingInvites.has(dedupKey)) continue;
+          pendingInvites.add(dedupKey);
 
           try {
             // Sequential to avoid MLS epoch conflicts
             await group.inviteByKeyPackageEvent(kpEvent);
-            invited.add(key);
-            await persistInvitedKey(key);
+            invited.add(dedupKey);
+            await persistInvitedKey(dedupKey);
           } catch (err) {
             console.debug(
               `[device-sync] auto-invite to ${group.idStr} failed:`,
               err,
             );
           } finally {
-            pendingInvites.delete(key);
+            pendingInvites.delete(dedupKey);
           }
         }
       };
 
       const syncKnownKeyPackages = async () => {
+        // Wait for any in-flight join + post-join bookkeeping (e.g.
+        // markGroupJoinedFromWelcome) to settle. Without this, the
+        // synchronous "groupsUpdated" emitted from inside joinGroupFromWelcome
+        // races our IDB writes and the joiner-suppression check sees a
+        // stale empty flag, leading to a duplicate-invite cascade.
+        if (joinBarrier) await joinBarrier;
+        const local = await getLocalKnownIds();
         for (const event of knownEvents.values()) {
           if (!mountedRef.current) return;
-          if (localEventIds.has(event.id)) continue;
+          if (isLocalDevice(event, local)) continue;
           if (getKeyPackageNostrPubkey(event) !== pubkey) continue;
           await inviteToAllGroups(event);
         }
@@ -441,7 +534,9 @@ export function useDeviceSync(
 
       const handleKeyPackageEvent = async (event: NostrEvent) => {
         knownEvents.set(event.id, event);
-        if (localEventIds.has(event.id)) return;
+        if (joinBarrier) await joinBarrier;
+        const local = await getLocalKnownIds();
+        if (isLocalDevice(event, local)) return;
         if (getKeyPackageNostrPubkey(event) !== pubkey) return;
 
         try {
