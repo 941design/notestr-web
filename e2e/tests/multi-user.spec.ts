@@ -100,6 +100,9 @@ test.describe.serial('multi-user', () => {
     // Known issue: MLS application messages sent after User B joins don't
     // reliably arrive via the relay subscription or survive a page reload.
     // Pre-join tasks work via NIP-44 snapshots (tested in task-sync.spec.ts).
+    // Verified still broken on 2026-04-09: test reaches the task-creation
+    // step, User A sees the task, User B's Open column stays empty even
+    // after the reload retry path in the catch block.
     test.fixme(true, 'MLS live message delivery to joined members is unreliable — needs app-level fix');
     // User A should have the group selected already (auto-selected on create)
     await expect(pageA.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 10000 });
