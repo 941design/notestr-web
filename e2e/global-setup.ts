@@ -40,9 +40,16 @@ async function spawnAndWaitForOutput(
       if (!settled && text.includes(waitFor)) {
         settled = true;
         clearTimeout(timer);
-        // Stop forwarding stdout/stderr once the process is ready
+        // Stop forwarding stdout/stderr once the process is ready, but keep
+        // no-op drains attached so the subprocess's stdout/stderr pipe
+        // buffers never fill up. If we just removed the listeners the stream
+        // would pause and the kernel-side pipe would block the child on
+        // write — which is how `serve` silently dies partway through a
+        // Playwright run once its per-request access log overflows the pipe.
         child.stdout?.removeListener('data', onData);
         child.stderr?.removeListener('data', onStderr);
+        child.stdout?.on('data', () => {});
+        child.stderr?.on('data', () => {});
         resolve(child);
       }
     }
@@ -155,19 +162,36 @@ export default async function globalSetup() {
   // 3. Kill any stale serve process on port 3100 before starting
   await killProcessOnPort(3100);
 
-  // 4. Start the static file server
+  // 4. Start the static file server. IMPORTANT: `stdio: 'ignore'` — do NOT
+  // pipe `serve`'s stdout/stderr into this process. `serve` logs one line
+  // per HTTP request and a full Playwright run makes hundreds of requests.
+  // If the pipes aren't drained faster than they're written (or any listener
+  // pauses the stream), the ~64KB kernel pipe buffer fills, `serve` blocks
+  // forever on `process.stdout.write`, and every subsequent test fails with
+  // `ERR_CONNECTION_REFUSED`. Redirecting to /dev/null at spawn time makes
+  // the problem structurally impossible. Readiness is detected via the HTTP
+  // health-check below instead of stdout scraping.
   console.log('[setup] Starting serve on port 3100...');
-  const serveProc = await spawnAndWaitForOutput(
+  const serveProc = spawn(
     'npx',
     ['serve', 'out', '-l', '3100', '--no-clipboard'],
-    'Accepting connections',
-    15000,
-    PROJECT_ROOT,
+    {
+      cwd: PROJECT_ROOT,
+      stdio: 'ignore',
+      env: process.env,
+      detached: false,
+    },
   );
-  console.log('[setup] Serve ready.');
+  serveProc.on('error', (err) => {
+    console.error('[setup] serve spawn error:', err);
+  });
+  serveProc.on('exit', (code, signal) => {
+    console.error(`[setup] serve exited unexpectedly (code=${code}, signal=${signal})`);
+  });
 
-  // 5. Also do an HTTP health-check to be sure
-  await waitForHttp('http://localhost:3100', 10000);
+  // 5. Wait for the HTTP endpoint to become reachable — that's the real
+  // readiness signal now that stdout is no longer available.
+  await waitForHttp('http://localhost:3100', 20000);
   console.log('[setup] HTTP health check passed.');
 
   // 5. Save PIDs for teardown

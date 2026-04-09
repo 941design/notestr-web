@@ -21,6 +21,21 @@ const nextConfig: NextConfig = {
         global: "globalThis",
       }),
     );
+    // `ts-mls` declares several HPKE/PQC crypto backends as optional peer
+    // dependencies and gates them behind `try { await import(...) }` inside
+    // switch statements keyed on ciphersuite. Marmot uses ChaCha20-Poly1305
+    // + X25519 so none of these branches are ever reached at runtime, but
+    // webpack still statically resolves the dynamic import targets during
+    // bundling — on macOS (strict) that turns "Compiled with warnings" into
+    // hard "Module not found" errors. IgnorePlugin makes webpack treat them
+    // as missing, which preserves the existing try/catch fallback to
+    // DependencyError if some caller ever does opt into one of these suites.
+    config.plugins.push(
+      new webpack.IgnorePlugin({
+        resourceRegExp:
+          /^(@hpke\/dhkem-x448|@hpke\/ml-kem|@hpke\/hybridkem-x-wing|@noble\/post-quantum\/ml-dsa\.js)$/,
+      }),
+    );
     return config;
   },
 };

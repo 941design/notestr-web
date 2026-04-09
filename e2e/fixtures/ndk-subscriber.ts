@@ -54,9 +54,29 @@ export async function openNdkSubscriber(
     waitForEvent(filter, timeoutMs) {
       ensureOpen();
       return new Promise<NDKEvent>((resolve, reject) => {
+        // Record subscription time so we can ignore any historical events
+        // the relay replays before the test's actual dispatch. Group-state
+        // kind-445 events (commits, welcome) from the earlier createGroup
+        // call are already on the relay when task-publish-contract tests
+        // subscribe; without this gate the subscription would resolve on
+        // one of those rather than on the task event the test dispatches
+        // next. Skip the auto-since if the caller already specified
+        // `since` OR an `ids` filter — an ids filter already uniquely
+        // identifies the target and must not be further constrained by
+        // created_at (otherwise fast publish/subscribe races in the same
+        // wall-clock second can drop the target event on platforms with
+        // sub-second relay clock skew, e.g. macOS).
+        const hasSince = filter.since != null;
+        const hasIdsFilter =
+          Array.isArray(filter.ids) && filter.ids.length > 0;
+        const filterWithSince: NDKFilter =
+          hasSince || hasIdsFilter
+            ? filter
+            : { ...filter, since: Math.floor(Date.now() / 1000) };
+
         const timeout = setTimeout(() => {
           stopSubscription(subscription);
-          reject(new Error(`timeout waiting for event: ${JSON.stringify(filter)}`));
+          reject(new Error(`timeout waiting for event: ${JSON.stringify(filterWithSince)}`));
         }, timeoutMs);
 
         const cleanup = () => {
@@ -64,7 +84,7 @@ export async function openNdkSubscriber(
           stopSubscription(subscription);
         };
 
-        const subscription = ndk.subscribe(filter, { closeOnEose: false });
+        const subscription = ndk.subscribe(filterWithSince, { closeOnEose: false });
         activeSubscriptions.add(subscription);
         subscription.on("event", (event: NDKEvent) => {
           cleanup();
@@ -78,10 +98,18 @@ export async function openNdkSubscriber(
     waitForEvents(filter, count, timeoutMs) {
       ensureOpen();
       return new Promise<NDKEvent[]>((resolve, reject) => {
+        const hasSince = filter.since != null;
+        const hasIdsFilter =
+          Array.isArray(filter.ids) && filter.ids.length > 0;
+        const filterWithSince: NDKFilter =
+          hasSince || hasIdsFilter
+            ? filter
+            : { ...filter, since: Math.floor(Date.now() / 1000) };
+
         const events: NDKEvent[] = [];
         const timeout = setTimeout(() => {
           stopSubscription(subscription);
-          reject(new Error(`timeout waiting for ${count} events: ${JSON.stringify(filter)}`));
+          reject(new Error(`timeout waiting for ${count} events: ${JSON.stringify(filterWithSince)}`));
         }, timeoutMs);
 
         const cleanup = () => {
@@ -89,7 +117,7 @@ export async function openNdkSubscriber(
           stopSubscription(subscription);
         };
 
-        const subscription = ndk.subscribe(filter, { closeOnEose: false });
+        const subscription = ndk.subscribe(filterWithSince, { closeOnEose: false });
         activeSubscriptions.add(subscription);
         subscription.on("event", (event: NDKEvent) => {
           events.push(event);
