@@ -194,11 +194,28 @@ export function MarmotProvider({
       // Force re-render when any group's internal state changes (e.g. after
       // invite, selfUpdate, or ingest). MarmotClient only emits groupsUpdated
       // when groups are added/removed, not when a group mutates its MLS state.
+      //
+      // Also emit a diagnostic log on every epoch transition so the next
+      // regression in the live-delivery pipeline is directly observable
+      // without re-instrumenting the code. Ratchet-only advances (within
+      // the same epoch) are logged distinctly from epoch transitions —
+      // only the latter should trigger retry-queue draining in device-sync.
       const stateListenerGroups = new Set<string>();
+      const previousEpoch = new Map<string, bigint>();
       const attachStateListener = (group: MarmotGroup) => {
         if (stateListenerGroups.has(group.idStr)) return;
         stateListenerGroups.add(group.idStr);
+        previousEpoch.set(group.idStr, group.state.groupContext.epoch);
         group.on("stateChanged", () => {
+          const prev = previousEpoch.get(group.idStr) ?? 0n;
+          const next = group.state.groupContext.epoch;
+          previousEpoch.set(group.idStr, next);
+          console.debug("[mls-receive:state-changed]", {
+            groupId: group.idStr.slice(0, 8),
+            prevEpoch: prev.toString(),
+            newEpoch: next.toString(),
+            reason: next === prev ? "ratchet" : "epoch",
+          });
           if (mountedRef.current) {
             setState((prev) => ({ ...prev, groups: [...prev.groups] }));
           }
@@ -399,6 +416,13 @@ export function MarmotProvider({
       const history = testHistories.get(groupId);
       if (history) history.messages = [];
     };
+    window.__notestrTestNetworkRequest = async (reqRelays, filters) => {
+      if (!state.client) return [];
+      return state.client.network.request(
+        reqRelays,
+        filters as Parameters<typeof state.client.network.request>[1],
+      );
+    };
     window.__notestrTestInspectGroupEvent = async (groupId, eventId) => {
       const group = state.groups.find((entry) => entry.idStr === groupId);
       if (!group) {
@@ -410,6 +434,11 @@ export function MarmotProvider({
         };
       }
 
+      // Capture the group's current epoch first — we want this even if
+      // the requested event doesn't exist on the relay, so diagnostics
+      // can query "what's my epoch" with a dummy eventId.
+      const currentEpoch = group.state.groupContext.epoch.toString();
+
       const [event] = await state.client!.network.request(
         group.relays ?? relays,
         [{ ids: [eventId] }],
@@ -420,16 +449,35 @@ export function MarmotProvider({
           firstIngest: [],
           secondIngest: [],
           rumor: null,
+          currentEpoch,
         };
       }
 
       const collect = async () => {
-        const results: Array<{ kind: string; reason?: string }> = [];
+        const results: Array<{
+          kind: string;
+          reason?: string;
+          errorMessages?: string[];
+        }> = [];
         for await (const result of group.ingest([event])) {
-          results.push({
+          const entry: {
+            kind: string;
+            reason?: string;
+            errorMessages?: string[];
+          } = {
             kind: result.kind,
             reason: "reason" in result ? result.reason : undefined,
-          });
+          };
+          if ("errors" in result && Array.isArray(result.errors)) {
+            entry.errorMessages = result.errors.map((e) =>
+              e instanceof Error
+                ? `${e.name}: ${e.message}`
+                : typeof e === "object" && e !== null && "message" in e
+                  ? String((e as { message: unknown }).message)
+                  : String(e),
+            );
+          }
+          results.push(entry);
         }
         return results;
       };
@@ -452,12 +500,14 @@ export function MarmotProvider({
         firstIngest: await collect(),
         secondIngest: await collect(),
         rumor,
+        currentEpoch: group.state.groupContext.epoch.toString(),
       };
     };
 
     return () => {
       delete window.__notestrTestGroups;
       delete window.__notestrTestPubkey;
+      delete window.__notestrTestNetworkRequest;
       delete window.__notestrTestInspectGroupEvent;
       delete window.__notestrTestSentRumors;
       delete window.__notestrTestResetSentRumors;

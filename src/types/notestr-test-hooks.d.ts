@@ -16,9 +16,18 @@ declare global {
       eventId: string,
     ) => Promise<{
       event: NostrEvent | null;
-      firstIngest: Array<{ kind: string; reason?: string }>;
-      secondIngest: Array<{ kind: string; reason?: string }>;
+      firstIngest: Array<{
+        kind: string;
+        reason?: string;
+        errorMessages?: string[];
+      }>;
+      secondIngest: Array<{
+        kind: string;
+        reason?: string;
+        errorMessages?: string[];
+      }>;
       rumor: Rumor | null;
+      currentEpoch?: string;
     }>;
     __notestrTestSentRumors?: (groupId: string) => Rumor[];
     __notestrTestResetSentRumors?: (groupId: string) => void;
@@ -27,6 +36,11 @@ declare global {
     __notestrTestPersistedTaskEvents?: () => Promise<TaskEvent[]>;
     __notestrTestArmPublishFailure?: (message?: string) => void;
     __notestrTestPublishFailureOnce?: string | null;
+    /** Diagnostic hook: issue an unfiltered relay request via the mounted MarmotClient's network adapter. */
+    __notestrTestNetworkRequest?: (
+      relays: string[],
+      filters: unknown[],
+    ) => Promise<NostrEvent[]>;
   }
 }
 

@@ -38,6 +38,10 @@ import {
 import { TASK_EVENT_KIND, type TaskEvent } from "../store/task-events";
 import { appendEvent, loadEvents } from "../store/persistence";
 import { replayEvents } from "../store/task-reducer";
+import {
+  createPendingRetryQueue,
+  type PendingRetryQueue,
+} from "./ingest-queue";
 
 /** Custom kind for NIP-44 encrypted task snapshots sent outside MLS. */
 export const TASK_SNAPSHOT_KIND = 30078;
@@ -117,6 +121,11 @@ export function useDeviceSync(
   const appMsgHandlersRef = useRef(
     new Map<string, { group: MarmotGroup; handler: (data: Uint8Array) => void }>(),
   );
+  // Per-group stateChanged handlers for the retry-queue drain. Kept out
+  // of appMsgHandlersRef because they have a different arity.
+  const stateChangeHandlersRef = useRef(
+    new Map<string, { group: MarmotGroup; handler: () => void }>(),
+  );
 
   useEffect(() => {
     if (!client || !pubkey || relays.length === 0) return;
@@ -158,22 +167,42 @@ export function useDeviceSync(
               continue;
             }
 
-            // Pre-seed syncedEventIds with all relay events for this group.
-            // The welcome already incorporates group state up to the invite
-            // epoch — re-ingesting those events would cause a double epoch
-            // advance and MLS key divergence.
-            const relaysForGroup = group.relays ?? relays;
-            const hTag = getNostrGroupIdHex(group.state);
-            try {
-              const existing = await client.network.request(relaysForGroup, [
-                { kinds: [445], "#h": [hTag] },
-              ]);
-              const ids = new Set(existing.map((e) => e.id));
-              syncedEventIds.set(group.idStr, ids);
-              await addSyncedGroupEventIds(group.idStr, ids);
-            } catch (err) {
-              console.warn("[device-sync] pre-seed relay fetch failed:", err);
-            }
+            // Historically we pre-seeded `syncedEventIds` here with every
+            // kind-445 currently on the relay, marking them as "already
+            // processed" without ever calling `ingest()` on them. The
+            // rationale in the old comment was that the Welcome snapshot
+            // already incorporates group state up to the invite epoch, so
+            // re-ingesting those events would cause a "double epoch
+            // advance and MLS key divergence."
+            //
+            // That rationale is wrong. ts-mls's `ingest()` explicitly
+            // handles past-epoch commits as `skipped past-epoch`
+            // (marmot-group.d.ts IngestResult / marmot-group.js sorting).
+            // Re-ingesting is SAFE. And the pre-seed caused the exact
+            // bug that multi-user.spec.ts:98 was fixmed for: if any
+            // commits landed on the relay BETWEEN the Welcome being
+            // built by the admin and the joiner actually processing it
+            // (e.g. admin auto-invited a sibling device in the
+            // background, or had any other backlog), the joiner would
+            // silently mark them as seen and never catch up. The
+            // admin's subsequent application messages, encrypted at
+            // the later epoch, would then fail to decrypt on the
+            // joiner forever.
+            //
+            // Fix: do not pre-seed. Let the normal `ingestGroupEvents`
+            // path inside `syncGroup` apply every historical kind-445
+            // through ts-mls, which correctly advances the state
+            // epoch-by-epoch until the joiner catches up to the
+            // admin. The retry queue added alongside this change
+            // (src/marmot/ingest-queue.ts) catches any straggler
+            // application messages that arrive before their
+            // containing-epoch commit.
+            //
+            // The task snapshot (fetched below) remains the canonical
+            // bootstrap for pre-join task state: MLS application
+            // messages older than the joiner's Welcome epoch cannot be
+            // recovered anyway because they're encrypted at epochs
+            // whose keys the joiner never had.
 
             // Fetch task snapshot (NIP-44 encrypted, sent by inviter)
             await fetchTaskSnapshot(group);
@@ -220,6 +249,20 @@ export function useDeviceSync(
     // ── Effect 1.5: Sync group traffic ──────────────────────────────
     const groupSubs = new Map<string, Unsubscribable>();
     const syncedEventIds = new Map<string, Set<string>>();
+    // Events that `ingest()` yielded as `unreadable` are parked here and
+    // retried whenever the group's MLS epoch advances. See
+    // `src/marmot/ingest-queue.ts` for the contract.
+    const pendingRetry = new Map<string, PendingRetryQueue>();
+    // Per-group mutex: two concurrent `ingestGroupEvents` calls on the
+    // same group race on marmot-ts's `this.state` mutation, so every
+    // call chains onto a single promise per group.
+    const ingestLock = new Map<string, Promise<void>>();
+    // Last-known epoch per group. Seeded from the group's initial
+    // ClientState at subscribe time; updated every time `stateChanged`
+    // fires. Only a strict `newEpoch > lastEpoch` transition triggers
+    // retry-queue draining — within-epoch ratchet advances (every
+    // `sendApplicationRumor`) would otherwise cause retry storms.
+    const lastEpoch = new Map<string, bigint>();
 
     /**
      * Fetch a NIP-44 encrypted task snapshot from the group admin.
@@ -267,7 +310,16 @@ export function useDeviceSync(
       }
     };
 
-    const ingestGroupEvents = async (
+    const getPendingRetryQueue = (groupId: string): PendingRetryQueue => {
+      let queue = pendingRetry.get(groupId);
+      if (!queue) {
+        queue = createPendingRetryQueue({ maxSize: 200, maxAgeSec: 86400 });
+        pendingRetry.set(groupId, queue);
+      }
+      return queue;
+    };
+
+    const ingestGroupEventsRaw = async (
       group: MarmotGroup,
       events: NostrEvent[],
     ): Promise<void> => {
@@ -280,28 +332,109 @@ export function useDeviceSync(
       if (pending.length === 0) return;
 
       const processed = new Set<string>();
+      const retryQueue = getPendingRetryQueue(group.idStr);
 
       for await (const result of group.ingest(pending)) {
-        console.debug("[device-sync] ingest result:", result.kind, result.event.id?.slice(0, 12));
+        const currentEpoch = group.state.groupContext.epoch.toString();
+        const errorMessages =
+          "errors" in result && Array.isArray(result.errors)
+            ? result.errors.map((e) =>
+                e instanceof Error ? `${e.name}: ${e.message}` : String(e),
+              )
+            : undefined;
+        console.debug("[mls-receive:ingest-result]", {
+          eventId: result.event.id?.slice(0, 12),
+          kind: result.kind,
+          groupEpoch: currentEpoch,
+          reason: "reason" in result ? result.reason : undefined,
+          errorMessages,
+        });
         if (result.kind === "processed" || result.kind === "skipped") {
           processed.add(result.event.id);
+          // Promotion: if this event was previously parked in the
+          // retry queue, it's now readable — drop it.
+          retryQueue.remove(result.event.id);
           continue;
         }
 
         if (result.kind === "rejected") {
-          console.debug("[device-sync] rejected reason:", (result as any).reason);
           processed.add(result.event.id);
+          retryQueue.remove(result.event.id);
+          continue;
         }
         if (result.kind === "unreadable") {
-          console.debug("[device-sync] unreadable errors:", (result as any).errors);
+          // Park the event for retry on the next epoch advance. The
+          // queue dedupes by event id, so repeated re-ingests of the
+          // same unreadable event don't inflate the queue.
+          retryQueue.enqueue(result.event);
         }
-        // "unreadable" events are NOT added — they may become decryptable later
       }
 
       if (processed.size === 0) return;
 
       syncedEventIds.set(group.idStr, new Set(mergeIds(seen, processed)));
       await addSyncedGroupEventIds(group.idStr, processed);
+    };
+
+    // Serialize concurrent ingest calls per group. Two concurrent calls
+    // race on marmot-ts's internal `this.state` mutation, which produces
+    // `desired gen in the past` errors and/or epoch divergence. The
+    // lock chains every call onto the group's in-flight promise.
+    const ingestGroupEvents = async (
+      group: MarmotGroup,
+      events: NostrEvent[],
+    ): Promise<void> => {
+      const prev = ingestLock.get(group.idStr) ?? Promise.resolve();
+      const next = prev
+        .catch(() => undefined)
+        .then(() => ingestGroupEventsRaw(group, events));
+      ingestLock.set(group.idStr, next);
+      try {
+        await next;
+      } finally {
+        // Clear the lock if we're still the tail of the chain.
+        if (ingestLock.get(group.idStr) === next) {
+          ingestLock.delete(group.idStr);
+        }
+      }
+    };
+
+    const attachRetryOnEpochAdvance = (group: MarmotGroup): void => {
+      if (stateChangeHandlersRef.current.has(group.idStr)) return;
+
+      const handler = () => {
+        const newEpoch = group.state.groupContext.epoch;
+        const prev = lastEpoch.get(group.idStr) ?? 0n;
+        if (newEpoch <= prev) return; // within-epoch ratchet advance, no retry
+        lastEpoch.set(group.idStr, newEpoch);
+
+        const queue = pendingRetry.get(group.idStr);
+        if (!queue) return;
+        queue.prune();
+        const snapshot = queue.snapshot();
+        if (snapshot.length === 0) return;
+
+        console.debug("[mls-receive:retry-on-epoch]", {
+          groupId: group.idStr.slice(0, 8),
+          newEpoch: newEpoch.toString(),
+          pendingCount: snapshot.length,
+        });
+
+        // `ingestGroupEvents` goes through the lock, so concurrent
+        // live-subscription ingests won't race with this retry pass.
+        //
+        // Note: the existing `syncedEventIds` filter inside
+        // `ingestGroupEventsRaw` would short-circuit these events
+        // because unreadable events are NOT added to `seen`. So this
+        // pass re-enters the ts-mls ingest path for exactly those
+        // events that previously failed to decrypt.
+        void ingestGroupEvents(group, snapshot).catch((err) => {
+          console.debug("[mls-receive:retry-failed]", err);
+        });
+      };
+
+      stateChangeHandlersRef.current.set(group.idStr, { group, handler });
+      group.on("stateChanged", handler);
     };
 
     // Persist task-related application messages so they survive regardless
@@ -312,6 +445,11 @@ export function useDeviceSync(
       const handler = (data: Uint8Array) => {
         try {
           const rumor: Rumor = deserializeApplicationData(data);
+          console.debug("[mls-receive:app-msg-emit]", {
+            groupId: group.idStr.slice(0, 8),
+            rumorKind: rumor.kind,
+            len: data.length,
+          });
           if (rumor.kind !== TASK_EVENT_KIND) return;
           const taskEvent: TaskEvent = JSON.parse(rumor.content);
           appendEvent(group.idStr, taskEvent).catch((err) => {
@@ -333,6 +471,10 @@ export function useDeviceSync(
       if (joinBarrier) await joinBarrier;
 
       attachAppMsgListener(group);
+      attachRetryOnEpochAdvance(group);
+      // Seed the last-known epoch so the very first stateChanged firing
+      // doesn't look like a huge forward jump.
+      lastEpoch.set(group.idStr, group.state.groupContext.epoch);
 
       const relaysForGroup = group.relays ?? relays;
       const hTag = nostrGroupId(group);
@@ -341,6 +483,12 @@ export function useDeviceSync(
       try {
         const initialEvents = await client.network.request(relaysForGroup, [filter]);
         if (!mountedRef.current) return;
+        console.debug("[mls-receive:sync-start]", {
+          groupId: group.idStr.slice(0, 8),
+          epoch: group.state.groupContext.epoch.toString(),
+          preSeeded: syncedEventIds.get(group.idStr)?.size ?? 0,
+          fetched: initialEvents.length,
+        });
         await ingestGroupEvents(group, initialEvents);
       } catch (err) {
         console.debug(`[device-sync] initial group sync failed for ${group.idStr}:`, err);
@@ -353,6 +501,11 @@ export function useDeviceSync(
         .subscribe({
           next: async (event: NostrEvent) => {
             try {
+              console.debug("[mls-receive:live-in]", {
+                eventId: event.id.slice(0, 12),
+                author: event.pubkey.slice(0, 8),
+                groupEpoch: group.state.groupContext.epoch.toString(),
+              });
               await ingestGroupEvents(group, [event]);
             } catch (err) {
               console.debug(
@@ -375,10 +528,18 @@ export function useDeviceSync(
         sub.unsubscribe();
         groupSubs.delete(groupId);
         syncedEventIds.delete(groupId);
+        pendingRetry.delete(groupId);
+        ingestLock.delete(groupId);
+        lastEpoch.delete(groupId);
         const entry = appMsgHandlersRef.current.get(groupId);
         if (entry) {
           entry.group.off("applicationMessage", entry.handler);
           appMsgHandlersRef.current.delete(groupId);
+        }
+        const stateEntry = stateChangeHandlersRef.current.get(groupId);
+        if (stateEntry) {
+          stateEntry.group.off("stateChanged", stateEntry.handler);
+          stateChangeHandlersRef.current.delete(groupId);
         }
       }
 
@@ -600,6 +761,10 @@ export function useDeviceSync(
         entry.group.off("applicationMessage", entry.handler);
       }
       appMsgHandlersRef.current.clear();
+      for (const entry of stateChangeHandlersRef.current.values()) {
+        entry.group.off("stateChanged", entry.handler);
+      }
+      stateChangeHandlersRef.current.clear();
     };
   }, [client, pubkey, relays, signer]);
 }

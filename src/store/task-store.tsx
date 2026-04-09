@@ -9,7 +9,8 @@ import {
 } from "react";
 import type { Rumor } from "applesauce-common/helpers/gift-wrap";
 import { deserializeApplicationData } from "@internet-privacy/marmot-ts";
-import { useGroup } from "../marmot/client";
+import { getEventHash } from "nostr-tools/pure";
+import { useGroup, useMarmot } from "../marmot/client";
 import { TASK_EVENT_KIND, type Task, type TaskEvent } from "./task-events";
 import { applyEvent, replayEvents, type TaskState } from "./task-reducer";
 import { appendEvent, loadEvents } from "./persistence";
@@ -36,6 +37,7 @@ export const TaskStoreProvider: React.FC<TaskStoreProviderProps> = ({
   children,
 }) => {
   const group = useGroup(groupId);
+  const { pubkey } = useMarmot();
   const [state, setState] = useState<TaskState>(new Map());
   const [loading, setLoading] = useState(true);
   const stateRef = useRef<TaskState>(state);
@@ -70,6 +72,11 @@ export const TaskStoreProvider: React.FC<TaskStoreProviderProps> = ({
     function handleApplicationMessage(data: Uint8Array) {
       try {
         const rumor: Rumor = deserializeApplicationData(data);
+        console.debug("[mls-receive:task-store-in]", {
+          groupId: groupId.slice(0, 8),
+          rumorKind: rumor.kind,
+          accepted: rumor.kind === TASK_EVENT_KIND,
+        });
 
         if (rumor.kind !== TASK_EVENT_KIND) return;
 
@@ -103,14 +110,21 @@ export const TaskStoreProvider: React.FC<TaskStoreProviderProps> = ({
 
       // Send to the MLS group
       if (group) {
-        const rumor: Rumor = {
+        // marmot-ts's deserializeApplicationData rejects rumors with empty
+        // `id` or `pubkey`, which breaks both the web's own receive path
+        // (handleApplicationMessage) and the e2e publish-contract round-trip
+        // decode. Follow the same pattern as `MarmotGroup.sendChatMessage`:
+        // set pubkey to the user's identity pubkey and compute the event
+        // hash before handing the rumor to sendApplicationRumor.
+        const draft = {
           id: "",
           kind: TASK_EVENT_KIND,
           content: JSON.stringify(taskEvent),
           tags: [["t", "task"]],
           created_at: Math.floor(Date.now() / 1000),
-          pubkey: "",
+          pubkey,
         };
+        const rumor: Rumor = { ...draft, id: getEventHash(draft) };
 
         try {
           const forcedError = isTestRuntime()
@@ -136,7 +150,7 @@ export const TaskStoreProvider: React.FC<TaskStoreProviderProps> = ({
         }
       }
     },
-    [group, groupId],
+    [group, groupId, pubkey],
   );
 
   useEffect(() => {
