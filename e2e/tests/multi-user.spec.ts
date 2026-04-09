@@ -97,13 +97,6 @@ test.describe.serial('multi-user', () => {
 
   test('User A creates a task, User B sees it', async () => {
     test.skip(skipMobile, 'Multi-context MLS tests require desktop viewport');
-    // Known issue: MLS application messages sent after User B joins don't
-    // reliably arrive via the relay subscription or survive a page reload.
-    // Pre-join tasks work via NIP-44 snapshots (tested in task-sync.spec.ts).
-    // Verified still broken on 2026-04-09: test reaches the task-creation
-    // step, User A sees the task, User B's Open column stays empty even
-    // after the reload retry path in the catch block.
-    test.fixme(true, 'MLS live message delivery to joined members is unreliable — needs app-level fix');
     // User A should have the group selected already (auto-selected on create)
     await expect(pageA.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 10000 });
 
@@ -140,20 +133,31 @@ test.describe.serial('multi-user', () => {
 
   test('User B moves task to In Progress, User A sees it', async () => {
     test.skip(skipMobile, 'Multi-context MLS tests require desktop viewport');
-    test.fixme(true, 'Depends on MLS live message delivery — see previous test');
-    // User B clicks "Move to In Progress" on the first task in Open column
-    const openColumnB = pageB.locator('[data-column="open"]').first();
-    await openColumnB
+
+    // Board.tsx renders both a mobile-single-column panel (md:hidden)
+    // and a desktop-grid layout (hidden md:grid), both of which carry
+    // `data-column="open"`. Scoping the locator to
+    // `[data-column="open"].first()` targets the mobile copy (first in
+    // DOM order) which is display:none on desktop viewports, so any
+    // nested getByRole finds zero accessible buttons. Use a page-scoped
+    // role lookup — getByRole filters the accessibility tree and
+    // naturally picks the visible desktop button.
+    await pageB
       .getByRole('button', { name: /Move to In Progress/i })
       .first()
       .click();
 
-    // Verify it moved for User B
-    const inProgressB = pageB.locator('[data-column="in_progress"]').first();
-    await expect(inProgressB.locator('[data-testid="task-card"]')).toHaveCount(1, { timeout: 15000 });
+    // Verify it moved for User B. On desktop viewport, the mobile
+    // single-column panel only renders the currently-active tab
+    // (initially "open"), so `data-column="in_progress"` exists only
+    // in the desktop grid → count=1.
+    await expect(pageB.locator('[data-column="in_progress"] [data-testid="task-card"]')).toHaveCount(1, {
+      timeout: 15000,
+    });
 
-    // User A should see the task move to In Progress
-    const inProgressA = pageA.locator('[data-column="in_progress"]').first();
-    await expect(inProgressA.locator('[data-testid="task-card"]')).toHaveCount(1, { timeout: 30000 });
+    // User A should see the task move to In Progress.
+    await expect(pageA.locator('[data-column="in_progress"] [data-testid="task-card"]')).toHaveCount(1, {
+      timeout: 30000,
+    });
   });
 });

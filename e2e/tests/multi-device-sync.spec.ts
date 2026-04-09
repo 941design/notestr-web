@@ -79,6 +79,12 @@ test.describe.serial("multi-device sync", () => {
     //
     // Marking fixme until the test is redesigned and/or the e2e harness
     // wipes relay state between test files.
+    //
+    // NOTE (2026-04-09): The MLS live-delivery fix in `device-sync.ts`
+    // (dropping the post-join pre-seed so historical kind-445s flow
+    // through ts-mls naturally) un-fixmed multi-user.spec.ts but does
+    // NOT clear this test's blockers above — they are test-design
+    // issues, not live-delivery issues.
     test.fixme(true, "multi-device auto-sync test needs redesign — see inline comment");
 
     await authenticate(pageB);
