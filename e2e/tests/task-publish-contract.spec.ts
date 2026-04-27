@@ -32,12 +32,29 @@ async function createGroup(page: Page, groupName: string): Promise<void> {
   await openMobileDrawer(page);
   await page.getByPlaceholder("Group name").first().fill(groupName);
   await page.getByRole("button", { name: "Create", exact: true }).first().click();
-  await expect(page.locator("aside").getByText(groupName).first()).toBeVisible({
+
+  // After Create, the page-level onGroupSelect handler closes the mobile
+  // drawer (app/page.tsx setDrawerOpen(false)). The off-canvas aside slides
+  // out via transform: translateX(-100%) — fast enough on Mobile Chrome to
+  // catch the new group name in the brief pre-close window, but Mobile
+  // Safari consistently lands the visibility check AFTER the close, so the
+  // group name is in DOM but off-screen and toBeVisible times out.
+  //
+  // The "Tasks" heading on the board is the next render after the drawer
+  // closes, so it's a stable post-condition for both desktop (drawer stays
+  // open) and mobile (drawer closes, board takes focus).
+  await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible({
     timeout: 30000,
   });
-  await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible({
-    timeout: 10000,
-  });
+
+  if (!isMobile(page)) {
+    // On desktop the sidebar is permanently visible, so assert the group
+    // landed in it as well — that's the test we still want for selection
+    // wiring on the desktop path.
+    await expect(
+      page.locator("aside").getByText(groupName).first(),
+    ).toBeVisible({ timeout: 10000 });
+  }
 }
 
 async function currentGroup(page: Page): Promise<{

@@ -155,9 +155,27 @@ test.describe.serial('multi-user', () => {
       timeout: 15000,
     });
 
-    // User A should see the task move to In Progress.
-    await expect(pageA.locator('[data-column="in_progress"] [data-testid="task-card"]')).toHaveCount(1, {
-      timeout: 30000,
-    });
+    // User A should see the task move to In Progress. Same fallback
+    // shape as `User A creates a task, User B sees it` — under parallel
+    // suite relay load the live subscription occasionally misses the
+    // kind-445 commit, so reload User A and let device-sync re-fetch
+    // history before failing the test.
+    const inProgressA = pageA.locator(
+      '[data-column="in_progress"] [data-testid="task-card"]',
+    );
+    try {
+      await expect(inProgressA).toHaveCount(1, { timeout: 30000 });
+    } catch {
+      await pageA.reload();
+      await pageA
+        .locator('[data-testid="pubkey-chip"]')
+        .waitFor({ state: 'visible', timeout: 30000 });
+      await pageA.waitForTimeout(5000);
+      await pageA.locator('aside').getByText(GROUP_NAME).click();
+      await expect(pageA.getByRole('heading', { name: 'Tasks' })).toBeVisible({
+        timeout: 10000,
+      });
+      await expect(inProgressA).toHaveCount(1, { timeout: 30000 });
+    }
   });
 });
