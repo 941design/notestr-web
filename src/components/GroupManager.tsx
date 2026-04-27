@@ -125,7 +125,7 @@ export function GroupManager({
     setCreating(true);
     setError(null);
     try {
-      const group = await client.createGroup(newGroupName.trim(), {
+      const group = await client.groups.create(newGroupName.trim(), {
         relays: groupRelays.length > 0 ? groupRelays : relays,
       });
       setNewGroupName("");
@@ -199,9 +199,9 @@ export function GroupManager({
     try {
       const isDetachedGroup = detachedGroupIds.has(pendingLeaveGroupId);
       if (isDetachedGroup) {
-        await client.destroyGroup(pendingLeaveGroupId);
+        await client.groups.destroy(pendingLeaveGroupId);
       } else {
-        await client.leaveGroup(pendingLeaveGroupId);
+        await client.groups.leave(pendingLeaveGroupId);
       }
       await clearEvents(pendingLeaveGroupId);
       setPendingLeaveGroupId(null);

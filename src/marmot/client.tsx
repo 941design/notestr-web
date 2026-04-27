@@ -12,8 +12,6 @@ import {
 import NDK, { NDKEvent, NDKRelay, NDKRelaySet } from "@nostr-dev-kit/ndk";
 import {
   MarmotClient,
-  KeyValueGroupStateBackend,
-  KeyPackageStore,
   createKeyPackageRelayListEvent,
   deserializeApplicationData,
   getNostrGroupIdHex,
@@ -21,10 +19,12 @@ import {
 import type {
   BaseGroupHistory,
   GroupHistoryFactory,
+  SerializedClientState,
+  StoredKeyPackage,
 } from "@internet-privacy/marmot-ts";
 import type { EventSigner } from "applesauce-core";
 
-import { createKVStore, getOrCreateClientId } from "./storage";
+import { createKVStore, createInviteKVStore, getOrCreateClientId } from "./storage";
 import { NdkNetworkAdapter } from "./network";
 import { useDeviceSync } from "./device-sync";
 import { computeDetachedGroupIds } from "./detached-groups";
@@ -148,11 +148,16 @@ export function MarmotProvider({
 
       if (!mountedRef.current) return;
 
-      const groupStateKV = createKVStore<Uint8Array>("group-state");
-      const groupStateBackend = new KeyValueGroupStateBackend(groupStateKV);
-
-      const keyPackageKV = createKVStore<any>("key-packages");
-      const keyPackageStore = new KeyPackageStore(keyPackageKV);
+      // marmot-ts v0.5 takes raw GenericKeyValueStore handles directly
+      // — the previous KeyValueGroupStateBackend / KeyPackageStore wrappers
+      // were collapsed into the manager classes (KeyPackageStore was merged
+      // into KeyPackageManager; group state storage now lives on
+      // GroupsManager). We persist invite state in IndexedDB too so the
+      // InviteManager survives reloads instead of falling back to the
+      // in-memory default.
+      const groupStateStore = createKVStore<SerializedClientState>("group-state");
+      const keyPackageStore = createKVStore<StoredKeyPackage>("key-packages");
+      const inviteStore = createInviteKVStore();
 
       const network = new NdkNetworkAdapter(ndk, relays);
       const clientId = await getOrCreateClientId();
@@ -164,8 +169,9 @@ export function MarmotProvider({
       // TestGroupHistory are not consumed outside the test hook.
       const baseOptions = {
         signer,
-        groupStateBackend,
+        groupStateStore,
         keyPackageStore,
+        inviteStore,
         network,
         clientId,
       };
@@ -179,7 +185,7 @@ export function MarmotProvider({
 
       if (!mountedRef.current) return;
 
-      const groups = await client.loadAllGroups();
+      const groups = await client.groups.loadAll();
 
       if (!mountedRef.current) return;
 
@@ -192,7 +198,7 @@ export function MarmotProvider({
       }
 
       // Force re-render when any group's internal state changes (e.g. after
-      // invite, selfUpdate, or ingest). MarmotClient only emits groupsUpdated
+      // invite, selfUpdate, or ingest). GroupsManager only emits "updated"
       // when groups are added/removed, not when a group mutates its MLS state.
       //
       // Also emit a diagnostic log on every epoch transition so the next
@@ -226,7 +232,7 @@ export function MarmotProvider({
       // Make client available immediately — key package work runs in background
       setState({ client, groups, loading: false, error: null, discoverable: false });
 
-      client.on("groupsUpdated", (updatedGroups) => {
+      client.groups.on("updated", (updatedGroups) => {
         if (mountedRef.current) {
           // Add any new per-group relays to the NDK pool
           const updated = computeAllGroupRelays(updatedGroups, relays);
@@ -241,7 +247,7 @@ export function MarmotProvider({
       });
 
       // Rotate consumed key packages after joining a group
-      client.on("groupJoined", async () => {
+      client.groups.on("joined", async () => {
         if (!mountedRef.current) return;
         try {
           const packages = await client.keyPackages.list();
@@ -299,8 +305,11 @@ export function MarmotProvider({
                 { kinds: [443 as any], authors: [pubkey] } as any,
               ]);
               const localList = await client.keyPackages.list();
+              // v0.5 normalizes `published` to [] inside the listing snapshot,
+              // but the type still has it optional — coerce so this stays
+              // honest if upstream tightens the type later.
               const localPublishedIds = new Set(
-                localList.flatMap((kp) => kp.published.map((e) => e.id)),
+                localList.flatMap((kp) => (kp.published ?? []).map((e) => e.id)),
               );
               const staleIds = remoteKPs
                 .map((e) => e.id as string)
@@ -388,7 +397,15 @@ export function MarmotProvider({
 
     return () => {
       mountedRef.current = false;
-      clientRef.current?.removeAllListeners();
+      const c = clientRef.current;
+      if (c) {
+        // MarmotClient itself is no longer an EventEmitter in v0.5; events
+        // live on its sub-managers. Detach from each so we don't leak
+        // listeners that capture this provider's state.
+        c.groups.removeAllListeners();
+        c.invites.removeAllListeners();
+        c.keyPackages.removeAllListeners();
+      }
       clientRef.current = null;
       // NDK doesn't expose a clean pool.disconnect() — just drop the reference
       ndkRef.current = null;

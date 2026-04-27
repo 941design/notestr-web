@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import {
   getKeyPackage,
-  getKeyPackageD,
+  getKeyPackageIdentifier,
   getPubkeyLeafNodeIndexes,
   getPubkeyLeafNodes,
   keyPackageFilters,
@@ -109,7 +109,7 @@ export function DeviceList({
               ),
             );
             const clientId =
-              (matchingEvent ? getKeyPackageD(matchingEvent) : undefined) ??
+              (matchingEvent ? getKeyPackageIdentifier(matchingEvent) : undefined) ??
               `leaf-${toShortHex(leaf.signaturePublicKey)}`;
 
             // Persistent storage key: derived from the leaf's signature

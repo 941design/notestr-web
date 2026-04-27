@@ -50,14 +50,19 @@ export function createKVStore<T>(name: string): KeyValueStoreBackend<T> {
 }
 
 /**
- * Creates the 3 IndexedDB-backed KV stores needed by InviteReader.
+ * Creates the IndexedDB-backed KV store for the InviteManager.
+ *
+ * v0.5 collapsed the previous 3-store {received,unread,seen} layout into
+ * a single discriminated-union store keyed by event/rumor id. We allocate
+ * a fresh IDB ("invite-store") so old per-flow records left over from
+ * v0.4 don't get reinterpreted under the new schema.
  */
-export function createInviteStore(): import("@internet-privacy/marmot-ts").InviteStore {
-  return {
-    received: createKVStore("invite-received"),
-    unread: createKVStore("invite-unread"),
-    seen: createKVStore("invite-seen"),
-  };
+export function createInviteKVStore(): KeyValueStoreBackend<
+  import("@internet-privacy/marmot-ts").StoredInviteEntry
+> {
+  return createKVStore<import("@internet-privacy/marmot-ts").StoredInviteEntry>(
+    "invite-store",
+  );
 }
 
 const identityStore = createKVStore<string>("identity");

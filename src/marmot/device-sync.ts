@@ -3,14 +3,14 @@ import { useEffect, useRef } from "react";
 import {
   getGroupMembers,
   getNostrGroupIdHex,
-  InviteReader,
+  InviteManager,
   isAdmin,
   deserializeApplicationData,
   type MarmotClient,
   type MarmotGroup,
   type Unsubscribable,
   getKeyPackage,
-  getKeyPackageD,
+  getKeyPackageIdentifier,
   getKeyPackageNostrPubkey,
   keyPackageFilters,
 } from "@internet-privacy/marmot-ts";
@@ -25,7 +25,6 @@ import {
 
 import {
   addSyncedGroupEventIds,
-  createInviteStore,
   getSyncedGroupEventIds,
 } from "./storage";
 import {
@@ -47,6 +46,28 @@ import {
 export const TASK_SNAPSHOT_KIND = 30078;
 /** Fixed `d` tag for replaceable task snapshot events. */
 const SNAPSHOT_D_TAG = "notestr-task-snapshot";
+
+/**
+ * Reads the addressable slot identifier off a {@link ListedKeyPackage}.
+ *
+ * marmot-ts v0.5 has a runtime/type mismatch on this field — the static
+ * type calls it `identifier`, but {@link KeyPackageManager.list} actually
+ * emits the runtime field as `d`. We read both so we keep working past a
+ * future upstream fix without churn here.
+ */
+function keyPackageSlot(
+  kp: { identifier?: string } & Record<string, unknown>,
+): string | undefined {
+  const identifier = kp.identifier;
+  if (typeof identifier === "string" && identifier.length > 0) {
+    return identifier;
+  }
+  const legacyD = (kp as { d?: unknown }).d;
+  if (typeof legacyD === "string" && legacyD.length > 0) {
+    return legacyD;
+  }
+  return undefined;
+}
 
 function mergeIds(existing: Set<string>, incoming: Iterable<string>): string[] {
   for (const id of incoming) {
@@ -74,7 +95,7 @@ export function groupHasKeyPackageLeaf(
 
 export async function joinFromWelcomeInvite(
   client: MarmotClient,
-  inviteReader: InviteReader,
+  inviteReader: InviteManager,
   invite: Rumor,
 ): Promise<MarmotGroup | null> {
   try {
@@ -140,11 +161,20 @@ export function useDeviceSync(
 
     // ── Effect 1: Receive Welcomes ──────────────────────────────────
     const runWelcomeSync = async () => {
-      const store = createInviteStore();
-      const inviteReader = new InviteReader({ signer, store });
+      // v0.5 exposes a long-lived InviteManager on the client (backed by
+      // the inviteStore we wired up in client.tsx). Reusing it here means
+      // the persisted "seen" set is shared with any other consumer of
+      // client.invites — but we're the only consumer today.
+      const inviteReader = client.invites;
 
-      inviteReader.on("error", (err, eventId) => {
+      const onError = (err: Error, eventId: string) => {
         console.debug("[device-sync] invite decrypt error for", eventId, err);
+      };
+      inviteReader.on("error", onError);
+      subs.push({
+        unsubscribe(): void {
+          inviteReader.off("error", onError);
+        },
       });
 
       const processUnread = async () => {
@@ -521,7 +551,9 @@ export function useDeviceSync(
     };
 
     const refreshGroupSync = async () => {
-      const activeGroupIds = new Set(client.groups.map((group) => group.idStr));
+      const activeGroupIds = new Set(
+        client.groups.loaded.map((group) => group.idStr),
+      );
 
       for (const [groupId, sub] of groupSubs) {
         if (activeGroupIds.has(groupId)) continue;
@@ -543,7 +575,7 @@ export function useDeviceSync(
         }
       }
 
-      for (const group of client.groups) {
+      for (const group of client.groups.loaded) {
         await syncGroup(group);
       }
     };
@@ -569,7 +601,7 @@ export function useDeviceSync(
         );
         const slots = new Set(
           currentLocal
-            .map((kp) => kp.d)
+            .map((kp) => keyPackageSlot(kp))
             .filter((d): d is string => typeof d === "string" && d.length > 0),
         );
         return { eventIds, slots };
@@ -580,15 +612,16 @@ export function useDeviceSync(
         local: { eventIds: Set<string>; slots: Set<string> },
       ): boolean => {
         if (local.eventIds.has(event.id)) return true;
-        const slot = getKeyPackageD(event);
+        const slot = getKeyPackageIdentifier(event);
         if (slot && local.slots.has(slot)) return true;
         return false;
       };
 
       const initialLocal = await client.keyPackages.list();
       for (const keyPackage of initialLocal) {
-        if (keyPackage.d) {
-          await markDeviceSeen(keyPackage.d, { localClientId: keyPackage.d });
+        const slot = keyPackageSlot(keyPackage);
+        if (slot) {
+          await markDeviceSeen(slot, { localClientId: slot });
         }
       }
 
@@ -626,14 +659,14 @@ export function useDeviceSync(
       };
 
       const inviteToAllGroups = async (kpEvent: NostrEvent) => {
-        const inviteeSlot = getKeyPackageD(kpEvent);
+        const inviteeSlot = getKeyPackageIdentifier(kpEvent);
         const inviteePubkey = getKeyPackageNostrPubkey(kpEvent);
 
         if (inviteeSlot) {
           await markDeviceSeen(inviteeSlot);
         }
 
-        for (const group of client.groups) {
+        for (const group of client.groups.loaded) {
           if (!mountedRef.current) return;
           const gd = group.groupData;
           if (!gd || !isAdmin(gd, pubkey)) continue;
@@ -730,10 +763,10 @@ export function useDeviceSync(
       const handleGroupsUpdated = async () => {
         await syncKnownKeyPackages();
       };
-      client.on("groupsUpdated", handleGroupsUpdated);
+      client.groups.on("updated", handleGroupsUpdated);
       subs.push({
         unsubscribe(): void {
-          client.off("groupsUpdated", handleGroupsUpdated);
+          client.groups.off("updated", handleGroupsUpdated);
         },
       });
     };
@@ -749,11 +782,11 @@ export function useDeviceSync(
       });
     };
 
-    client.on("groupsUpdated", handleGroupsUpdated);
+    client.groups.on("updated", handleGroupsUpdated);
 
     return () => {
       mountedRef.current = false;
-      client.off("groupsUpdated", handleGroupsUpdated);
+      client.groups.off("updated", handleGroupsUpdated);
       for (const sub of subs) {
         sub.unsubscribe();
       }
