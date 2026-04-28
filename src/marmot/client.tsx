@@ -15,6 +15,7 @@ import {
   createKeyPackageRelayListEvent,
   deserializeApplicationData,
   getNostrGroupIdHex,
+  getPubkeyLeafNodeIndexes,
 } from "@internet-privacy/marmot-ts";
 import type {
   BaseGroupHistory,
@@ -28,6 +29,7 @@ import { createKVStore, createInviteKVStore, getOrCreateClientId } from "./stora
 import { NdkNetworkAdapter } from "./network";
 import { useDeviceSync } from "./device-sync";
 import { computeDetachedGroupIds } from "./detached-groups";
+import { removeLeafByIndex } from "./per-leaf-remove";
 
 import type { MarmotGroup } from "@internet-privacy/marmot-ts";
 import { DEFAULT_RELAYS, NDK_CONNECT_TIMEOUT_MS } from "../config/relays";
@@ -440,6 +442,16 @@ export function MarmotProvider({
         filters as Parameters<typeof state.client.network.request>[1],
       );
     };
+    window.__notestrTestForgetLeaf = async (groupId, leafIndex) => {
+      const group = state.groups.find((entry) => entry.idStr === groupId);
+      if (!group) throw new Error(`group ${groupId} not loaded`);
+      await removeLeafByIndex(group, leafIndex);
+    };
+    window.__notestrTestPubkeyLeafIndexes = (groupId, pubkeyHex) => {
+      const group = state.groups.find((entry) => entry.idStr === groupId);
+      if (!group) return [];
+      return getPubkeyLeafNodeIndexes(group.state, pubkeyHex);
+    };
     window.__notestrTestInspectGroupEvent = async (groupId, eventId) => {
       const group = state.groups.find((entry) => entry.idStr === groupId);
       if (!group) {
@@ -528,6 +540,8 @@ export function MarmotProvider({
       delete window.__notestrTestInspectGroupEvent;
       delete window.__notestrTestSentRumors;
       delete window.__notestrTestResetSentRumors;
+      delete window.__notestrTestForgetLeaf;
+      delete window.__notestrTestPubkeyLeafIndexes;
     };
   }, [pubkey, relays, state.client, state.groups]);
 

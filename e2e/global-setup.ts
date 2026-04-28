@@ -159,6 +159,20 @@ export default async function globalSetup() {
   );
   console.log('[setup] Bunker B ready.');
 
+  console.log('[setup] Starting bunker C...');
+  const bunkerCProc = await spawnAndWaitForOutput(
+    'node',
+    [path.join(PROJECT_ROOT, 'e2e', 'fixtures', 'bunker.mjs')],
+    'Ready',
+    10000,
+    PROJECT_ROOT,
+    {
+      BUNKER_PRIVATE_KEY: '6a7c89e451fd0d2c87b5c4a1d62e89f3148bc52a90dde6f7a3dfb0c2189f4a3b',
+      BUNKER_LABEL: 'bunker-C',
+    },
+  );
+  console.log('[setup] Bunker C ready.');
+
   // 3. Kill any stale serve process on port 3100 before starting
   await killProcessOnPort(3100);
 
@@ -201,6 +215,7 @@ export default async function globalSetup() {
     JSON.stringify({
       bunkerPid: bunkerProc.pid,
       bunkerBPid: bunkerBProc.pid,
+      bunkerCPid: bunkerCProc.pid,
       servePid: serveProc.pid,
     }),
   );

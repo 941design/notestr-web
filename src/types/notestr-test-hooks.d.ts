@@ -41,6 +41,15 @@ declare global {
       relays: string[],
       filters: unknown[],
     ) => Promise<NostrEvent[]>;
+    /**
+     * Test-only: commit a per-leaf Remove proposal for the given leaf index in
+     * the loaded group. Lets specs exercise forget-device semantics without
+     * relying on the local-only DeviceList UI (which can only forget leaves
+     * belonging to the current identity's pubkey).
+     */
+    __notestrTestForgetLeaf?: (groupId: string, leafIndex: number) => Promise<void>;
+    /** Test-only: list MLS leaf indexes belonging to the given pubkey in the loaded group. */
+    __notestrTestPubkeyLeafIndexes?: (groupId: string, pubkeyHex: string) => number[];
   }
 }
 

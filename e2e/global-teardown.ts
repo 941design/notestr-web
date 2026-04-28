@@ -19,13 +19,15 @@ function killPid(pid: number | undefined, name: string) {
 export default async function globalTeardown() {
   try {
     const raw = readFileSync(STATE_FILE, 'utf-8');
-    const { bunkerPid, bunkerBPid, servePid } = JSON.parse(raw) as {
+    const { bunkerPid, bunkerBPid, bunkerCPid, servePid } = JSON.parse(raw) as {
       bunkerPid?: number;
       bunkerBPid?: number;
+      bunkerCPid?: number;
       servePid?: number;
     };
     killPid(bunkerPid, 'bunker-A');
     killPid(bunkerBPid, 'bunker-B');
+    killPid(bunkerCPid, 'bunker-C');
     killPid(servePid, 'serve');
   } catch (err) {
     console.warn('[teardown] Could not read state file (already cleaned up?):', err);
