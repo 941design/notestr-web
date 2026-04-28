@@ -6,6 +6,22 @@
  * - User B: second keypair (3ad635dc...)
  *
  * Precondition: both bunkers running (globalSetup), relay up (make e2e-up).
+ *
+ * Suite structure:
+ * - `describe.serial('multi-user setup')` — auth, invite, group-visible.
+ *   Each step is an outcome dependency for the next, so skip-on-failure
+ *   cascade is the correct behavior here.
+ * - `describe('task created by User A')` — non-serial. The shared action
+ *   (User A creates the task) lives in `beforeAll`; the two assertion
+ *   tests (live MLS subscription vs. reload-recovery via device-sync)
+ *   are setup-coupled but outcome-independent and must not skip each
+ *   other on failure.
+ * - `describe('task moved by User B')` — same shape for the move action.
+ *
+ * Cross-describe ordering relies on `fullyParallel: false` + `workers: 1`
+ * in playwright.config.ts. If a setup describe fails, subsequent
+ * describes' `beforeAll` will fail too — that's an acceptable signal
+ * shape (real outcome dependency across describes), just not a skip.
  */
 
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
@@ -31,6 +47,12 @@ let pageA: Page;
 let pageB: Page;
 let skipMobile = false;
 
+// Stable identifiers shared across the sibling describes.
+const GROUP_NAME = `Multi-User E2E ${Date.now()}`;
+const TASK_TITLE = `Sync task ${Date.now()}`;
+
+const SKIP_MOBILE_REASON = 'Multi-context MLS tests require desktop viewport';
+
 test.beforeAll(async ({ browser }, workerInfo) => {
   // Multi-context MLS tests need desktop viewport — skip on mobile projects
   skipMobile = !!workerInfo.project.use.isMobile;
@@ -48,14 +70,14 @@ test.afterAll(async () => {
   await contextB?.close();
 });
 
-test.describe.serial('multi-user', () => {
-  // Multi-user MLS tests are inherently slow (crypto + relay roundtrips)
-  test.setTimeout(120_000);
+// Multi-user MLS tests are inherently slow (crypto + relay roundtrips)
+const MULTI_USER_TIMEOUT = 120_000;
 
-  const GROUP_NAME = `Multi-User E2E ${Date.now()}`;
+test.describe.serial('multi-user setup', () => {
+  test.setTimeout(MULTI_USER_TIMEOUT);
 
   test('Both users authenticate (User B publishes key package)', async () => {
-    test.skip(skipMobile, 'Multi-context MLS tests require desktop viewport');
+    test.skip(skipMobile, SKIP_MOBILE_REASON);
     // User B must authenticate first so their key package is published
     // to the relay before User A tries to invite them.
     await authenticate(pageB, E2E_BUNKER_B_URL);
@@ -67,7 +89,7 @@ test.describe.serial('multi-user', () => {
   });
 
   test('User A creates group and invites User B', async () => {
-    test.skip(skipMobile, 'Multi-context MLS tests require desktop viewport');
+    test.skip(skipMobile, SKIP_MOBILE_REASON);
     // Create group
     await pageA.getByPlaceholder('Group name').first().fill(GROUP_NAME);
     await pageA.getByRole('button', { name: 'Create', exact: true }).first().click();
@@ -84,7 +106,7 @@ test.describe.serial('multi-user', () => {
   });
 
   test('User B sees the group after the invite', async () => {
-    test.skip(skipMobile, 'Multi-context MLS tests require desktop viewport');
+    test.skip(skipMobile, SKIP_MOBILE_REASON);
     // User B is already authenticated. Reload to trigger device-sync
     // Welcome fetch in case the subscription missed it.
     await pageB.reload();
@@ -94,49 +116,64 @@ test.describe.serial('multi-user', () => {
     const sidebarB = pageB.locator('aside');
     await expect(sidebarB.getByText(GROUP_NAME)).toBeVisible({ timeout: 60000 });
   });
+});
 
-  test('User A creates a task, User B sees it', async () => {
-    test.skip(skipMobile, 'Multi-context MLS tests require desktop viewport');
+test.describe('task created by User A', () => {
+  test.setTimeout(MULTI_USER_TIMEOUT);
+
+  test.beforeAll(async () => {
+    if (skipMobile) return;
+
     // User A should have the group selected already (auto-selected on create)
     await expect(pageA.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 10000 });
 
-    const TASK_TITLE = `Sync task ${Date.now()}`;
     await pageA.getByRole('button', { name: 'Add Task' }).click();
     await pageA.getByLabel('Title').fill(TASK_TITLE);
     await pageA.getByRole('button', { name: 'Create', exact: true }).last().click();
 
-    // Verify task appears for User A
     const openColumnA = pageA.locator('[data-column="open"]').first();
     await expect(openColumnA).toContainText(TASK_TITLE, { timeout: 15000 });
 
-    // User B: select the group and wait for the task to appear via MLS.
-    // Give the live subscription time first, then retry with reload.
-    const sidebarB = pageB.locator('aside');
-    await sidebarB.getByText(GROUP_NAME).click();
+    // Position User B on the group's task board so the assertion tests
+    // can observe propagation directly without re-navigating.
+    await pageB.locator('aside').getByText(GROUP_NAME).click();
     await expect(pageB.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 10000 });
-
-    const openColumnB = pageB.locator('[data-column="open"]').first();
-    try {
-      await expect(openColumnB).toContainText(TASK_TITLE, { timeout: 30000 });
-    } catch {
-      // Live subscription may have missed the message — reload to re-fetch
-      // from the relay and re-initialize the MLS state
-      await pageB.reload();
-      await pageB.locator('[data-testid="pubkey-chip"]').waitFor({ state: 'visible', timeout: 30000 });
-      // Wait for MLS to re-initialize and process pending messages
-      await pageB.waitForTimeout(5000);
-      await sidebarB.getByText(GROUP_NAME).click();
-      await expect(pageB.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 10000 });
-      await expect(openColumnB).toContainText(TASK_TITLE, { timeout: 30000 });
-    }
   });
 
-  test('User B moves task to In Progress, User A sees it', async () => {
-    test.skip(skipMobile, 'Multi-context MLS tests require desktop viewport');
+  test('User B sees the task via live MLS subscription', async () => {
+    test.skip(skipMobile, SKIP_MOBILE_REASON);
+    // Strict live-delivery assertion. Under heavy parallel relay load
+    // this can flake (the kind-445 commit is occasionally missed); CI
+    // retries cover that. Persistent failures here are a real regression
+    // in live MLS delivery.
+    const openColumnB = pageB.locator('[data-column="open"]').first();
+    await expect(openColumnB).toContainText(TASK_TITLE, { timeout: 30000 });
+  });
+
+  test('User B sees the task after reload (device-sync recovery path)', async () => {
+    test.skip(skipMobile, SKIP_MOBILE_REASON);
+    // Independent assertion: even if live delivery missed, a reload
+    // must re-fetch via device-sync and re-initialize MLS state to
+    // surface the task. Failure here means MLS replay is broken.
+    await pageB.reload();
+    await pageB.locator('[data-testid="pubkey-chip"]').waitFor({ state: 'visible', timeout: 30000 });
+    await pageB.waitForTimeout(5000);
+    await pageB.locator('aside').getByText(GROUP_NAME).click();
+    await expect(pageB.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 10000 });
+    const openColumnB = pageB.locator('[data-column="open"]').first();
+    await expect(openColumnB).toContainText(TASK_TITLE, { timeout: 30000 });
+  });
+});
+
+test.describe('task moved by User B', () => {
+  test.setTimeout(MULTI_USER_TIMEOUT);
+
+  test.beforeAll(async () => {
+    if (skipMobile) return;
 
     // Board.tsx renders both a mobile-single-column panel (md:hidden)
     // and a desktop-grid layout (hidden md:grid), both of which carry
-    // `data-column="open"`. Scoping the locator to
+    // `data-column="open"`. Scoping a locator to
     // `[data-column="open"].first()` targets the mobile copy (first in
     // DOM order) which is display:none on desktop viewports, so any
     // nested getByRole finds zero accessible buttons. Use a page-scoped
@@ -154,28 +191,28 @@ test.describe.serial('multi-user', () => {
     await expect(pageB.locator('[data-column="in_progress"] [data-testid="task-card"]')).toHaveCount(1, {
       timeout: 15000,
     });
+  });
 
-    // User A should see the task move to In Progress. Same fallback
-    // shape as `User A creates a task, User B sees it` — under parallel
-    // suite relay load the live subscription occasionally misses the
-    // kind-445 commit, so reload User A and let device-sync re-fetch
-    // history before failing the test.
-    const inProgressA = pageA.locator(
-      '[data-column="in_progress"] [data-testid="task-card"]',
-    );
-    try {
-      await expect(inProgressA).toHaveCount(1, { timeout: 30000 });
-    } catch {
-      await pageA.reload();
-      await pageA
-        .locator('[data-testid="pubkey-chip"]')
-        .waitFor({ state: 'visible', timeout: 30000 });
-      await pageA.waitForTimeout(5000);
-      await pageA.locator('aside').getByText(GROUP_NAME).click();
-      await expect(pageA.getByRole('heading', { name: 'Tasks' })).toBeVisible({
-        timeout: 10000,
-      });
-      await expect(inProgressA).toHaveCount(1, { timeout: 30000 });
-    }
+  test('User A sees the move via live MLS subscription', async () => {
+    test.skip(skipMobile, SKIP_MOBILE_REASON);
+    await expect(
+      pageA.locator('[data-column="in_progress"] [data-testid="task-card"]'),
+    ).toHaveCount(1, { timeout: 30000 });
+  });
+
+  test('User A sees the move after reload (device-sync recovery path)', async () => {
+    test.skip(skipMobile, SKIP_MOBILE_REASON);
+    await pageA.reload();
+    await pageA
+      .locator('[data-testid="pubkey-chip"]')
+      .waitFor({ state: 'visible', timeout: 30000 });
+    await pageA.waitForTimeout(5000);
+    await pageA.locator('aside').getByText(GROUP_NAME).click();
+    await expect(pageA.getByRole('heading', { name: 'Tasks' })).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(
+      pageA.locator('[data-column="in_progress"] [data-testid="task-card"]'),
+    ).toHaveCount(1, { timeout: 30000 });
   });
 });
