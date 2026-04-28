@@ -1,3 +1,19 @@
+// Per-leaf device list for the LOCAL identity only.
+//
+// Each device is an MLS leaf; one Nostr pubkey can have multiple leaves in
+// the same group. Forget = `removeLeafByIndex` (a per-leaf Remove proposal),
+// which differs from marmot-ts's `proposeRemoveUser(pubkey)` (eject the
+// member by removing every leaf at once — not used here). A member is in
+// the group iff they have ≥ 1 leaf, so "forget my last device" is the
+// emergent member-departure path; "forget one of my N devices" leaves the
+// member intact with N-1 leaves.
+//
+// The component is scoped to `pubkey={selfPubkey}` (see GroupManager.tsx) —
+// there is no UI surface for enumerating or renaming another identity's
+// devices, and device names live in a per-context IndexedDB store
+// (`deviceNamesStore`) with no MLS broadcast. See
+// `docs/two-party-permutation-matrix.md` for how this shapes test scope.
+
 import { useEffect, useState } from "react";
 
 import {

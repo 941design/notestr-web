@@ -9,6 +9,47 @@ npub running in two browser contexts (multi-device). Single-user specs that
 only use a relay observer (e.g. `task-publish-contract.spec.ts` via
 `ndk-subscriber`) are out of scope.
 
+## Protocol model & constraints
+
+A handful of MLS / marmot-ts / app-level facts shape which scenarios are
+testable today and explain every `fixme` / `n/a-by-design` row in the
+matrix below.
+
+- **One MLS leaf per device, ≥ 1 leaf per member.** A Nostr identity
+  (pubkey) can have several leaves in the same group. `getGroupMembers`
+  returns the set of pubkeys with ≥ 1 leaf; `getPubkeyLeafNodes` returns
+  the leaf set for a pubkey. *Member departure is the emergent
+  consequence of removing the last leaf.*
+- **Two distinct removal primitives in marmot-ts:**
+  `removeLeafByIndex` (per-leaf — used by `DeviceList`) and
+  `proposeRemoveUser(pubkey)` (all leaves at once — *not currently
+  used* by notestr-web). "Forget device" ≠ "leave group" ≠ "remove
+  member"; no local-storage soft-forget is needed.
+- **`DeviceList` renders only the local identity's leaves.**
+  `GroupManager.tsx` instantiates it with `pubkey={selfPubkey}`. There is
+  no UI surface to enumerate or rename another identity's devices, and
+  device names are stored in a per-context IndexedDB (`deviceNamesStore`)
+  with no MLS broadcast — i.e. names are local-context-only.
+- **MIP-03 admin-only commits.** `MarmotGroup#commit` enforces
+  `groupData.adminPubkeys.includes(senderPubkey)`. Non-admin members can
+  *propose* (Add, Remove, Update) but cannot commit. notestr-web does
+  not currently promote invitees to admin, so any flow that requires a
+  non-admin to invite or remove (e.g. chain invites — `B.In(C)`) fails
+  at the commit step.
+- **`leave()` is a self-remove proposal, not a commit.** RFC 9420 §12.4
+  forbids a member from committing a Remove of their own leaf, so
+  `client.groups.leave()` publishes a remove proposal per leaf and
+  destroys local state. Until an admin commits the proposal, the
+  ex-member's pubkey remains in the admin's `getGroupMembers(state)`
+  view. There is no auto-commit on the admin side today.
+- **Task-event merge is LWW on `updatedAt` with no tiebreaker.**
+  `task-reducer.applyEvent` admits an event iff
+  `event.updatedAt >= existing.updatedAt`; on a tie, the
+  later-applied event wins, which can differ across pages. Tests pin
+  the deterministic case (`updatedAt` separated by ≥ 1 s); the tie case
+  is `fixme` until the product makes a call (CRDT, lex tiebreaker on
+  pubkey, per-field LWW, …).
+
 ## DSL
 
 ### Actors
