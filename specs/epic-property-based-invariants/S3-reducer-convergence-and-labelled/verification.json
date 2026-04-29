@@ -1,0 +1,47 @@
+{
+  "story_id": "S3",
+  "verification_questions": [
+    {
+      "id": "VQ-1",
+      "severity": 10,
+      "question": "Are C1, C2, C3 all asserted (the tests pass and fc.assert throws on violation)?",
+      "check": "Read the three it-blocks titled [C1], [C2], [C3] in src/store/task-reducer.property.test.ts. Confirm each contains an fc.assert(fc.property(...)) call with an expect(...).toBe(true) or similar assertion inside the predicate. Run `npx vitest run src/store/task-reducer.property.test.ts` and verify exit code 0 with 21 tests passing.",
+      "expected": "All three tests contain fc.assert calls; `npx vitest run` exits 0 with 21 tests passing."
+    },
+    {
+      "id": "VQ-2",
+      "severity": 9,
+      "question": "Are D1 and D3 implemented as labelled-only (no assertion that fails when divergent; uses fc.statistics)?",
+      "check": "Read the [D1] and [D3] it-blocks. Verify: (a) each uses fc.statistics(...) to record the distribution, (b) the only assertion is `expect(true).toBe(true)` (always passes), (c) there is no fc.assert call, (d) no assertion checks for equality between the two orders in D1 or between states in D3.",
+      "expected": "Both tests use only fc.statistics and expect(true).toBe(true). Running `FAST_CHECK_NUM_RUNS=5000 npx vitest run src/store/task-reducer.property.test.ts` exits 0 with D1/D3 reporting divergence rates in the output but never failing."
+    },
+    {
+      "id": "VQ-3",
+      "severity": 10,
+      "question": "Is the test count 64+5=69 (5 new tests: C1, C2, C3, D1, D3)?",
+      "check": "Run `npx vitest run` from the working directory. Count the total tests reported.",
+      "expected": "Tests: 69 passed (69). Test Files: 10 passed (10)."
+    },
+    {
+      "id": "VQ-4",
+      "severity": 7,
+      "question": "Are naming and comment conventions consistent with S2?",
+      "check": "Check each new it-block title: must begin with the invariant ID in brackets, e.g. `it('[C1] ...`). Check first line of each body: must be a comment `// C1: ...`, `// C2: ...`, etc. Verify FAST_CHECK_NUM_RUNS env var is respected via the `NUM_RUNS` constant defined at the top of the file.",
+      "expected": "All 5 new it-blocks have bracketed IDs in their titles. Each body starts with a `// ID: description` comment. All use `{ numRuns: NUM_RUNS }` (C1/C2/C3) or rely on fc.statistics default runs (D1/D3). D1/D3 use `expect(true).toBe(true)` as their terminal assertion."
+    },
+    {
+      "id": "VQ-5",
+      "severity": 9,
+      "question": "At FAST_CHECK_NUM_RUNS=10000, do C1/C2/C3 still pass and D1/D3 still not fail?",
+      "check": "Run `FAST_CHECK_NUM_RUNS=10000 npx vitest run src/store/task-reducer.property.test.ts`. Observe exit code and any failures.",
+      "expected": "Exit code 0. All 21 tests pass. D1 and D3 print fc.statistics distributions showing 'divergent' and 'snapshot-overwrites-newer' labels respectively, but the build does not fail."
+    },
+    {
+      "id": "VQ-6",
+      "severity": 10,
+      "question": "Was any production code changed?",
+      "check": "Run `git diff --name-only` or `git status`. Verify the only modified file is `src/store/task-reducer.property.test.ts`. No files under `src/store/task-reducer.ts`, `src/store/task-events.ts`, `src/store/task-store.tsx`, `src/store/persistence.ts`, or `src/components/` should appear.",
+      "expected": "Only `src/store/task-reducer.property.test.ts` is modified. No production code touched (AC-X-NO-PROD-CHANGE-1)."
+    }
+  ]
+}

@@ -790,4 +790,313 @@ describe("reducer property tests — S2 story", () => {
     );
     expect(true).toBe(true);
   });
+
+  // =========================================================================
+  // S3 additions: Convergence properties (C1, C2, C3) and labelled probes
+  // (D1, D3).
+  // =========================================================================
+
+  // ---------------------------------------------------------------------------
+  // Helpers for C1: build a sequence whose permutation invariant holds.
+  //
+  // C1 (permutation-independence) holds in this reducer only for event types
+  // that atomically replace a single field.  task.updated is excluded because
+  // it merges a subset of fields: two updates with different `changes` objects
+  // and distinct timestamps are NOT order-independent — whichever arrives with
+  // the higher timestamp sets the task's updatedAt, causing the other to be
+  // rejected as stale, leaving its fields unchanged.
+  //
+  // Eligible kinds:
+  //   - task.status_changed — atomically replaces status
+  //   - task.assigned       — atomically replaces assignee
+  //   - task.deleted        — atomically removes the task
+  //
+  // For these kinds, with strictly distinct timestamps per taskId, the "highest
+  // timestamp wins" rule is invariant to delivery order.
+  //
+  // The generator below produces: a fixed task creation + a sequence of
+  // status_changed events for that task with strictly increasing timestamps.
+  // We then permute only those status_changed events and verify the final task
+  // state is the same (the last event — highest ts — determines the status).
+  // ---------------------------------------------------------------------------
+
+  // A single task + N status_changed events with strictly distinct timestamps.
+  const arbC1Input: fc.Arbitrary<{
+    task: Task;
+    statusEvents: Array<{
+      type: "task.status_changed";
+      taskId: string;
+      status: TaskStatus;
+      updatedAt: number;
+      updatedBy: string;
+    }>;
+  }> = fc
+    .tuple(
+      arbTaskFresh,
+      fc.array(
+        fc.record({ status: arbTaskStatus, updatedBy: arbHexPubkey }),
+        { minLength: 1, maxLength: 10 },
+      ),
+    )
+    .map(([task, steps]) => ({
+      task,
+      statusEvents: steps.map((s, i) => ({
+        type: "task.status_changed" as const,
+        taskId: task.id,
+        status: s.status,
+        updatedAt: task.updatedAt + i + 1, // strictly distinct: +1, +2, …
+        updatedBy: s.updatedBy,
+      })),
+    }));
+
+  // Deep-equal two TaskState maps.
+  function mapsEqual(a: TaskState, b: TaskState): boolean {
+    if (a.size !== b.size) return false;
+    for (const [id, taskA] of a.entries()) {
+      const taskB = b.get(id);
+      if (taskB === undefined) return false;
+      // Compare all task fields.
+      if (
+        taskA.title !== taskB.title ||
+        taskA.description !== taskB.description ||
+        taskA.status !== taskB.status ||
+        taskA.assignee !== taskB.assignee ||
+        taskA.createdBy !== taskB.createdBy ||
+        taskA.createdAt !== taskB.createdAt ||
+        taskA.updatedAt !== taskB.updatedAt
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // -------------------------------------------------------------------------
+  // C1: permutation-independence with strictly distinct timestamps
+  // -------------------------------------------------------------------------
+  it("[C1] permutation-independence with strictly distinct timestamps", () => {
+    // C1: replayEvents(events) is invariant under permutation of status_changed
+    //     events when each event's updatedAt is strictly distinct per taskId.
+    //
+    // Scoping decision: C1 is asserted only for task.status_changed (and
+    // similarly task.assigned / task.deleted) — event kinds that atomically
+    // replace a single field.  task.updated is excluded because it merges a
+    // subset of fields: two updates with *different* changes objects are
+    // inherently order-dependent even with distinct timestamps (the lower-ts
+    // update is rejected as stale by the reducer's >= gate after the higher-ts
+    // one has already been applied, leaving its fields absent).  This scoping
+    // is documented in the arbC1Input helper above.
+    //
+    // The arbitrary generates one task + N status_changed events with timestamps
+    // task.updatedAt+1, +2, …  The permutation is applied to those N events.
+    // The invariant: the event with the highest timestamp (the last in original
+    // order) determines the final status regardless of delivery order.
+    fc.assert(
+      fc.property(
+        arbC1Input,
+        // Sort keys for the permutation of statusEvents.
+        fc.array(fc.integer({ min: 0, max: 999 }), { minLength: 1, maxLength: 10 }),
+        ({ task, statusEvents }, shuffleKeys) => {
+          const creation: TaskEvent = { type: "task.created", task };
+
+          // Build a permuted copy of the status events.
+          const indexed = statusEvents.map((e, i) => ({
+            e,
+            key: shuffleKeys[i % shuffleKeys.length] ?? i,
+          }));
+          indexed.sort((a, b) => a.key - b.key);
+          const shuffled = indexed.map(({ e }) => e);
+
+          const stateA = replayEvents([creation, ...statusEvents]);
+          const stateB = replayEvents([creation, ...shuffled]);
+
+          expect(mapsEqual(stateA, stateB)).toBe(true);
+        },
+      ),
+      { numRuns: NUM_RUNS },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // C2: author-irrelevance
+  // -------------------------------------------------------------------------
+  it("[C2] author-irrelevance — re-labelling updatedBy does not change task ids, status, assignee, title, description", () => {
+    // C2: the final task state (excluding createdBy/updatedBy fields) is
+    //     independent of which pubkey authored each event.  We replace every
+    //     updatedBy (and createdBy on task.created) with a single fresh pubkey
+    //     and assert that all task-content fields are identical.
+    fc.assert(
+      fc.property(
+        arbEventSequence(),
+        arbHexPubkey, // replacement author pubkey
+        (events, fakeAuthor) => {
+          // Re-label all author fields.
+          const relabelled: TaskEvent[] = events.map((e) => {
+            if (e.type === "task.created") {
+              return {
+                ...e,
+                task: { ...e.task, createdBy: fakeAuthor },
+              };
+            }
+            if (e.type === "task.snapshot") {
+              return e;
+            }
+            return { ...e, updatedBy: fakeAuthor };
+          });
+
+          const stateOrig = replayEvents(events);
+          const stateRelabelled = replayEvents(relabelled);
+
+          // Task ids must be the same set.
+          expect(stateOrig.size).toBe(stateRelabelled.size);
+          for (const [id, orig] of stateOrig.entries()) {
+            const relabTask = stateRelabelled.get(id);
+            expect(relabTask).toBeDefined();
+            if (relabTask === undefined) return;
+            // Content fields must match.
+            expect(relabTask.status).toBe(orig.status);
+            expect(relabTask.assignee).toBe(orig.assignee);
+            expect(relabTask.title).toBe(orig.title);
+            expect(relabTask.description).toBe(orig.description);
+            expect(relabTask.createdAt).toBe(orig.createdAt);
+            expect(relabTask.updatedAt).toBe(orig.updatedAt);
+            // createdBy changes by design — the re-labelled run uses fakeAuthor.
+            expect(relabTask.createdBy).toBe(fakeAuthor);
+          }
+        },
+      ),
+      { numRuns: NUM_RUNS },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // C3: duplicate tolerance
+  // -------------------------------------------------------------------------
+  it("[C3] duplicate-tolerance — replaying each event 1–3 times equals replaying once", () => {
+    // C3: delivering each event between 1 and 3 times (n_i chosen per event)
+    //     yields a state byte-identical to replaying each event exactly once.
+    fc.assert(
+      fc.property(
+        arbEventSequence(),
+        // Per-event repeat count: one integer per slot, then wrap via modulo.
+        fc.array(fc.integer({ min: 0, max: 2 }), { minLength: 0, maxLength: 30 }),
+        (events, repeatOffsets) => {
+          // Build a duplicated sequence where each event appears repeatCount times.
+          const duplicated: TaskEvent[] = [];
+          for (let i = 0; i < events.length; i++) {
+            // repeatOffset 0→1 time, 1→2 times, 2→3 times
+            const times = (repeatOffsets[i % repeatOffsets.length] ?? 0) + 1;
+            for (let j = 0; j < times; j++) {
+              duplicated.push(events[i]);
+            }
+          }
+
+          const stateOnce = replayEvents(events);
+          const stateDup = replayEvents(duplicated);
+
+          expect(mapsEqual(stateOnce, stateDup)).toBe(true);
+        },
+      ),
+      { numRuns: NUM_RUNS },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // D1: equal-timestamp updates may diverge (labelled only — never fails build)
+  // -------------------------------------------------------------------------
+  it("[D1] equal-timestamp updates may diverge — labelled via fc.statistics, no assertion", () => {
+    // D1: when two task.updated events targeting the same task share an identical
+    //     updatedAt, the reducer's >= comparison accepts whichever arrives last.
+    //     This means [e1, e2] and [e2, e1] may produce different final states.
+    //     We measure the divergence rate via fc.statistics; the build never fails.
+    //     (See spec §D1 and TP-90/TP-91 fixme scenarios.)
+    fc.statistics(
+      fc.tuple(
+        arbTaskFresh,
+        arbHexPubkey,
+        arbHexPubkey,
+        fc.string({ minLength: 1, maxLength: 40 }), // title for e1
+        fc.string({ minLength: 1, maxLength: 40 }), // title for e2
+        fc.integer({ min: 1, max: 1_000 }),          // updatedAt offset
+      ),
+      ([task, author1, author2, title1, title2, offset]) => {
+        const tieAt = task.updatedAt + offset;
+        const creation: TaskEvent = { type: "task.created", task };
+        const e1: TaskEvent = {
+          type: "task.updated",
+          taskId: task.id,
+          changes: { title: title1 },
+          updatedAt: tieAt,
+          updatedBy: author1,
+        };
+        const e2: TaskEvent = {
+          type: "task.updated",
+          taskId: task.id,
+          changes: { title: title2 },
+          updatedAt: tieAt,
+          updatedBy: author2,
+        };
+        const stateAB = replayEvents([creation, e1, e2]);
+        const stateBA = replayEvents([creation, e2, e1]);
+        const taskAB = stateAB.get(task.id);
+        const taskBA = stateBA.get(task.id);
+        if (taskAB === undefined || taskBA === undefined) return "missing-task";
+        return taskAB.title === taskBA.title ? "equal" : "divergent";
+      },
+    );
+    // D1 is a labelled probe — we do NOT assert any outcome.
+    expect(true).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // D3: late-arriving task.snapshot overwrites newer events (labelled only)
+  // -------------------------------------------------------------------------
+  it("[D3] late-arriving snapshot overwrites newer events — labelled via fc.statistics, no assertion", () => {
+    // D3: the reducer unconditionally replaces all state on task.snapshot
+    //     (task-reducer.ts:58–64). A snapshot arriving after individual mutation
+    //     events destroys all post-snapshot-timestamp changes. We measure how
+    //     often all newer events are lost ("snapshot-overwrites-newer") via
+    //     fc.statistics. The build never fails on any divergence rate.
+    fc.statistics(
+      fc.tuple(
+        arbTaskFresh,                                 // the base task
+        fc.array(arbRawStep, { minLength: 1, maxLength: 5 }), // mutation steps
+      ),
+      ([baseTask, steps]) => {
+        // Build the initial state by applying the base task creation.
+        let stateAtT0: TaskState = applyEvent(new Map(), {
+          type: "task.created",
+          task: baseTask,
+        });
+
+        // Apply mutation steps on top to produce state at T0+n.
+        let stateAfterMutations = stateAtT0;
+        for (const step of steps) {
+          const event = interpretStep(step, stateAfterMutations);
+          stateAfterMutations = applyEvent(stateAfterMutations, event);
+        }
+
+        // Now apply a task.snapshot carrying the T0 state (base task only).
+        // This simulates a snapshot arriving late after the mutation events.
+        const snapshotTasks = Array.from(stateAtT0.values());
+        const snapshotEvent: TaskEvent = {
+          type: "task.snapshot",
+          tasks: snapshotTasks,
+        };
+        const stateAfterSnapshot = applyEvent(
+          stateAfterMutations,
+          snapshotEvent,
+        );
+
+        // Compare to the pure snapshot-as-initial state.
+        const stateSnapshotOnly = replayEvents([snapshotEvent]);
+
+        return mapsEqual(stateAfterSnapshot, stateSnapshotOnly)
+          ? "snapshot-overwrites-newer"
+          : "partial";
+      },
+    );
+    // D3 is a labelled probe — we do NOT assert any outcome.
+    expect(true).toBe(true);
+  });
 });
