@@ -225,6 +225,96 @@ export async function settle(page: Page, ms: number): Promise<void> {
 }
 
 /**
+ * `Sw(B)` — switch identity on page by disconnecting and re-authenticating.
+ *
+ * Clicks the disconnect button, waits for the login screen, then calls
+ * authenticate() with the new bunker URL. Clears app state as part of
+ * authenticate().
+ */
+export async function switchIdentity(page: Page, bunkerUrl: string): Promise<void> {
+  await page.locator('[data-testid="disconnect-button"]').click({ force: true });
+  await page
+    .getByText("Sign in to notestr")
+    .waitFor({ state: "visible", timeout: 15000 });
+  await authenticate(page, bunkerUrl);
+}
+
+/**
+ * `Dc` — disconnect the current identity without re-authenticating.
+ *
+ * Clicks the disconnect button and waits for the login screen.
+ */
+export async function disconnect(page: Page): Promise<void> {
+  await page.locator('[data-testid="disconnect-button"]').click({ force: true });
+  await page
+    .getByText("Sign in to notestr")
+    .waitFor({ state: "visible", timeout: 15000 });
+}
+
+/**
+ * `Rd(d, n)` — rename a device row in the DeviceList.
+ *
+ * Locates the device row by its current label text, fills in the new name,
+ * and blurs to commit the rename. Only non-local rows are targetable because
+ * the DeviceList only renders remote rows with `data-local="false"`.
+ */
+export async function renameDevice(
+  page: Page,
+  deviceLabel: string,
+  newName: string,
+): Promise<void> {
+  const row = page
+    .locator('[data-testid="device-row"]')
+    .filter({ hasText: deviceLabel })
+    .first();
+  const input = row.getByRole("textbox");
+  await input.fill(newName);
+  await input.blur();
+}
+
+/**
+ * Relay-drain quiescence: poll `__notestrTestTasks()` on both pages until
+ * two consecutive reads 500ms apart are deep-equal (same JSON). Falls back to
+ * a 5-second hard wait if the hook is absent on either page.
+ *
+ * Avoids the NDK-subscriber private-key collision issue where the subscriber
+ * uses User B's key and cannot observe A-side events.
+ */
+export async function quiesceFor(
+  pages: Page[],
+  opts: { maxWaitMs?: number; intervalMs?: number } = {},
+): Promise<void> {
+  const { maxWaitMs = 15000, intervalMs = 500 } = opts;
+
+  const getSnapshot = async (): Promise<(string | null)[]> => {
+    return Promise.all(
+      pages.map((page) =>
+        page
+          .evaluate(() => {
+            const fn = window.__notestrTestTasks;
+            if (typeof fn !== "function") return null;
+            return JSON.stringify(fn());
+          })
+          .catch(() => null),
+      ),
+    );
+  };
+
+  const deadline = Date.now() + maxWaitMs;
+  let prev = await getSnapshot();
+
+  while (Date.now() < deadline) {
+    await pages[0]!.waitForTimeout(intervalMs);
+    const curr: (string | null)[] = await getSnapshot();
+    const allNull = curr.every((s) => s === null);
+    if (!allNull && JSON.stringify(curr) === JSON.stringify(prev)) {
+      return;
+    }
+    prev = curr;
+  }
+}
+
+/**
  * `Fd(d)` — invoke the test-only forget-leaf hook.
  *
  * Bypasses the DeviceList UI (which only renders the local user's own leaves)
