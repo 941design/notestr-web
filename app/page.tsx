@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { QrCode, Key, Link as LinkIcon, Loader2, Menu, X, Users, ChevronRight } from "lucide-react";
+import { QrCode, Key, Link as LinkIcon, Loader2, Menu, X, Users, ChevronRight, Settings as SettingsIcon } from "lucide-react";
 import {
   getNip07Signer,
   connectBunker,
@@ -16,6 +16,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { MarmotProvider, useMarmot } from "@/marmot/client";
 import { TaskStoreProvider } from "@/store/task-store";
 import { ConnectionStatus } from "@/components/ConnectionStatus";
+import { SettingsModal } from "@/components/SettingsModal";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { GroupManager } from "@/components/GroupManager";
 import { Board } from "@/components/Board";
@@ -68,6 +69,7 @@ export default function Page() {
   const [authMethod, setAuthMethod] = useState<AuthMethod>(null);
   const [isAndroid, setIsAndroid] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Bunker login state
   const [bunkerUrl, setBunkerUrl] = useState("");
@@ -445,9 +447,16 @@ export default function Page() {
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <ThemeToggle />
+            <button
+              type="button"
+              className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
+              aria-label="Settings"
+              onClick={() => setSettingsOpen(true)}
+            >
+              <SettingsIcon className="size-5" />
+            </button>
             <ConnectionStatus
               pubkey={pubkey}
-              authMethod={authMethod}
               onDisconnect={handleDisconnect}
             />
           </div>
@@ -556,6 +565,13 @@ export default function Page() {
             )}
           </main>
         </div>
+
+        <SettingsModal
+          isOpen={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          pubkey={pubkey}
+          authMethod={authMethod}
+        />
       </div>
     </MarmotProvider>
   );
