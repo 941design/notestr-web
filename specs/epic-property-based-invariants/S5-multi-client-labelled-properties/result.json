@@ -1,0 +1,38 @@
+{
+  "story_id": "S5",
+  "status": "done",
+  "implemented_at": "2026-04-28",
+  "verified_at": "2026-04-28T23:29:30Z",
+  "verification_rounds": 1,
+  "final_outcome": "accepted",
+  "completed_at": "2026-04-28T23:29:30Z",
+  "files_created": [],
+  "files_modified": [
+    "src/store/multi-client.property.test.ts"
+  ],
+  "test_counts": {
+    "baseline_tests": 77,
+    "final_tests": 79,
+    "new_tests": 2,
+    "baseline_files": 11,
+    "final_files": 11
+  },
+  "invariants_covered": ["D1", "D3"],
+  "loc_added": 103,
+  "loc_estimate": 60,
+  "codex_review": "unavailable — Skill('codex:review') returned disable-model-invocation error (same as S2/S3/S4). Manual quality pass performed: verified naming conventions (titles and body comment lines), TypeScript strict mode (npx tsc --noEmit shows zero errors in the modified file), no production code modified, fc.statistics used correctly, both tests pass at 500 and 10000 numRuns.",
+  "divergence_rates": {
+    "D1_divergent_rate": "100%",
+    "D1_equal_rate": "0%",
+    "D3_client1_loses_newer_rate": "100%",
+    "D3_clients_converge_rate": "0%",
+    "note": "100% divergence for D1 is mechanically guaranteed: the two clients see updateA before updateB (client 0) vs updateB before updateA (client 1) respectively. Since updatedAt is identical for both updates, both pass the `>= existing.updatedAt` guard, so last-delivery wins on each client independently, always producing different winners. 100% for D3 is also guaranteed by construction: a snapshot unconditionally replaces state (task-reducer.ts:58-64) so client 1 always loses the post-t0 mutations it received."
+  },
+  "implementation_notes": {
+    "D1_setup": "Relaxed single-writer constraint for this test only. FakeBoard is constructed with numClients=2. Creation event is dispatched from client 0 and eagerly delivered to client 1. Then client 0 dispatches updateA (title=titleA, ts=conflictTs) and client 1 dispatches updateB (title=titleB, ts=conflictTs) where conflictTs=task.updatedAt+1 for both. quiesce() then delivers updateB to client 0 and updateA to client 1. Client 0 sees [updateA, updateB] (updateB wins); client 1 sees [updateB, updateA] (updateA wins) — always divergent. No modification to FakeBoard or arbBoardSchedule required.",
+    "D3_setup": "Client 0 dispatches creation and N status_changed mutations at strictly increasing timestamps (task.updatedAt+1..task.updatedAt+N). All mutations are delivered to client 1 so it has the 'newer' post-mutation state. Then `applyEvent(board.clients[1], snapshotEvent)` is called directly on the client 1 state to simulate a late-arriving snapshot whose tasks array reflects the t0 state (original task only). The snapshot's unconditional clear erases client 1's newer state. No bus manipulation needed — direct state application is cleaner and more explicit for the test's intent.",
+    "why_no_arbBoardSchedule_reuse": "Both D1 and D3 have a tight, predetermined structure: D1 needs precisely two equal-timestamp conflicting dispatches; D3 needs a snapshot delivered after specific mutations. Using arbBoardSchedule would require threading special-case parameters through the schedule type or adding a variant. A single-purpose fc.record arbitrary per test is cleaner and fits within the 60 LOC estimate.",
+    "task_updated_choice_for_D1": "task.updated with partial `changes` (title + description) was chosen over task.status_changed for D1 because it makes the divergence more visible in CI output (different string fields vs same enum value). With status_changed, if both clients pick the same status value, the states look convergent even though the LWW mechanism diverged. With task.updated the title field will differ in the two clients' states.",
+    "fc_statistics_signature": "fc.statistics(arb, classifier, numRuns) accepts a numRuns number as the third argument (not an options object). The existing S4 test file's two observability tests used `fc.statistics(arb, fn)` with no numRuns arg; the S5 D1/D3 tests pass NUM_RUNS explicitly to respect the FAST_CHECK_NUM_RUNS env override per AC-X-RUNS-2."
+  }
+}

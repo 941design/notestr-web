@@ -1,0 +1,18 @@
+{
+  "epic_name": "property-based-invariants",
+  "status": "in_progress",
+  "phase": "STORIES_IN_PROGRESS",
+  "language": "typescript",
+  "created_at": "2026-04-28T00:00:00Z",
+  "updated_at": "2026-04-28T23:29:30Z",
+  "completed_stories": ["S1", "S2", "S3", "S4", "S5"],
+  "escalated_stories": [],
+  "phase_history": [
+    {
+      "phase": "SPEC_VALIDATED",
+      "timestamp": "2026-04-28T00:00:00Z",
+      "trigger": "spec_and_ac_already_drafted_by_user"
+    }
+  ],
+  "notes": "Spec.md and acceptance-criteria.md were drafted before /base:feature was invoked. Stories sketch present in spec.md §Stories (S1..S8). Need to formalize stories.json and run exploration."
+}

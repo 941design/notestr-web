@@ -1,0 +1,48 @@
+{
+  "story_id": "S5",
+  "created_at": "2026-04-28",
+  "questions": [
+    {
+      "id": "VQ-1",
+      "question": "Are D1 and D3 multi-client both implemented as labelled-only (no assertion that fails when divergent)?",
+      "severity": 9,
+      "how_to_verify": "Read the two new `it` blocks. Both use `fc.statistics(...)` and conclude with `expect(true).toBe(true)`. Neither contains `expect(mapsEqual(...)).toBe(true)` or any assertion that would fail on divergence. Running FAST_CHECK_NUM_RUNS=10000 produces 100% divergent/client1-loses-newer labels without any test failure.",
+      "expected_answer": "Yes — both tests use fc.statistics to classify outcomes and only assert `expect(true).toBe(true)` at the end."
+    },
+    {
+      "id": "VQ-2",
+      "question": "Does each test use fc.statistics to record the divergence distribution?",
+      "severity": 8,
+      "how_to_verify": "Run `npx vitest run src/store/multi-client.property.test.ts --reporter=verbose`. CI log output should show `divergent..100.00%` for D1 and `client1-loses-newer..100.00%` for D3.",
+      "expected_answer": "Yes — D1 labels 'divergent' vs 'equal'; D3 labels 'client1-loses-newer' vs 'clients-converge'."
+    },
+    {
+      "id": "VQ-3",
+      "question": "Test count is 77+N where N >= 2?",
+      "severity": 10,
+      "how_to_verify": "Run `npx vitest run` and check `Tests: N passed`. Baseline was 77; S5 adds 2 tests (D1 + D3); expected total is 79.",
+      "expected_answer": "79 tests pass (77 baseline + 2 new)."
+    },
+    {
+      "id": "VQ-4",
+      "question": "Naming and comment conventions consistent with AC-X-NAMING-1 and AC-X-NAMING-2?",
+      "severity": 7,
+      "how_to_verify": "Grep the two new `it` blocks: titles start with '[D1]' and '[D3]' respectively (AC-X-NAMING-2). First line inside each body is a comment of the form `// D1: ...` or `// D3: ...` (AC-X-NAMING-1).",
+      "expected_answer": "Yes — `it('[D1] equal-timestamp two-client updates may diverge — labelled', ...)` with `// D1: two-client concurrent equal-timestamp updates to the same task.` as first body line; same pattern for D3."
+    },
+    {
+      "id": "VQ-5",
+      "question": "At FAST_CHECK_NUM_RUNS=10000, do D1/D3 still not fail (only labels recorded)?",
+      "severity": 9,
+      "how_to_verify": "Run `FAST_CHECK_NUM_RUNS=10000 npx vitest run src/store/multi-client.property.test.ts`. All 10 tests must pass with no failures. Labels will show divergent/client1-loses-newer at 100% but no counterexample printed.",
+      "expected_answer": "Yes — all 10 tests pass with 10000 runs. D1/D3 do not fail regardless of run count."
+    },
+    {
+      "id": "VQ-6",
+      "question": "No production code changed?",
+      "severity": 10,
+      "how_to_verify": "Run `git diff --stat`. Only `src/store/multi-client.property.test.ts` and files under `specs/` should appear. No changes to `src/store/task-reducer.ts`, `src/store/task-events.ts`, `src/store/task-store.tsx`, `src/marmot/`, or `src/components/`.",
+      "expected_answer": "Only src/store/multi-client.property.test.ts (test extension) and specs/epic-property-based-invariants/S5-multi-client-labelled-properties/ (story artifacts) are modified."
+    }
+  ]
+}

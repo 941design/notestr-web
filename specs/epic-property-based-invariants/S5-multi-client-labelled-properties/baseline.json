@@ -1,0 +1,23 @@
+{
+  "story_id": "S5",
+  "captured_at": "2026-04-28T23:24:00Z",
+  "command": "npx vitest run",
+  "framework": "vitest",
+  "vitest_version": "4.1.0",
+  "summary": {
+    "test_files_passed": 11,
+    "test_files_total": 11,
+    "tests_passed": 77,
+    "tests_total": 77,
+    "tests_failed": 0,
+    "duration_ms": 4450
+  },
+  "pre_state": {
+    "S1_done": true,
+    "S2_done": true,
+    "S3_done": true,
+    "S4_done": true,
+    "multi_client_property_test_loc": 746
+  },
+  "notes": "S5 extends src/store/multi-client.property.test.ts. Reuses FakeBoard, arbBoardSchedule, buildEventLog from S4. NOTE: S4's design is single-writer (all dispatches from client 0). For D1 multi-client, this constraint must be relaxed to two writers (the whole point of D1 is concurrent equal-timestamp dispatches from two clients to the same task)."
+}

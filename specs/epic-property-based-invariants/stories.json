@@ -1,0 +1,232 @@
+{
+  "epic_name": "property-based-invariants",
+  "schema_version": "1.0",
+  "language": "typescript",
+  "story_order": ["S1", "S2", "S3", "S4", "S5", "S6", "S7"],
+  "notes": "Story IDs match the spec's §Stories sketch (S1..S8). S8 in spec is a one-shot manual validation (deliberately break the reducer, observe property suite catches it, revert). It is recorded under epic_state.notes for the wrap-up step but is NOT a code story and is not in story_order.",
+  "stories": [
+    {
+      "id": "S1",
+      "name": "fast-check-dependency-wiring",
+      "title": "Add fast-check devDependency and `make test-property` target",
+      "status": "done",
+      "files_to_create": [],
+      "files_to_modify": [
+        "package.json",
+        "package-lock.json",
+        "Makefile"
+      ],
+      "scope": {
+        "in": [
+          "Add fast-check ^3.23.0 (or newer compatible) to devDependencies in package.json",
+          "Run npm install to refresh package-lock.json",
+          "Add a `test-property: node_modules` target to Makefile that runs vitest on the two src/store/*.property.test.ts files with FAST_CHECK_NUM_RUNS=10000",
+          "Verify make test still passes (no new tests yet — proves wiring is correct)",
+          "Verify make test-property passes (no tests yet, exits 0 with 'no test files found' or vitest's empty-pattern handling — depending on vitest behaviour, may need a stub property test that asserts true)"
+        ],
+        "out": [
+          "Writing any property test bodies (those are S2..S6)",
+          "Modifying npm test to include test-property by default — make test runs default (1000) budget anyway via npm run test:unit since *.property.test.ts files match src/**/*.test.ts pattern"
+        ]
+      },
+      "acceptance_criteria": ["AC-DEP-1", "AC-DEP-2", "AC-DEP-3", "AC-DEP-4"],
+      "invariants_covered": [],
+      "verification_notes": "AC-DEP-5 (deliberate failure flips exit code) is a one-shot sanity check, performed manually during story verification — not a committed test.",
+      "estimated_loc": 20,
+      "depends_on": []
+    },
+    {
+      "id": "S2",
+      "name": "reducer-property-tests-state-and-postconditions",
+      "title": "Reducer property tests: S1–S4, S8, S9, A1–A6, A13, R1",
+      "status": "done",
+      "files_to_create": [
+        "src/store/task-reducer.property.test.ts"
+      ],
+      "files_to_modify": [],
+      "scope": {
+        "in": [
+          "Build arbitraries: arbHexPubkey, arbTask, arbTaskEvent(state) (state-aware), arbEventSequence(maxLength=30)",
+          "Cover invariants S1, S2, S3, S4 (state)",
+          "Cover invariants S8 (per-group event-log isolation in createInMemoryKVStore), S9 (replay determinism)",
+          "Cover postconditions A1, A2, A3, A4, A5, A6 (stale no-op)",
+          "Cover A13 idempotence",
+          "Cover R1 resurrection caveat (labelled via fc.statistics)",
+          "Use 1000 numRuns by default; respect FAST_CHECK_NUM_RUNS env var override",
+          "Each `it` block prefixes its title with the invariant ID in brackets e.g. it('[S1] status enum closure', ...)",
+          "Each `it` body begins with a single-line comment // {ID}: {short description}",
+          "Use fc.statistics for action-type-frequency distribution (per AC-X-OBSERVABILITY-1)"
+        ],
+        "out": [
+          "C-invariants (next story)",
+          "D1/D3 labelled properties (next story)",
+          "Multi-client harness (S4)",
+          "Modifying any production code (AC-X-NO-PROD-CHANGE-1)"
+        ]
+      },
+      "acceptance_criteria": [
+        "AC-RED-1", "AC-RED-2", "AC-RED-3", "AC-RED-4",
+        "AC-RED-5", "AC-RED-6",
+        "AC-RED-7", "AC-RED-8", "AC-RED-9", "AC-RED-10", "AC-RED-11", "AC-RED-12",
+        "AC-RED-13", "AC-RED-14",
+        "AC-X-NAMING-1", "AC-X-NAMING-2", "AC-X-RUNS-1", "AC-X-DET-1"
+      ],
+      "invariants_covered": ["S1", "S2", "S3", "S4", "S8", "S9", "A1", "A2", "A3", "A4", "A5", "A6", "A13", "R1"],
+      "estimated_loc": 250,
+      "depends_on": ["S1"]
+    },
+    {
+      "id": "S3",
+      "name": "reducer-convergence-and-labelled",
+      "title": "Reducer property tests (continued): C1, C2, C3, D1, D3",
+      "status": "done",
+      "files_to_create": [],
+      "files_to_modify": [
+        "src/store/task-reducer.property.test.ts"
+      ],
+      "scope": {
+        "in": [
+          "Add C1 permutation-independence test (use fc.permutation; enforce strictly distinct timestamps via post-processing)",
+          "Add C2 author-irrelevance test",
+          "Add C3 duplicate-tolerance test (each event repeated 1–3 times)",
+          "Add D1 labelled property: equal-timestamp updates may diverge — fc.statistics, no assertion",
+          "Add D3 labelled property: late-arriving task.snapshot overwrites newer events — fc.statistics, no assertion",
+          "Maintain naming, comment-line, and runs-budget conventions from S2"
+        ],
+        "out": [
+          "Multi-client setting (S4)",
+          "Production code changes"
+        ]
+      },
+      "acceptance_criteria": ["AC-RED-15", "AC-RED-16", "AC-RED-17", "AC-RED-18", "AC-RED-19"],
+      "invariants_covered": ["C1", "C2", "C3", "D1", "D3"],
+      "estimated_loc": 80,
+      "depends_on": ["S2"]
+    },
+    {
+      "id": "S4",
+      "name": "multi-client-property-harness",
+      "title": "Multi-client FakeBoard harness + C0/C1/C2/C3/A13/A15",
+      "status": "done",
+      "files_to_create": [
+        "src/store/multi-client.property.test.ts"
+      ],
+      "files_to_modify": [],
+      "scope": {
+        "in": [
+          "Implement FakeBoard class: clients (TaskState[]), bus (Array<{event, deliveredTo: Set<number>}>), dispatch(clientIdx, event), deliver(busIdx, targetIdx), quiesce()",
+          "Implement arbBoardSchedule arbitrary: numClients ∈ [2, 5], interleaved dispatch+deliver ops",
+          "C0 task-state subset: post-quiesce all clients deep-equal each other",
+          "C1 permutation-independence in multi-client setting (fixed event multiset, random per-client delivery order)",
+          "C2 author-irrelevance multi-client",
+          "C3 duplicate-tolerance multi-client (deliver 1–3 times)",
+          "A13 multi-client idempotence (same event delivered to same client multiple times)",
+          "A15 multi-device same-pubkey self-converge (numClients=2, same identity)",
+          "500 numRuns default; FAST_CHECK_NUM_RUNS override; same naming / comment / observability conventions as S2"
+        ],
+        "out": [
+          "D1/D3 labelled properties in this harness (next story)",
+          "MLS layer integration (Layer 3 / S6)",
+          "Production code changes"
+        ]
+      },
+      "acceptance_criteria": [
+        "AC-MC-1", "AC-MC-2", "AC-MC-3", "AC-MC-4", "AC-MC-5", "AC-MC-6",
+        "AC-X-NAMING-1", "AC-X-NAMING-2", "AC-X-RUNS-2"
+      ],
+      "invariants_covered": ["C0", "C1", "C2", "C3", "A13", "A15"],
+      "estimated_loc": 250,
+      "depends_on": ["S1"]
+    },
+    {
+      "id": "S5",
+      "name": "multi-client-labelled-properties",
+      "title": "Multi-client labelled properties: D1, D3",
+      "status": "done",
+      "files_to_create": [],
+      "files_to_modify": [
+        "src/store/multi-client.property.test.ts"
+      ],
+      "scope": {
+        "in": [
+          "D1 multi-client: equal-timestamp updates from two clients to same task — record inter-client divergence rate via fc.statistics; no assertion",
+          "D3 multi-client: force task.snapshot delivery after later individual events on at least one client — record per-client divergence via fc.statistics; no assertion"
+        ],
+        "out": [
+          "Production fixes for D1/D3 (explicitly out of scope per spec §Out of Scope)"
+        ]
+      },
+      "acceptance_criteria": ["AC-MC-7", "AC-MC-8"],
+      "invariants_covered": ["D1", "D3"],
+      "estimated_loc": 60,
+      "depends_on": ["S4"]
+    },
+    {
+      "id": "S6",
+      "name": "playwright-property-spec",
+      "title": "Full-stack Playwright property spec via fc.commands",
+      "status": "pending",
+      "files_to_create": [
+        "e2e/tests/multi-user.property.spec.ts"
+      ],
+      "files_to_modify": [],
+      "scope": {
+        "in": [
+          "Implement ModelState (per-actor expected groups/members/tasks)",
+          "Implement RealSystem (wraps two browser contexts + pages, exposes reset(), quiesce(), dispatchCt(actor, task), getTask(actor, id), etc.)",
+          "Implement one fc.AsyncCommand class per DSL verb in scope: CgCommand, InCommand, LgCommand, FdCommand, RdCommand, CtCommand, UtCommand, ScCommand, AsCommand, UnCommand, DtCommand, RlCommand, SwCommand (Au/Dc are setup, not random)",
+          "Each Command implements check(), run(), toString() — toString returns matrix DSL form so counterexamples read as Actor.Verb(args)",
+          "Wrap fc.assert(fc.asyncProperty(fc.commands(commands, { maxCommands: 10 }), ...)) inside a single test.describe.serial block",
+          "numRuns: 20, timeout: 120_000",
+          "Per-command postconditions assert A1..A12 as relevant",
+          "After each fc.commands run: assert C0 (settled-state equality), S5 (member-iff-leaf), S7 (identity isolation post-Sw), S10 (DeviceList row count == leaf count), S6 (epoch monotonic per context)",
+          "A14 negative delivery: LgCommand and FdCommand last-leaf postconditions include a 2-second observer wait via ndk-subscriber to confirm no decryptable kind-445 events",
+          "Reuse e2e/fixtures/two-party.ts as the primary DSL home — extend it with the missing helpers below rather than building parallel scaffolding",
+          "Extend e2e/fixtures/two-party.ts with new helpers: switchIdentity(page, bunkerUrl) (the Sw verb — clicks disconnect-button, waits for sign-in, re-authenticates); disconnect(page) (the Dc verb); renameDevice(page, deviceLabel, newName); quiesceFor(group, opts) (relay-drain quiescence — see exploration-s6-deep-dive.json for the existing inline patterns); a scoped leaveGroupByName(page, name)",
+          "Use dispatchTaskEvent (not the UI helpers) for all task mutations in Commands — addTaskViaUi/moveTaskToNext/deleteTaskViaUi ignore their identifier args (per deep-dive)"
+        ],
+        "out": [
+          "Modifying any helper outside e2e/fixtures/two-party.ts and e2e/fixtures/ndk-subscriber.ts (auth helpers, cleanup, bunker.mjs are off-limits)",
+          "Production code changes (src/, components/, etc.)",
+          "Removing or skipping any existing example-based spec",
+          "Backporting the new helpers' usage into existing example-based specs — the new helpers are added but existing tests stay as-is"
+        ],
+        "deep_dive_artifact": "specs/epic-property-based-invariants/exploration-s6-deep-dive.json"
+      },
+      "acceptance_criteria": [
+        "AC-FS-1", "AC-FS-2", "AC-FS-3", "AC-FS-4", "AC-FS-5", "AC-FS-6", "AC-FS-7",
+        "AC-FS-8", "AC-FS-9", "AC-FS-10", "AC-FS-11", "AC-FS-12", "AC-FS-13",
+        "AC-X-RUNS-3", "AC-X-CI-1"
+      ],
+      "invariants_covered": ["S5", "S6", "S7", "S10", "A7", "A8", "A9", "A10", "A11", "A12", "A14", "C0"],
+      "estimated_loc": 600,
+      "depends_on": ["S1"]
+    },
+    {
+      "id": "S7",
+      "name": "documentation",
+      "title": "Property-test coverage section + property-tests.md",
+      "status": "pending",
+      "files_to_create": [
+        "e2e/tests/property-tests.md"
+      ],
+      "files_to_modify": [
+        "docs/two-party-permutation-matrix.md"
+      ],
+      "scope": {
+        "in": [
+          "Append `## Property-test coverage` section to docs/two-party-permutation-matrix.md with the TP-XX → invariant table from spec.md §Documentation",
+          "Create e2e/tests/property-tests.md covering: three-layer model (reducer → multi-client → full stack), invariant catalogue cross-reference, how to read fast-check counterexamples, how to reproduce via FAST_CHECK_SEED, distinction between asserted (S/A/C) and labelled (D) properties, why D1/D2/D3 are labelled-only"
+        ],
+        "out": [
+          "README updates",
+          "Modifying any other docs"
+        ]
+      },
+      "acceptance_criteria": ["AC-DOC-1", "AC-DOC-2", "AC-DOC-3"],
+      "invariants_covered": [],
+      "estimated_loc": 200,
+      "depends_on": ["S2", "S3", "S4", "S5", "S6"]
+    }
+  ]
+}
