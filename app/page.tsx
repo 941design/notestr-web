@@ -234,14 +234,14 @@ export default function Page() {
   // Not yet connected: show connect screen
   if (!pubkey) {
     return (
-      <div className="flex min-h-screen flex-col bg-background text-foreground">
+      <div className="flex h-dvh flex-col bg-background text-foreground">
         <header className="flex shrink-0 items-center justify-between border-b bg-card px-6 py-3" style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top, 0px))" }}>
           <h1 className="text-xl font-bold tracking-tight text-primary">
             notestr
           </h1>
           <ThemeToggle />
         </header>
-        <main className="flex flex-1 items-center justify-center overflow-y-auto p-6" style={{ paddingBottom: "calc(1.5rem + env(safe-area-inset-bottom, 0px))" }}>
+        <main className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-6" style={{ paddingBottom: "calc(1.5rem + env(safe-area-inset-bottom, 0px))" }}>
           {!signerChecked ? (
             showSpinner ? (
               <div className="flex flex-col items-center gap-3 text-muted-foreground">
@@ -420,7 +420,7 @@ export default function Page() {
   // Connected: wrap in MarmotProvider
   return (
     <MarmotProvider signer={signer!} pubkey={pubkey}>
-      <div className="flex min-h-screen flex-col bg-background text-foreground">
+      <div className="flex h-dvh flex-col bg-background text-foreground">
         <header className="flex shrink-0 items-center justify-between border-b bg-card px-4 py-3 md:px-6" style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top, 0px))" }}>
           {/* Hamburger — visible only on mobile */}
           <button
@@ -452,7 +452,7 @@ export default function Page() {
             />
           </div>
         </header>
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex min-h-0 flex-1 overflow-hidden">
           {/* Mobile drawer backdrop */}
           {drawerOpen && (
             <div
