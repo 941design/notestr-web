@@ -1,0 +1,427 @@
+{
+  "two_party_helpers": [
+    {
+      "name": "authenticate",
+      "signature": "(page: Page, bunkerUrl: string) => Promise<void>",
+      "verb": "Au",
+      "pre_state": "any page state — clearAppState is called internally first",
+      "side_effects": [
+        "page.goto('/')",
+        "clearAppState(page) — clears localStorage and all notestr-* IndexedDB databases",
+        "page.goto('/') again (post-clear)",
+        "clicks 'bunker:// URL' tab",
+        "fills bunker URL input",
+        "clicks Connect button",
+        "waits for pubkey-chip visible (NIP-46 handshake completes)"
+      ],
+      "returns": "void",
+      "internal_assertions": [
+        "implicit: waitFor('[data-testid=\"pubkey-chip\"]', { state: 'visible', timeout: 30000 }) — throws on timeout"
+      ],
+      "selectors": [
+        "page.getByRole('tab', { name: /bunker:\\/\\/ URL/i })",
+        "page.getByPlaceholder('bunker://...')",
+        "page.getByRole('button', { name: 'Connect' })",
+        "page.locator('[data-testid=\"pubkey-chip\"]')"
+      ],
+      "notes": "This is the parameterised version used by all cross-npub specs. auth-helper.ts/auth-helper-b.ts/auth-helper-c.ts are older per-identity wrappers that do NOT call clearAppState and have an idempotency shortcut via localStorage key 'notestr-nip46-payload'. The two-party.ts version always clears state first — callers should not call clearAppState themselves."
+    },
+    {
+      "name": "createGroup",
+      "signature": "(page: Page, name: string) => Promise<void>",
+      "verb": "Cg",
+      "pre_state": "page must be authenticated (pubkey-chip visible); sidebar must be visible (desktop or drawer open)",
+      "side_effects": [
+        "fills 'Group name' placeholder input",
+        "clicks 'Create' button (first match)",
+        "waits for group name in aside sidebar",
+        "waits for 'Tasks' heading to be visible (board mounted)"
+      ],
+      "returns": "void",
+      "internal_assertions": [
+        "expect(page.locator('aside').getByText(name).first()).toBeVisible({ timeout: 30000 })",
+        "expect(page.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 10000 })"
+      ],
+      "selectors": [
+        "page.getByPlaceholder('Group name').first()",
+        "page.getByRole('button', { name: 'Create', exact: true }).first()",
+        "page.locator('aside').getByText(name).first()",
+        "page.getByRole('heading', { name: 'Tasks' })"
+      ],
+      "notes": "The group is auto-selected after creation. On mobile the drawer may close; the 'Tasks' heading is the stable post-condition for both desktop and mobile paths. The task-publish-contract.spec.ts has a local variant (also called createGroup) that handles mobile drawer explicitly — the two-party.ts version does NOT handle mobile drawer."
+    },
+    {
+      "name": "inviteByNpub",
+      "signature": "(page: Page, inviteeNpub: string) => Promise<void>",
+      "verb": "In",
+      "pre_state": "page must be authenticated; a group must be currently selected (invite form visible)",
+      "side_effects": [
+        "fills 'npub1...' placeholder with inviteeNpub",
+        "clicks 'Invite' button",
+        "waits for invite input to clear (success signal)"
+      ],
+      "returns": "void",
+      "internal_assertions": [
+        "expect(page.getByPlaceholder('npub1...')).toHaveValue('', { timeout: 30000 })"
+      ],
+      "selectors": [
+        "page.getByPlaceholder('npub1...')",
+        "page.getByRole('button', { name: 'Invite' })"
+      ],
+      "notes": "The input clearing is the only internal success signal — no assertion that B actually received a welcome. Tests calling inviteByNpub must themselves await B receiving the group (e.g. via selectGroup). The key-package publish race is managed externally: B's authenticate must have been called and settle(pageB, 3000) waited before A calls inviteByNpub."
+    },
+    {
+      "name": "selectGroup",
+      "signature": "(page: Page, name: string) => Promise<void>",
+      "verb": "implicit (used after In to park a page on the board)",
+      "pre_state": "page must be authenticated; group must eventually appear in sidebar (waits up to 60s)",
+      "side_effects": [
+        "waits up to 60s for group name visible in aside",
+        "clicks the group name in aside",
+        "waits for 'Tasks' heading visible"
+      ],
+      "returns": "void",
+      "internal_assertions": [
+        "expect(sidebar.getByText(name).first()).toBeVisible({ timeout: 60000 })",
+        "expect(page.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 10000 })"
+      ],
+      "selectors": [
+        "page.locator('aside').getByText(name).first()"
+      ],
+      "notes": "60s timeout on sidebar visibility is intentional — accommodates MLS welcome propagation latency. Used by pages that receive a welcome from another actor (B navigating to a group A invited them to)."
+    },
+    {
+      "name": "leaveGroup",
+      "signature": "(page: Page, _name: string) => Promise<void>",
+      "verb": "Lg",
+      "pre_state": "a group must be visible/selectable in the sidebar; the leave button must be rendered",
+      "side_effects": [
+        "clicks '[data-testid=\"group-leave-btn\"]' (first match)",
+        "clicks '[data-testid=\"group-leave-confirm\"]' in the AlertDialog"
+      ],
+      "returns": "void",
+      "internal_assertions": [],
+      "selectors": [
+        "page.locator('[data-testid=\"group-leave-btn\"]').first()",
+        "page.locator('[data-testid=\"group-leave-confirm\"]')"
+      ],
+      "notes": "The _name param is unused — the helper always clicks the FIRST leave button in DOM order, regardless of which group is named. S6 must be careful: if there are multiple groups, the first button may not correspond to the intended group. No postcondition assertion is made; callers must assert group disappears themselves. The leave is a self-remove proposal (RFC 9420 §12.4); local state is destroyed but admin's member view retains B until an explicit commit."
+    },
+    {
+      "name": "reload",
+      "signature": "(page: Page) => Promise<void>",
+      "verb": "Rl",
+      "pre_state": "page must be mid-session (so session restores from IndexedDB/localStorage)",
+      "side_effects": [
+        "page.reload()",
+        "waits for pubkey-chip visible (session-restore completes)"
+      ],
+      "returns": "void",
+      "internal_assertions": [
+        "implicit: waitFor('[data-testid=\"pubkey-chip\"]', { state: 'visible', timeout: 30000 })"
+      ],
+      "selectors": [
+        "page.locator('[data-testid=\"pubkey-chip\"]')"
+      ],
+      "notes": "After reload, the currently selected group is NOT guaranteed to be re-selected — tests in multi-user.spec.ts explicitly re-click the group name after reload. S6 Command.run() for Rl must re-navigate to the group after waiting for the chip."
+    },
+    {
+      "name": "addTaskViaUi",
+      "signature": "(page: Page, title: string, description?: string) => Promise<void>",
+      "verb": "Ct (UI path)",
+      "pre_state": "page must be authenticated and a group selected (board visible with 'Add Task' button)",
+      "side_effects": [
+        "clicks 'Add Task' button",
+        "fills 'Title' label input",
+        "optionally fills 'Description' label input",
+        "clicks 'Create' button (last match — the modal Create, not the group Create)",
+        "waits for title to appear in '[data-column=\"open\"]' column"
+      ],
+      "returns": "void",
+      "internal_assertions": [
+        "expect(openColumn).toContainText(title, { timeout: 15000 })"
+      ],
+      "selectors": [
+        "page.getByRole('button', { name: 'Add Task' })",
+        "page.getByLabel('Title')",
+        "page.getByLabel('Description')",
+        "page.getByRole('button', { name: 'Create', exact: true }).last()",
+        "page.locator('[data-column=\"open\"]').first()"
+      ],
+      "notes": "Uses .last() for the Create button to disambiguate from the group Create button in the sidebar. NOT used by cross-author-tasks.spec.ts or concurrent-edits.spec.ts which use dispatchTaskEvent instead. The S6 CtCommand can use either addTaskViaUi or dispatchTaskEvent; the dispatch path is faster and returns the task id directly."
+    },
+    {
+      "name": "dispatchTaskEvent",
+      "signature": "(page: Page, event: TaskEvent) => Promise<void>",
+      "verb": "Ct / Ut / Sc / As / Un / Dt (programmatic path for all task events)",
+      "pre_state": "page must have the relevant group selected so its task store is mounted",
+      "side_effects": [
+        "calls window.__notestrTestDispatchTaskEvent(event) in browser context",
+        "dispatches event to the task store (applies locally + publishes kind-445)"
+      ],
+      "returns": "void",
+      "internal_assertions": [],
+      "selectors": [],
+      "notes": "The primary driver for Ut, Sc, As, Un, Dt in S6 Commands. TaskEvent shape for each verb:\n- task.created: { type, task: { id, title, description, status, assignee, createdBy, createdAt, updatedAt } }\n- task.updated: { type, taskId, changes: Partial<{title, description}>, updatedAt, updatedBy }\n- task.status_changed: { type, taskId, status: 'open'|'in_progress'|'done'|'cancelled', updatedAt, updatedBy }\n- task.assigned: { type, taskId, assignee: string|null, updatedAt, updatedBy }\n- task.deleted: { type, taskId, updatedAt, updatedBy }"
+    },
+    {
+      "name": "getPubkeyHex",
+      "signature": "(page: Page) => Promise<string>",
+      "verb": "utility",
+      "pre_state": "page must be authenticated",
+      "side_effects": [
+        "calls window.__notestrTestPubkey() in browser context"
+      ],
+      "returns": "64-character lowercase hex string of the authenticated pubkey",
+      "internal_assertions": [
+        "expect(result).toMatch(/^[0-9a-f]{64}$/)"
+      ],
+      "selectors": [],
+      "notes": "The assertion throws if the hook returns empty string (i.e. if the page is not authenticated). S6 ModelState can cache this after authenticate() and refresh after Sw(B)."
+    },
+    {
+      "name": "currentGroupId",
+      "signature": "(page: Page) => Promise<string>",
+      "verb": "utility",
+      "pre_state": "page must have at least one group in the store (authenticated and a group joined or created)",
+      "side_effects": [
+        "calls window.__notestrTestGroups() in browser context"
+      ],
+      "returns": "idStr (marmot group id string) of the last group in the store array",
+      "internal_assertions": [
+        "expect(groups.length).toBeGreaterThan(0)"
+      ],
+      "selectors": [],
+      "notes": "Returns the LAST element of the groups array, which matches the currently-selected group in all current usage patterns (groups are appended on join/create and the selection follows the latest). S6 must be aware that if multiple groups exist, this may not match the visually-selected group."
+    },
+    {
+      "name": "forgetLeafByIndex",
+      "signature": "(page: Page, groupIdStr: string, leafIndex: number) => Promise<void>",
+      "verb": "Fd",
+      "pre_state": "page must be authenticated; the group identified by groupIdStr must be loaded; leafIndex must be a valid leaf index in that group",
+      "side_effects": [
+        "calls window.__notestrTestForgetLeaf(groupId, idx) in browser context",
+        "issues removeLeafByIndex MLS commit — modifies ratchet tree and publishes kind-445 commit"
+      ],
+      "returns": "void",
+      "internal_assertions": [],
+      "selectors": [],
+      "notes": "Bypasses the DeviceList UI (which only renders the local identity's own leaves). This is the ONLY way to forget another identity's leaf in tests. The caller must obtain groupIdStr via currentGroupId() and leafIndex via leafIndexesFor() beforehand. No postcondition assertion — callers must poll leafIndexesFor() or check member-item count."
+    },
+    {
+      "name": "leafIndexesFor",
+      "signature": "(page: Page, groupIdStr: string, pubkeyHex: string) => Promise<number[]>",
+      "verb": "utility",
+      "pre_state": "page must be authenticated; group must be loaded",
+      "side_effects": [
+        "calls window.__notestrTestPubkeyLeafIndexes(groupId, pk) in browser context"
+      ],
+      "returns": "array of integer leaf indexes belonging to pubkeyHex in the group (empty if no leaves)",
+      "internal_assertions": [],
+      "selectors": [],
+      "notes": "Used by forget-device.spec.ts to determine which leaf indexes to pass to forgetLeafByIndex. Returns [] if pubkey has no leaves. S6 ModelState should track expected leaf counts to avoid calling this speculatively."
+    },
+    {
+      "name": "moveTaskToNext",
+      "signature": "(page: Page, _title: string) => Promise<void>",
+      "verb": "Sc (UI path, open→in_progress→done only)",
+      "pre_state": "page must be authenticated with a group selected; a task card with a 'Move to In Progress' or 'Move to Done' button must be visible",
+      "side_effects": [
+        "clicks the first 'Move to (In Progress|Done)' button in the page accessibility tree"
+      ],
+      "returns": "void",
+      "internal_assertions": [],
+      "selectors": [
+        "page.getByRole('button', { name: /Move to (In Progress|Done)/i }).first()"
+      ],
+      "notes": "The _title param is unused. Cannot advance to 'cancelled' — that requires dispatchTaskEvent with task.status_changed. Only advances the FIRST task with an available move button — not the named task. S6 ScCommand should prefer dispatchTaskEvent for precision."
+    },
+    {
+      "name": "deleteTaskViaUi",
+      "signature": "(page: Page, _title: string) => Promise<void>",
+      "verb": "Dt (UI path)",
+      "pre_state": "page must be authenticated with a group selected; a task card must be visible with the delete button",
+      "side_effects": [
+        "clicks '[data-testid=\"task-delete-btn\"]' (first match)",
+        "clicks '[data-testid=\"task-delete-confirm\"]' in the AlertDialog"
+      ],
+      "returns": "void",
+      "internal_assertions": [],
+      "selectors": [
+        "page.locator('[data-testid=\"task-delete-btn\"]').first()",
+        "page.locator('[data-testid=\"task-delete-confirm\"]')"
+      ],
+      "notes": "Like leaveGroup and moveTaskToNext, the _title param is unused — always acts on the first matching element. S6 DtCommand should prefer dispatchTaskEvent for targeting a specific task id."
+    },
+    {
+      "name": "settle",
+      "signature": "(page: Page, ms: number) => Promise<void>",
+      "verb": "quiescence wait",
+      "pre_state": "any",
+      "side_effects": [
+        "page.waitForTimeout(ms)"
+      ],
+      "returns": "void",
+      "internal_assertions": [],
+      "selectors": [],
+      "notes": "A timed sleep used between authenticate() and invite flows to wait for key-package publication. NOT the relay-drain quiescence pattern — it is a fixed-duration wait. Typical usage: settle(pageB, 3000) after B authenticates, before A invites B by npub. S6 should NOT rely on this for convergence assertions; the relay-drain / expect.poll pattern is the correct quiescence mechanism for C0."
+    },
+    {
+      "name": "projectIsMobile",
+      "signature": "(workerProject: { use: { isMobile?: boolean } }) => boolean",
+      "verb": "utility",
+      "pre_state": "any — pure function",
+      "side_effects": [],
+      "returns": "boolean — true iff the current Playwright project targets a mobile viewport",
+      "internal_assertions": [],
+      "selectors": [],
+      "notes": "Used by specs to skip multi-context tests on mobile projects. S6 should call this in beforeAll and skip the property spec on mobile projects via test.skip."
+    }
+  ],
+  "auth_helpers": [
+    {
+      "file": "e2e/fixtures/auth-helper.ts",
+      "identity": "User A",
+      "exported_constants": {
+        "E2E_BUNKER_PUBKEY_HEX": "3e0057f09a2d9fcc231485409929af4f2c95479e5c369fade8ea0ed37e3c9ae0",
+        "E2E_BUNKER_URL": "bunker://3e0057f...?relay=ws%3A%2F%2Flocalhost%3A7777"
+      },
+      "function": "authenticateViaBunker(page: Page) => Promise<void>",
+      "idempotent": true,
+      "idempotency_mechanism": "checks localStorage.getItem('notestr-nip46-payload') — if present, skips to waitFor pubkey-chip only",
+      "does_NOT_call_clearAppState": true,
+      "notes": "This is the OLDER per-identity helper. The two-party.ts authenticate() is the canonical helper for S6 — it calls clearAppState first and is parameterised over bunkerUrl. authenticateViaBunker is used by single-context tests (task-publish-contract, identity-visibility). Do NOT use it in S6 as it may inherit stale state."
+    },
+    {
+      "file": "e2e/fixtures/auth-helper-b.ts",
+      "identity": "User B",
+      "exported_constants": {
+        "E2E_BUNKER_B_URL": "bunker://d2f8e20d...?relay=ws%3A%2F%2Flocalhost%3A7777",
+        "USER_B_NPUB": "npub16tuwyrtq8uheemw6u8rs7vgauqnmlzrl9anv79egndfahelnmv7stjfhcm"
+      },
+      "function": "authenticateAsBunkerB(page: Page) => Promise<void>",
+      "idempotent": false,
+      "does_NOT_call_clearAppState": true,
+      "notes": "Used by identity-visibility.spec.ts for Sw(B) scenarios within a single browser context (shared IndexedDB). Includes BUNKER_B_PUBKEY_HEX in a comment but does not export it — S6 should call getPubkeyHex() after authentication to obtain the hex."
+    },
+    {
+      "file": "e2e/fixtures/auth-helper-c.ts",
+      "identity": "User C",
+      "exported_constants": {
+        "E2E_BUNKER_C_URL": "bunker://2ea0d688...?relay=ws%3A%2F%2Flocalhost%3A7777",
+        "USER_C_NPUB": "npub196sddz8csve9j3hhw45zrgakf94gwqnj9az4k6z96sml94q7e45qxfuche",
+        "E2E_BUNKER_C_PUBKEY_HEX": "2ea0d688f883325946f7756821a3b6496a8702722f455b6845d437f2d41ecd68"
+      },
+      "function": "authenticateAsBunkerC(page: Page) => Promise<void>",
+      "idempotent": false,
+      "does_NOT_call_clearAppState": true,
+      "notes": "Three-party tests use this for a third actor. S6 is spec'd as two-context so User C is likely out of scope for the initial property spec."
+    }
+  ],
+  "cleanup": {
+    "function": "clearAppState(page: Page) => Promise<void>",
+    "file": "e2e/fixtures/cleanup.ts",
+    "deletes": [
+      "localStorage (all keys via localStorage.clear())",
+      "notestr-identity (IndexedDB)",
+      "notestr-device-names (IndexedDB)",
+      "notestr-group-state (IndexedDB)",
+      "notestr-key-packages (IndexedDB)",
+      "notestr-invite-store (IndexedDB)",
+      "notestr-invited-keys (IndexedDB)",
+      "notestr-group-sync (IndexedDB)",
+      "notestr-joined-groups (IndexedDB)",
+      "any additional notestr-* databases discovered via indexedDB.databases() enumeration"
+    ],
+    "keeps": [
+      "Playwright browser session cookies",
+      "service worker registrations (not cleared)",
+      "in-memory React state (cleared implicitly by subsequent page.goto('/'))"
+    ],
+    "notes": "Uses indexedDB.databases() enumeration (Chromium 16.4+) as primary strategy with KNOWN_IDB_NAMES fallback. The deletion is async and awaited — all databases are deleted before the function resolves. Called internally by two-party.ts authenticate() before each auth flow. Must be called while already on an app page (not a blank page) so the evaluate() context has indexedDB access."
+  },
+  "global_setup": {
+    "file": "e2e/global-setup.ts",
+    "starts": [
+      "next build (NODE_ENV=test, NEXT_PUBLIC_E2E=1, NEXT_PUBLIC_RELAYS=ws://localhost:7777)",
+      "bunker-A process (e2e/fixtures/bunker.mjs, default private key)",
+      "bunker-B process (e2e/fixtures/bunker.mjs, BUNKER_PRIVATE_KEY=3ad635dc..., BUNKER_LABEL=bunker-B)",
+      "bunker-C process (e2e/fixtures/bunker.mjs, BUNKER_PRIVATE_KEY=6a7c89e4..., BUNKER_LABEL=bunker-C)",
+      "static file server via 'npx serve out -l 3100 --no-clipboard' (stdio: ignore to avoid pipe-buffer deadlock)"
+    ],
+    "fixtures_provided": [
+      "bunker A at ws://localhost:7777 for E2E_BUNKER_URL",
+      "bunker B at ws://localhost:7777 for E2E_BUNKER_B_URL",
+      "bunker C at ws://localhost:7777 for E2E_BUNKER_C_URL",
+      "app served at http://localhost:3100",
+      "relay at ws://localhost:7777 (started separately via make e2e-up, NOT in global-setup)"
+    ],
+    "pids_written_to": "e2e/.state.json",
+    "notes": "The strfry relay is NOT started by global-setup — it must be running before tests start (via make e2e-up). Global-setup kills any stale process on port 3100 before starting serve. S6 inherits all of this for free — no additional infrastructure is needed."
+  },
+  "global_teardown": {
+    "file": "e2e/global-teardown.ts",
+    "kills": ["bunker-A (SIGTERM)", "bunker-B (SIGTERM)", "bunker-C (SIGTERM)", "serve (SIGTERM)"],
+    "reads_from": "e2e/.state.json",
+    "notes": "Tolerates missing state file. Does not clean up relay (started/stopped separately)."
+  },
+  "ndk_subscriber": {
+    "file": "e2e/fixtures/ndk-subscriber.ts",
+    "factory": "openNdkSubscriber(relays: string[]) => Promise<NdkSubscriber>",
+    "factory_side_effects": [
+      "creates NDK instance with NDKPrivateKeySigner using SUBSCRIBER_PRIVATE_KEY (= User B's private key: 3ad635dc...)",
+      "calls ndk.connect(3000) — 3s timeout"
+    ],
+    "methods": [
+      {
+        "name": "publishTextNote",
+        "signature": "(content: string) => Promise<NDKEvent>",
+        "purpose": "Publishes a kind-1 text note using the subscriber's identity. Used by the round-trip smoke test."
+      },
+      {
+        "name": "waitForEvent",
+        "signature": "(filter: NDKFilter, timeoutMs: number) => Promise<NDKEvent>",
+        "purpose": "Subscribes with an auto-since guard (Math.floor(Date.now()/1000)) to skip historical relay replay. The auto-since is bypassed when filter.since or filter.ids is already set (ids filter avoids sub-second clock-skew races). Times out and rejects with a descriptive error. Used for A14 negative-delivery waits by waiting for events that should NOT arrive — caller wraps in expect().rejects or uses a timeout race."
+      },
+      {
+        "name": "waitForEvents",
+        "signature": "(filter: NDKFilter, count: number, timeoutMs: number) => Promise<NDKEvent[]>",
+        "purpose": "Like waitForEvent but collects N events before resolving. Same auto-since guard. Used for concurrency tests where two events are dispatched and both must arrive."
+      },
+      {
+        "name": "close",
+        "signature": "() => Promise<void>",
+        "purpose": "Stops all active subscriptions and marks the subscriber as closed. Must be called in a finally block."
+      }
+    ],
+    "important_note_for_A14": "For the A14 (negative delivery) invariant, the correct pattern is: start waitForEvent with a short timeout (e.g. 3000ms), then assert the promise rejects with a timeout error. If it resolves, the event was delivered to a party that should not have received it — that is the invariant violation. The subscriber uses the User B private key, so it can only observe events on behalf of B; for A-side negative delivery a separate subscriber instance on A's relay subscription would be needed, or the test hook __notestrTestTasks can be polled to verify no new tasks appear."
+  },
+  "settle_pattern": {
+    "where_used": "e2e/tests/multi-user.spec.ts:86,159,210 and all cross-actor specs via settle(page, 3000) after authenticate(); also page.waitForTimeout(5000) inline after reload in multi-user.spec.ts:161,209",
+    "pattern": "Fixed-duration wait (page.waitForTimeout wrapped in settle()) used to allow key-package publication after authenticate(). For convergence assertions, tests use expect.poll() or toContainText() with explicit timeouts (30-60s) — not settle(). The spec.md's quiescence design for S6 uses 'no new events for 500ms' relay-drain via expect.poll or a relay-subscriber timeout, which is NOT currently implemented as a reusable helper — it must be built in S6.",
+    "quiescence_note": "The existing codebase has NO reusable 'drain until quiet' helper. spec.md line 129 describes the intended pattern (relay-observer no-new-events-for-500ms) but no implementation exists. S6 must build quiesce() from scratch using openNdkSubscriber + a 500ms no-event window or a direct expect.poll on __notestrTestTasks()."
+  },
+  "sw_helper_status": "does NOT exist in two-party.ts — would need to be implemented in S6. The Sw(B) flow is implemented inline in identity-visibility.spec.ts:43-49 and 88-104 as: (1) page.locator('[data-testid=\"disconnect-button\"]').click({ force: true }), (2) page.getByText('Sign in to notestr').waitFor({ state: 'visible', timeout: 15000 }), (3) authenticateAsBunkerB(page) or the equivalent two-party.ts authenticate() call. No Dc (disconnect) helper exists in two-party.ts either.",
+  "missing_for_S6": [
+    "Sw(B) — no helper; inline pattern exists in identity-visibility.spec.ts:43-49 using '[data-testid=\"disconnect-button\"]' + waitFor 'Sign in to notestr' + re-authenticate",
+    "Dc — no disconnect helper in two-party.ts; handled inline via '[data-testid=\"disconnect-button\"]'",
+    "Rd(d,n) — no rename-device helper in two-party.ts; rename-device.spec.ts does it inline via '[data-testid=\"device-row\"][data-local=\"false\"]' textbox fill + blur",
+    "quiesce() — no relay-drain helper exists; S6 must build this (see settle_pattern)",
+    "Sc with 'cancelled' status via UI — moveTaskToNext can only reach in_progress and done; cancelled requires dispatchTaskEvent with task.status_changed",
+    "leaveGroup targets first button regardless of name — S6 needs a group-scoped version if multiple groups exist",
+    "addTaskViaUi/moveTaskToNext/deleteTaskViaUi are all 'first element' helpers with unused title params — S6 should use dispatchTaskEvent for all task mutations to get id-scoped precision"
+  ],
+  "recommendations_for_S6": [
+    "authenticate() from two-party.ts is directly usable as-is for AuCommand — it clears state and parameterises over bunkerUrl",
+    "createGroup(), inviteByNpub(), selectGroup(), leaveGroup(), reload(), settle() are usable as-is for Cg, In, selectGroup, Lg, Rl, and key-package-wait respectively",
+    "forgetLeafByIndex() + leafIndexesFor() + currentGroupId() are usable as-is for FdCommand — FdCommand.check() should query leafIndexesFor() before calling forgetLeafByIndex()",
+    "getPubkeyHex() is usable as-is — call after each authenticate() and cache in ModelState",
+    "dispatchTaskEvent() is the correct driver for Ct, Ut, Sc, As, Un, Dt in S6 Commands — it is id-precise, works for all event types including cancelled status, and is the pattern used by all cross-author specs",
+    "addTaskViaUi/moveTaskToNext/deleteTaskViaUi are NOT recommended for S6 — they operate on 'first matching element' and ignore the title param, making them unsafe when multiple tasks exist",
+    "Sw(B) needs a new helper wrapping: disconnect-button click + 'Sign in to notestr' waitFor + authenticate(page, bunkerUrl). Two selectors: '[data-testid=\"disconnect-button\"]' with { force: true } (needed on mobile to bypass QR overlap) and page.getByText('Sign in to notestr')",
+    "Dc needs a thin helper: page.locator('[data-testid=\"disconnect-button\"]').click({ force: true }) + waitFor login screen",
+    "Rd needs a thin helper: locate '[data-testid=\"device-row\"][data-local=\"false\"]', get its textbox, fill + blur",
+    "quiesce() must be built from scratch for S6; recommended approach: open an NDK subscriber and wait until no new kind-445 events arrive for 500ms, OR poll __notestrTestTasks() on both pages until two consecutive reads are deep-equal. The latter avoids the NDK subscriber private-key collision issue (subscriber uses B's key).",
+    "leaveGroup should NOT be called when multiple groups exist without a DOM-scoped version — the current helper clicks the first leave button in DOM order, not the named group's button"
+  ]
+}

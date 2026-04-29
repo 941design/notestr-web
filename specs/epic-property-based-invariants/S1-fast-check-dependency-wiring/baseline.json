@@ -1,0 +1,21 @@
+{
+  "story_id": "S1",
+  "captured_at": "2026-04-28T22:23:48Z",
+  "command": "npx vitest run",
+  "framework": "vitest",
+  "vitest_version": "4.1.0",
+  "summary": {
+    "test_files_passed": 9,
+    "test_files_total": 9,
+    "tests_passed": 48,
+    "tests_total": 48,
+    "tests_failed": 0,
+    "duration_ms": 1660
+  },
+  "pre_state": {
+    "fast_check_in_package_json": false,
+    "make_test_property_target_exists": false,
+    "property_test_files_exist": false
+  },
+  "notes": "Pre-S1 vitest run on master (commit bc1eb7b). All tests green. make test additionally runs verify-static-export.mjs which builds the next.js app — observed building successfully. e2e tests not run as part of baseline (separate make target)."
+}

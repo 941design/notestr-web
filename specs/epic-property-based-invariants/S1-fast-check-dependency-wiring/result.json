@@ -1,0 +1,37 @@
+{
+  "story_id": "S1",
+  "status": "done",
+  "implemented_at": "2026-04-28T22:25:30Z",
+  "verified_at": "2026-04-28T22:28:00Z",
+  "verification_rounds": 1,
+  "final_outcome": "accepted",
+  "completed_at": "2026-04-28T22:28:00Z",
+  "implementation_summary": "Added fast-check ^3.23.0 to devDependencies in package.json, ran npm install to update package-lock.json (resolves to 3.23.2, 2 packages added, no peer-dep warnings), and added a test-property target to the Makefile. The target is .PHONY, depends on node_modules, sets FAST_CHECK_NUM_RUNS=10000, targets both src/store property test files, uses --passWithNoTests, has a ## doc comment so it appears in make help, and sits between the test and dev targets.",
+  "files_modified": [
+    "package.json",
+    "package-lock.json",
+    "Makefile"
+  ],
+  "files_created": [],
+  "test_counts": {
+    "baseline": {
+      "test_files": 9,
+      "tests": 48,
+      "source": "specs/epic-property-based-invariants/S1-fast-check-dependency-wiring/baseline.json"
+    },
+    "final": {
+      "test_files": 9,
+      "tests": 48,
+      "source": "make test (npx vitest run)"
+    }
+  },
+  "mocks_introduced": [],
+  "notes": {
+    "fast_check_version_resolved": "3.23.2",
+    "npm_install_warnings": "12 pre-existing audit vulnerabilities (3 moderate, 9 high); no new peer-dep warnings from fast-check",
+    "platform_stamp": "Linux aarch64 — unchanged after npm install (spec prompt said Linux x86_64 but the actual running host is Linux aarch64; stamp reflects reality)",
+    "make_test_property_exit_code": 0,
+    "make_test_exit_code": 0,
+    "make_help_shows_test_property": true
+  }
+}

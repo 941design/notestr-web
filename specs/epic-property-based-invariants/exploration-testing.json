@@ -1,0 +1,81 @@
+{
+  "vitest": {
+    "config_path": "vitest.config.ts",
+    "test_pattern": "src/**/*.test.ts, src/**/*.test.tsx",
+    "scripts": {
+      "test": "npm run test:unit && npm run test:export",
+      "test:unit": "vitest run",
+      "test:export": "node ./scripts/verify-static-export.mjs"
+    },
+    "vitest_version": "^4.1.0",
+    "globals": false,
+    "environment": "node",
+    "existing_test_files": [
+      "src/config/pwa.test.ts",
+      "src/config/base-path.test.ts",
+      "src/config/relays.test.ts",
+      "src/marmot/ingest-queue.test.ts",
+      "src/marmot/device-sync.test.ts",
+      "src/marmot/per-leaf-remove.test.ts",
+      "src/marmot/device-store.test.ts",
+      "src/marmot/client.test.ts",
+      "src/store/task-reducer.test.ts"
+    ],
+    "example_test": "src/store/task-reducer.test.ts — imports {describe,it,expect} from 'vitest'; uses describe()/it() blocks with plain factory helpers (emptyState(), sampleTask()); no beforeEach lifecycle; assertions via expect().toEqual/toBe/toBeNull/toHaveCount."
+  },
+  "playwright": {
+    "config_path": "playwright.config.ts",
+    "test_dir": "./e2e/tests",
+    "base_url": "http://localhost:3100",
+    "fully_parallel": false,
+    "workers": 1,
+    "retries": "0 locally, 1 on CI",
+    "reporter": "list",
+    "projects": ["chromium (Desktop Chrome)", "Mobile Chrome (Pixel 5)", "Mobile Safari (iPhone 12)"],
+    "global_setup": "./e2e/global-setup.ts",
+    "global_teardown": "./e2e/global-teardown.ts",
+    "uses_describe_serial": true,
+    "describe_serial_pattern": "Each spec uses exactly one describe.serial('X setup') block for the ordered setup chain (auth→group→invite), then sibling non-serial describes for independent assertion tests.",
+    "specs_count": 22,
+    "key_specs": [
+      { "file": "multi-user.spec.ts", "description": "TP-01/10/11/20: canonical two-party setup (auth, invite, group visible, task create+move)" },
+      { "file": "concurrent-edits.spec.ts", "description": "TP-90/91: LWW merge on concurrent task edits" },
+      { "file": "cross-author-tasks.spec.ts", "description": "TP-13..24: cross-author update/status/assign/unassign/delete propagation" },
+      { "file": "forget-device.spec.ts", "description": "TP-50/51/53: per-leaf removal semantics across distinct npubs" },
+      { "file": "active-leave.spec.ts", "description": "TP-40/41: leave-group as active member + re-invite" },
+      { "file": "snapshot-history.spec.ts", "description": "TP-31/32: NIP-44 task-snapshot at invite time captures merged history" },
+      { "file": "task-publish-contract.spec.ts", "description": "Relay wire format contract via NDK subscriber" }
+    ]
+  },
+  "makefile": {
+    "test_target_lines": "test: node_modules\n\tnpm test\n\ne2e: node_modules\n\t@$(MAKE) e2e-up; exit_code=0; npx playwright test || exit_code=$$?; $(MAKE) e2e-down; exit $$exit_code",
+    "add_property_test_note": "test-property target slots cleanly between 'test' and 'e2e'. Pattern: 'test-property: node_modules\\n\\tFAST_CHECK_NUM_RUNS=10000 npx vitest run src/store/task-reducer.property.test.ts src/store/multi-client.property.test.ts'."
+  },
+  "e2e_fixtures_summary": [
+    "auth-helper.ts (User A)",
+    "auth-helper-b.ts (User B)",
+    "auth-helper-c.ts (User C)",
+    "bunker.mjs (NIP-46 bunker process)",
+    "cleanup.ts (clearAppState)",
+    "ndk-client.ts (Playwright NDK fixture)",
+    "ndk-subscriber.ts (openNdkSubscriber wrapper)",
+    "two-party.ts (DSL verbs — single source of truth for all 15 actions)"
+  ],
+  "dsl_verbs": {
+    "matrix_doc": "docs/two-party-permutation-matrix.md",
+    "verbs_documented": ["Au", "Dc", "Rl", "Sw", "Cg", "In", "Lg", "Fd", "Rd", "Ct", "Ut", "Sc", "As", "Un", "Dt"],
+    "helper_module": "e2e/fixtures/two-party.ts",
+    "note": "No standalone e2e/helpers/ dir. All DSL helpers in e2e/fixtures/two-party.ts."
+  },
+  "two_party_test_pattern": {
+    "file": "e2e/tests/multi-user.spec.ts",
+    "quiescence_pattern": "settle(page, ms) helper wrapping waitForTimeout: 3000ms after bunker auth (key-package propagation), 5000ms after reload (device-sync re-fetch). Live assertions use expect(locator).toContainText/toHaveCount with 15000–60000ms timeouts. No expect.poll usage."
+  },
+  "conventions": {
+    "test_naming": "Unit: src/**/*.test.ts. E2E: e2e/tests/*.spec.ts. describe() label is 'verb-noun' or scenario DSL. it() labels use plain English describing observable outcome.",
+    "import_style": "Named imports only. Vitest: import {describe,it,expect} from 'vitest'. Playwright: import {test,expect} from '@playwright/test'. DSL helpers imported with .js extension (ESM bundler resolution).",
+    "lint": "No eslint.config.* found. TypeScript strict:true.",
+    "no_test_globals": "vitest config has globals:false — must explicitly import."
+  },
+  "fast_check_already_present": false
+}

@@ -1,0 +1,114 @@
+{
+  "reducer": {
+    "file": "src/store/task-reducer.ts",
+    "exports": [
+      { "name": "TaskState", "kind": "type", "signature": "export type TaskState = Map<string, Task>" },
+      { "name": "applyEvent", "kind": "function", "signature": "export function applyEvent(state: TaskState, event: TaskEvent): TaskState" },
+      { "name": "replayEvents", "kind": "function", "signature": "export function replayEvents(events: TaskEvent[]): TaskState" }
+    ],
+    "comparison_line": "      if (existing && event.updatedAt >= existing.updatedAt) {",
+    "comparison_line_number": 16,
+    "note": "The `>=` guard appears at L16 (task.updated case) and is repeated verbatim at L28 (task.status_changed), L40 (task.assigned), L52 (task.deleted). All mutation events use last-write-wins by timestamp; `task.created` and `task.snapshot` have no guard.",
+    "state_shape": "Map<string, Task> — keyed by task.id (UUID string)"
+  },
+  "events": {
+    "file": "src/store/task-events.ts",
+    "exports": [
+      { "name": "TASK_EVENT_KIND", "kind": "const", "signature": "export const TASK_EVENT_KIND = 31337" },
+      { "name": "TaskStatus", "kind": "type", "signature": "export type TaskStatus = \"open\" | \"in_progress\" | \"done\" | \"cancelled\"" },
+      { "name": "Task", "kind": "interface", "signature": "export interface Task { id: string; title: string; description: string; status: TaskStatus; assignee: string | null; createdBy: string; createdAt: number; updatedAt: number; }" },
+      { "name": "TaskEvent", "kind": "type", "signature": "Discriminated union: task.created | task.updated | task.status_changed | task.assigned | task.deleted | task.snapshot" },
+      { "name": "createTask", "kind": "function", "signature": "export function createTask(title: string, description: string, createdBy: string): Task" }
+    ],
+    "event_types": ["task.created", "task.updated", "task.status_changed", "task.assigned", "task.deleted", "task.snapshot"]
+  },
+  "persistence": {
+    "file": "src/store/persistence.ts",
+    "storage_backend": "idb-keyval (IndexedDB)",
+    "key_pattern": "notestr:events:<groupId>",
+    "exports": [
+      { "name": "loadEvents", "signature": "loadEvents(groupId: string): Promise<TaskEvent[]>" },
+      { "name": "saveEvents", "signature": "saveEvents(groupId: string, events: TaskEvent[]): Promise<void>" },
+      { "name": "appendEvent", "signature": "appendEvent(groupId: string, event: TaskEvent): Promise<void>" },
+      { "name": "clearEvents", "signature": "clearEvents(groupId: string): Promise<void>" }
+    ],
+    "in_memory_alternative": {
+      "file": "src/marmot/storage.ts",
+      "name": "createInMemoryKVStore",
+      "signature": "createInMemoryKVStore<T>(): KeyValueStoreBackend<T>",
+      "interface": "{ getItem, setItem, removeItem, clear, keys }"
+    }
+  },
+  "store": {
+    "file": "src/store/task-store.tsx",
+    "exports": [
+      { "name": "TaskStoreProvider", "kind": "component" },
+      { "name": "useTaskStore", "kind": "hook", "signature": "{ tasks: Task[]; dispatch: (event: TaskEvent) => Promise<void>; loading: boolean }" }
+    ],
+    "dispatch_path": [
+      "1. applyEvent(stateRef.current, taskEvent) → setState (optimistic)",
+      "2. appendEvent(groupId, taskEvent) → IndexedDB",
+      "3. group.sendApplicationRumor(rumor) → MLS group (may throw; failure emits notestr:taskPublishFailed CustomEvent)",
+      "Incoming MLS: group.on('applicationMessage', ...) → deserializeApplicationData → JSON.parse(rumor.content) as TaskEvent → applyEvent → setState"
+    ],
+    "publish_failure_hook": "window.__notestrTestPublishFailureOnce (string | null) — consumed once then nulled before sendApplicationRumor",
+    "mls_rumor_shape": "{ id, kind: 31337, content: JSON.stringify(taskEvent), tags: [['t','task']], created_at, pubkey }"
+  },
+  "test_hooks": [
+    { "name": "__notestrTestGroups", "signature": "() => Array<{ idStr: string; nostrGroupIdHex: string; relays: string[] }>", "purpose": "List all loaded MarmotGroups", "installed_in": "src/marmot/client.tsx:422" },
+    { "name": "__notestrTestPubkey", "signature": "() => string", "purpose": "Authenticated identity hex pubkey", "installed_in": "src/marmot/client.tsx:425" },
+    { "name": "__notestrTestSentRumors", "signature": "(groupId: string) => Rumor[]", "purpose": "Application rumors sent to a group", "installed_in": "src/marmot/client.tsx:429" },
+    { "name": "__notestrTestResetSentRumors", "signature": "(groupId: string) => void", "purpose": "Clear in-memory sent-rumor buffer", "installed_in": "src/marmot/client.tsx:434" },
+    { "name": "__notestrTestNetworkRequest", "signature": "(relays: string[], filters: unknown[]) => Promise<NostrEvent[]>", "purpose": "Unfiltered relay request", "installed_in": "src/marmot/client.tsx:438" },
+    { "name": "__notestrTestForgetLeaf", "signature": "(groupId: string, leafIndex: number) => Promise<void>", "purpose": "Per-leaf Remove proposal (bypasses local-only restriction)", "installed_in": "src/marmot/client.tsx:445" },
+    { "name": "__notestrTestPubkeyLeafIndexes", "signature": "(groupId: string, pubkeyHex: string) => number[]", "purpose": "MLS leaf indexes for pubkey", "installed_in": "src/marmot/client.tsx:450" },
+    { "name": "__notestrTestInspectGroupEvent", "signature": "(groupId: string, eventId: string) => Promise<{ event, firstIngest, secondIngest, rumor, currentEpoch }>", "purpose": "Diagnostics on a relay event", "installed_in": "src/marmot/client.tsx:455" },
+    { "name": "__notestrTestDispatchTaskEvent", "signature": "(taskEvent: TaskEvent) => Promise<void>", "purpose": "Trigger full dispatch path", "installed_in": "src/store/task-store.tsx:159" },
+    { "name": "__notestrTestTasks", "signature": "() => Task[]", "purpose": "Snapshot of in-memory task state", "installed_in": "src/store/task-store.tsx:160" },
+    { "name": "__notestrTestPersistedTaskEvents", "signature": "() => Promise<TaskEvent[]>", "purpose": "Read persisted event log from IndexedDB", "installed_in": "src/store/task-store.tsx:161" },
+    { "name": "__notestrTestArmPublishFailure", "signature": "(message?: string) => void", "purpose": "Arm next sendApplicationRumor to throw", "installed_in": "src/store/task-store.tsx:162" },
+    { "name": "__notestrTestPublishFailureOnce", "signature": "string | null | undefined", "purpose": "One-shot error message", "installed_in": "src/store/task-store.tsx:130-135" }
+  ],
+  "marmot_api": {
+    "source_package": "@internet-privacy/marmot-ts",
+    "leaf_types_from": "ts-mls",
+    "getGroupMembers": "(state: ClientState) => string[]  // returns nostr pubkey hex strings",
+    "getPubkeyLeafNodes": "(state: ClientState, pubkey: string) => LeafNode[]",
+    "getPubkeyLeafNodeIndexes": "(state: ClientState, pubkey: string) => number[]",
+    "group_state_shape": "ClientState = GroupState & PublicGroupState; PublicGroupState = { ratchetTree: RatchetTree; groupContext: GroupContext }; GroupContext = { version, cipherSuite, groupId, epoch: bigint, treeHash, ... }",
+    "epoch_access": "group.state.groupContext.epoch  (bigint, see client.tsx:219,469)",
+    "MarmotGroup_surface": {
+      "idStr": "string — hex of MLS group id",
+      "relays": "string[] | undefined",
+      "state": "ClientState",
+      "events": ["stateChanged", "applicationMessage"],
+      "ingest": "(events: NostrEvent[]) => AsyncIterable<IngestResult>",
+      "sendApplicationRumor": "(rumor: Rumor) => Promise<void>",
+      "commit": "({ extraProposals }) => Promise<void>"
+    },
+    "removeLeafByIndex": {
+      "file": "src/marmot/per-leaf-remove.ts",
+      "signature": "removeLeafByIndex(group: MarmotGroup, leafIndex: number) => Promise<void>"
+    }
+  },
+  "device_list": {
+    "file": "src/components/DeviceList.tsx",
+    "props": "{ client: MarmotClient; group: MarmotGroup; pubkey: string; localClientId: string; relays: string[] }",
+    "testids": [
+      { "id": "device-list", "element": "section[aria-label='Your devices']" },
+      { "id": "device-row", "element": "li", "data_attrs": ["data-local='true'|'false'"] }
+    ],
+    "scope_note": "DeviceList renders ONLY the local identity's own pubkey leaves. Cross-pubkey leaf removal requires __notestrTestForgetLeaf. Forget button absent for isLocal leaves.",
+    "forget_primitive": "removeLeafByIndex(group, device.leafIndex) from src/marmot/per-leaf-remove.ts"
+  },
+  "e2e_fixtures": [
+    { "file": "e2e/fixtures/auth-helper.ts", "purpose": "User A bunker auth: authenticateViaBunker(page); E2E_BUNKER_PUBKEY_HEX, E2E_BUNKER_URL" },
+    { "file": "e2e/fixtures/auth-helper-b.ts", "purpose": "User B bunker auth: authenticateAsBunkerB(page); USER_B_NPUB" },
+    { "file": "e2e/fixtures/auth-helper-c.ts", "purpose": "User C bunker auth: authenticateAsBunkerC(page); USER_C_NPUB" },
+    { "file": "e2e/fixtures/bunker.mjs", "purpose": "NIP-46 bunker process; spawned by global-setup.ts" },
+    { "file": "e2e/fixtures/cleanup.ts", "purpose": "clearAppState(page) — clears localStorage + all notestr-* IndexedDB databases" },
+    { "file": "e2e/fixtures/ndk-client.ts", "purpose": "Playwright fixture providing connected NDK instance" },
+    { "file": "e2e/fixtures/ndk-subscriber.ts", "purpose": "openNdkSubscriber(relays) — NDK wrapper with waitForEvent/waitForEvents/publishTextNote/close" },
+    { "file": "e2e/fixtures/two-party.ts", "purpose": "Canonical DSL verbs: authenticate, createGroup, inviteByNpub, selectGroup, leaveGroup, reload, addTaskViaUi, dispatchTaskEvent, getPubkeyHex, currentGroupId, moveTaskToNext, deleteTaskViaUi, settle, forgetLeafByIndex, leafIndexesFor" }
+  ]
+}

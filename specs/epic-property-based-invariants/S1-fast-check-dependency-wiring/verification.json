@@ -1,0 +1,54 @@
+{
+  "story_id": "S1",
+  "verification_questions": [
+    {
+      "id": "VQ-1",
+      "ac": "AC-DEP-1",
+      "severity": 10,
+      "question": "Is fast-check listed in devDependencies at ^3.23.0 or newer compatible?",
+      "check": "node -e \"const p = require('./package.json'); const v = p.devDependencies['fast-check']; if (!v || !v.startsWith('^3.')) { process.exit(1); } console.log('fast-check devDependency:', v);\""
+    },
+    {
+      "id": "VQ-2",
+      "ac": "AC-DEP-1",
+      "severity": 9,
+      "question": "Does package-lock.json reflect the fast-check install at a resolved version >= 3.23.0?",
+      "check": "node -e \"const lock = require('./package-lock.json'); const entry = lock.packages['node_modules/fast-check']; if (!entry) { process.exit(1); } const [maj, min] = entry.version.split('.').map(Number); if (maj < 3 || (maj === 3 && min < 23)) { process.exit(1); } console.log('resolved fast-check version:', entry.version);\""
+    },
+    {
+      "id": "VQ-3",
+      "ac": "AC-DEP-2",
+      "severity": 10,
+      "question": "Is the test-property target wired correctly in the Makefile (depends on node_modules, sets FAST_CHECK_NUM_RUNS=10000, targets both property test files, uses --passWithNoTests, is .PHONY, appears between test and dev, has a ## doc comment)?",
+      "check": "grep -n 'test-property' Makefile && grep -A3 '^test-property:' Makefile"
+    },
+    {
+      "id": "VQ-4",
+      "ac": "AC-DEP-3 / AC-DEP-4",
+      "severity": 10,
+      "question": "Does make test still pass with 9 files / 48 tests (same as baseline)?",
+      "check": "make test 2>&1 | grep -E '(Test Files|Tests|passed|failed)'"
+    },
+    {
+      "id": "VQ-5",
+      "ac": "AC-DEP-4",
+      "severity": 10,
+      "question": "Does make test-property exit 0 cleanly even though the property test files do not yet exist?",
+      "check": "make test-property; echo \"exit code: $?\""
+    },
+    {
+      "id": "VQ-6",
+      "ac": "AC-DEP-5 (manual sanity check)",
+      "severity": 7,
+      "question": "Does a deliberately failing property test (e.g. expect(1).toBe(2) inside fc.property) cause make test-property to exit non-zero? (One-shot manual check; not committed.)",
+      "check": "Manually add a stub test to src/store/task-reducer.property.test.ts with a failing assertion, run make test-property, observe non-zero exit, then delete the stub."
+    },
+    {
+      "id": "VQ-7",
+      "ac": "AC-X-NO-PROD-CHANGE-1",
+      "severity": 8,
+      "question": "Are no production source files modified — only package.json, package-lock.json, and Makefile?",
+      "check": "git diff --name-only HEAD | sort"
+    }
+  ]
+}

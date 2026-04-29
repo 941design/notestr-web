@@ -2,7 +2,7 @@
 -include .env
 export
 
-.PHONY: help build test dev relay-up relay-down clean deploy deploy-check deploy-dryrun e2e-up e2e-down e2e-install e2e ssl-cert
+.PHONY: help build test test-property dev relay-up relay-down clean deploy deploy-check deploy-dryrun e2e-up e2e-down e2e-install e2e ssl-cert
 
 # Default target
 .DEFAULT_GOAL := help
@@ -44,6 +44,9 @@ build: node_modules ## Build for production
 
 test: node_modules ## Run unit and export verification tests
 	npm test
+
+test-property: node_modules ## Run property-based tests with high numRuns (FAST_CHECK_NUM_RUNS=10000)
+	FAST_CHECK_NUM_RUNS=10000 npx vitest run --passWithNoTests src/store/task-reducer.property.test.ts src/store/multi-client.property.test.ts
 
 dev: node_modules relay-up clean ## Start development server
 	npx next dev --port 3000 --hostname 0.0.0.0
