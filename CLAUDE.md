@@ -11,9 +11,10 @@ This project is developed across Linux x86_64 and macOS ARM (darwin-arm64). Nati
 
 ## Browser automation
 
-- Use the `playwright-browser` agent for browser interactions, not MCP Playwright tools directly.
-- MCP tool calls return verbose snapshots and logs that bloat the main context. The agent handles that internally and returns a concise summary.
+- Use the `/base:playwright` skill for multi-step browser interactions, not MCP Playwright tools directly.
+- MCP tool calls return verbose snapshots and logs that bloat the main context. The skill handles that internally and returns a concise summary.
 - Only use MCP Playwright tools directly for quick, single-step checks (one screenshot or one snapshot).
+- `.mcp.json` pins `@playwright/mcp` to `--browser chromium` so the bundled Playwright Chromium is used. Without that flag the server defaults to branded Chrome, which is not installed on the Linux dev host (only `/opt/playwright-browsers/chromium-*` is). Keep the flag when editing `.mcp.json`.
 
 ## Documentation
 
