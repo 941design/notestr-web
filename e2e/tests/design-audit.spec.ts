@@ -107,7 +107,7 @@ test.describe('Responsive layout (#1)', () => {
     await expect(sidebarHeading).toBeVisible();
 
     // Backdrop should be present
-    const backdrop = page.locator('.fixed.inset-0.bg-black\\/50');
+    const backdrop = page.locator('.inset-0.bg-black\\/50');
     await expect(backdrop.first()).toBeVisible();
 
     // Close via backdrop click

@@ -452,21 +452,21 @@ export default function Page() {
             />
           </div>
         </header>
-        <div className="flex min-h-0 flex-1 overflow-hidden">
-          {/* Mobile drawer backdrop */}
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
+          {/* Mobile drawer backdrop — absolute so the page header stays uncovered */}
           {drawerOpen && (
             <div
-              className="fixed inset-0 z-20 bg-black/50 md:hidden"
+              className="absolute inset-0 z-20 bg-black/50 md:hidden"
               onClick={() => setDrawerOpen(false)}
               aria-hidden="true"
             />
           )}
 
-          {/* Sidebar — desktop: static 280px; tablet: icon rail 56px; mobile: overlay drawer */}
+          {/* Sidebar — desktop: static 280px; tablet: icon rail 56px; mobile: overlay drawer below header */}
           <aside
             className={[
-              // Base: hidden on mobile unless drawer open
-              "fixed inset-y-0 left-0 z-30 flex flex-col overflow-y-auto overscroll-contain border-r bg-card transition-transform duration-200",
+              // Base: positioned within the content row so the header remains visible above
+              "absolute inset-y-0 left-0 z-30 flex flex-col overflow-y-auto overscroll-contain border-r bg-card transition-transform duration-200",
               // Mobile: full-width drawer up to ~280px
               "w-[280px]",
               // Mobile open/closed
@@ -508,11 +508,11 @@ export default function Page() {
           {drawerOpen && (
             <div className="hidden md:block lg:hidden">
               <div
-                className="fixed inset-0 z-20 bg-black/50"
+                className="absolute inset-0 z-20 bg-black/50"
                 onClick={() => setDrawerOpen(false)}
                 aria-hidden="true"
               />
-              <aside className="fixed inset-y-0 left-0 z-30 w-[280px] overflow-y-auto border-r bg-card p-4">
+              <aside className="absolute inset-y-0 left-0 z-30 w-[280px] overflow-y-auto border-r bg-card p-4">
                 <GroupManager
                   onGroupSelect={(id, name) => {
                     setSelectedGroupId(id);
