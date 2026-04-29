@@ -235,23 +235,39 @@ function buildEventLog(steps: RawStep[]): TaskEvent[] {
 // ---------------------------------------------------------------------------
 // arbBoardSchedule: the primary multi-client test generator.
 //
-// Structure:
-//   1. Generate an event log (all dispatched by the single virtual writer).
-//   2. Generate random per-client delivery orders (permutation + partial pre-
-//      delivery before quiesce).
+// Delivery model: this harness models the real notestr system, where all task
+// events flow through a single MLS application-message bus that provides a
+// strict total order to every group member. Different members may PAUSE at
+// different prefixes (e.g. one device was offline for the middle of the
+// schedule and caught up later), but they never see events in genuinely
+// different orders — MLS guarantees identical sequencing.
 //
-// The single-writer model is the correct one for this reducer: in the real
-// notestr system, all task events flow through the MLS application-message
-// bus which provides a total order.  Convergence is demonstrated by showing
-// that different delivery orders produce the same settled state — not by
-// testing concurrent multi-client dispatch (which is a D1/D3 scenario).
+// We tested an alternative design where each non-writer client received
+// events in its own randomized topological order. That model exposed an
+// architectural fact rather than a bug: the LWW reducer at task-reducer.ts:16
+// is non-commutative for mixed-kind mutations on the same task. Concrete
+// counterexample: task.status_changed(ts=2) and task.assigned(ts=3) on the
+// same task; under [created, status_changed, assigned] the final state has
+// status=done; under [created, assigned, status_changed] the status_changed
+// is rejected as stale (its ts=2 is below the new updatedAt=3 from the
+// assignment) so status remains "open". The reducer's `>=` guard is per-task-
+// object, not per-field, which is fine in the real system because MLS gives
+// every member the same total order — convergence under arbitrary reordering
+// is simply not a property notestr requires of its reducer.
+//
+// Convergence in this harness is therefore demonstrated by showing that
+// different PAUSE POINTS in a shared total order produce the same final
+// state — modelling clients that synced at different times but eventually
+// catch up via quiesce. Genuine reordering (which would expose the
+// architectural divergence above) is out of scope for C0..C3 and explicitly
+// covered by C1's status_changed-only restriction at S3.
 // ---------------------------------------------------------------------------
 type BoardSchedule = {
   numClients: number;
   events: TaskEvent[]; // the shared event log, dispatched from client 0
   // Per-client pre-delivery: for each client i (i>0), a list of bus indices
-  // to deliver before quiesce.  These are causally ordered (sorted) to avoid
-  // applying mutations before their task exists.
+  // to deliver before quiesce. Quiesce then drains the remainder in bus
+  // order so all clients converge on the same total order.
   preDeliveries: number[][]; // preDeliveries[i] = sorted indices for client i+1
 };
 
@@ -261,9 +277,10 @@ function arbBoardSchedule(): fc.Arbitrary<BoardSchedule> {
       numClients: fc.integer({ min: 2, max: 5 }),
       rawSteps: fc.array(arbRawStep, { minLength: 1, maxLength: 20 }),
       // For each client slot (numClients-1), a set of delivery indices to
-      // eagerly deliver before quiesce. Generated as sorted integer arrays so
-      // causal order is preserved (higher bus index = later event = no-op if
-      // earlier not yet delivered would be fine since quiesce drains all).
+      // eagerly deliver before quiesce. Generated as integer arrays which
+      // are modulo'd to bus length and sorted — quiesce is total-order, so
+      // the only thing that varies per-client is HOW FAR each client got
+      // before catching up.
       deliverySeeds: fc.array(
         fc.array(fc.integer({ min: 0, max: 19 }), {
           minLength: 0,
@@ -276,9 +293,6 @@ function arbBoardSchedule(): fc.Arbitrary<BoardSchedule> {
       const events = buildEventLog(rawSteps);
       const busLen = events.length;
 
-      // For each non-originating client, compute which bus indices to
-      // pre-deliver (eagerly, before quiesce). Indices are modulo'd to
-      // bus length and sorted to preserve causal order.
       const preDeliveries: number[][] = [];
       for (let ci = 1; ci < numClients; ci++) {
         const seeds = deliverySeeds[(ci - 1) % deliverySeeds.length] ?? [];
@@ -298,15 +312,21 @@ function arbBoardSchedule(): fc.Arbitrary<BoardSchedule> {
 }
 
 /**
- * Run a BoardSchedule: dispatch all events from client 0, apply pre-
- * deliveries, then quiesce. Returns the board after quiesce.
+ * Run a BoardSchedule under the MLS-total-order model: dispatch all events
+ * from client 0, deliver a per-client causal prefix (so each client paused
+ * at a different point in the shared sequence), then quiesce drains the
+ * remainder in bus order to all clients. Returns the post-quiesce board.
  *
- * Pre-deliveries are applied as a causal prefix: for each client, we deliver
- * all events up to and including the maximum pre-delivery index, in bus order.
- * This preserves causal ordering (tasks must exist before mutations are
- * applied) and avoids the scenario where a mutation event is marked as
- * "delivered" to a client before the task's creation event was delivered,
- * causing quiesce to skip re-delivery of the now-stale event.
+ * Causal prefix = "deliver indices 0..maxIdx in order". This avoids marking
+ * a higher-index event as delivered before its causal predecessors (which
+ * would cause quiesce to skip re-delivery and silently lose state).
+ *
+ * What this test demonstrates: at quiescence, every client has applied the
+ * same total order, so all clients converge regardless of how partial their
+ * pre-delivery prefix was. This is faithful to the real system (MLS
+ * provides a single total order per group). It does NOT exercise genuinely
+ * different per-client orderings — see arbBoardSchedule comment above for
+ * why arbitrary reorder is out of scope at this layer.
  */
 function runSchedule(schedule: BoardSchedule): FakeBoard {
   const board = new FakeBoard(schedule.numClients);
@@ -316,8 +336,7 @@ function runSchedule(schedule: BoardSchedule): FakeBoard {
     board.dispatch(0, event);
   }
 
-  // Apply pre-deliveries as causal prefixes: for each client, deliver all
-  // events 0..maxIdx where maxIdx is the maximum index in preDeliveries[ci-1].
+  // Apply pre-deliveries as causal prefixes.
   for (let ci = 1; ci < schedule.numClients; ci++) {
     const indices = schedule.preDeliveries[ci - 1] ?? [];
     if (indices.length === 0) continue;
@@ -342,6 +361,8 @@ describe("multi-client property tests — S4 story", () => {
   it("[AC-X-OBSERVABILITY-1] schedule distribution — event count, client count, pre-delivery density", () => {
     // Reports generated schedule characteristics.
     // The single-writer model means "dispatch count" == event count.
+    // Pre-delivery density approximates how much of the schedule each
+    // non-writer client had received before quiesce caught it up.
     fc.statistics(
       arbBoardSchedule(),
       ({ numClients, events, preDeliveries }) => {
@@ -367,10 +388,14 @@ describe("multi-client property tests — S4 story", () => {
   it("[C0] settled-state equality (task subset)", () => {
     // C0: post-quiesce, every client's TaskState deep-equals clients[0].
     //     Events are dispatched from client 0 (single writer modelling MLS
-    //     linearization); other clients receive them in randomly ordered
-    //     partial pre-deliveries before quiesce completes the delivery.
-    //     The assertion demonstrates that delivery order does not affect the
-    //     final settled state.
+    //     linearization). Each non-writer client receives a causal prefix
+    //     of the bus before quiesce drains the remainder in shared total
+    //     order — modelling devices that paused at different sync points
+    //     and eventually caught up. C0 holds because all clients apply the
+    //     same MLS-faithful total order. (See arbBoardSchedule comment for
+    //     why we don't test arbitrary per-client reordering here — the LWW
+    //     reducer is per-task-object not per-field, so mixed-kind reorder
+    //     diverges by design and is excluded by the model.)
     fc.assert(
       fc.property(arbBoardSchedule(), (schedule) => {
         const board = runSchedule(schedule);
@@ -647,13 +672,11 @@ describe("multi-client property tests — S4 story", () => {
     //     dispatched event carries the same createdBy/updatedBy pubkey.
     //     Post-quiesce both clients must have deep-equal TaskState.
     //
-    //     This models two devices signed in as the same nostr identity using
-    //     the single-writer model: the shared identity acts as the sole
-    //     writer; the second "device" (client 1) receives all events from
-    //     the bus in a potentially different order before quiesce.
-    //
-    //     MLS leaf semantics (multiple leaves for one pubkey) are not modelled
-    //     here — that is the S6 (Playwright) layer.
+    //     Models two devices signed in as the same nostr identity, both
+    //     receiving the same MLS-ordered event stream. Client 1 may have
+    //     paused at a different prefix before catching up via quiesce.
+    //     MLS leaf semantics (multiple leaves for one pubkey) are not
+    //     modelled here — that is the S6 (Playwright) layer.
     fc.assert(
       fc.property(
         arbHexPubkey, // shared identity pubkey
@@ -671,7 +694,6 @@ describe("multi-client property tests — S4 story", () => {
 
           for (const step of rawSteps) {
             let event = interpretStep(step, state);
-            // Re-label author fields to the shared identity.
             if (event.type === "task.created") {
               event = {
                 ...event,
@@ -689,14 +711,11 @@ describe("multi-client property tests — S4 story", () => {
           }
 
           const board = new FakeBoard(2);
-          // Dispatch all events from client 0 (shared identity writer).
           for (const e of events) {
             board.dispatch(0, e);
           }
 
           // Pre-deliver a causal prefix to client 1 before quiesce.
-          // We deliver all events 0..maxIdx (inclusive) to preserve causal
-          // ordering — same approach as runSchedule.
           const busLen = board.bus.length;
           if (busLen > 0 && deliverySeeds.length > 0) {
             const maxIdx = Math.min(
