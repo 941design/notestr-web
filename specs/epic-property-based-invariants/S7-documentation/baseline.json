@@ -1,0 +1,12 @@
+{
+  "story_id": "S7",
+  "captured_at": "2026-04-29T00:00:00Z",
+  "command": "make test",
+  "framework": "vitest",
+  "summary": {
+    "tests_passed": 79,
+    "tests_total": 79,
+    "tests_failed": 0
+  },
+  "notes": "S7 is documentation-only — no test changes. Baseline confirms 79 unit tests pass before any S7 changes."
+}

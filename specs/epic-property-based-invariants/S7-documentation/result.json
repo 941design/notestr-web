@@ -1,0 +1,25 @@
+{
+  "story_id": "S7",
+  "captured_at": "2026-04-29T00:00:00Z",
+  "status": "done",
+  "verification_rounds": 1,
+  "final_outcome": "accepted",
+  "completed_at": "2026-04-29T11:45:00Z",
+  "files_created": [
+    "e2e/tests/property-tests.md"
+  ],
+  "files_modified": [
+    "docs/two-party-permutation-matrix.md"
+  ],
+  "test_count": 0,
+  "notes": "S7 is documentation-only. No test files modified. 79/79 unit tests pass unchanged.",
+  "doc_changes": {
+    "two_party_permutation_matrix": "Appended '## Property-test coverage' section with TP-XX → invariant table (10 scenario families, sourced from spec.md §Documentation).",
+    "property_tests_md": "Created e2e/tests/property-tests.md covering: three-layer model rationale, invariant catalogue cross-reference with grep hint, fast-check counterexample output format, FAST_CHECK_SEED/FAST_CHECK_PATH reproduction instructions, seed-commit policy, distinction between asserted (S/A/C) and labelled (D) properties, explanation of why D1/D2/D3 are labelled-only."
+  },
+  "ac_compliance": {
+    "AC_DOC_1": "PASS — docs/two-party-permutation-matrix.md gains '## Property-test coverage' with TP-XX → invariant table",
+    "AC_DOC_2": "PASS — e2e/tests/property-tests.md covers all five required topics: three-layer model, invariant catalogue location, counterexample output format, FAST_CHECK_SEED/PATH reproduction, seed-commit policy",
+    "AC_DOC_3": "PASS — property-tests.md has 'Asserted vs. labelled-only properties' section explaining D1/D2/D3"
+  }
+}

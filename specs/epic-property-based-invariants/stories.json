@@ -165,7 +165,7 @@
       "id": "S6",
       "name": "playwright-property-spec",
       "title": "Full-stack Playwright property spec via fc.commands",
-      "status": "pending",
+      "status": "done",
       "files_to_create": [
         "e2e/tests/multi-user.property.spec.ts"
       ],
@@ -206,7 +206,7 @@
       "id": "S7",
       "name": "documentation",
       "title": "Property-test coverage section + property-tests.md",
-      "status": "pending",
+      "status": "done",
       "files_to_create": [
         "e2e/tests/property-tests.md"
       ],

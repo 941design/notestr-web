@@ -1,0 +1,62 @@
+{
+  "story_id": "S7",
+  "captured_at": "2026-04-29T00:00:00Z",
+  "verification_questions": [
+    {
+      "id": "VQ-1",
+      "question": "Does docs/two-party-permutation-matrix.md have a new '## Property-test coverage' section with the TP-XX table?",
+      "check": "grep -A 20 '## Property-test coverage' docs/two-party-permutation-matrix.md",
+      "expected": "Section present with 10 scenario family rows mapping to invariant IDs",
+      "actual": "Section appended after existing content, before '## Updating this document'. Contains TP-01..04 through TP-90..91 rows with invariant IDs sourced from spec.md §Documentation.",
+      "status": "PASS"
+    },
+    {
+      "id": "VQ-2",
+      "question": "Does e2e/tests/property-tests.md exist and cover the three-layer model?",
+      "check": "grep 'Layer 1\|Layer 2\|Layer 3\|reducer\|multi-client\|full stack' e2e/tests/property-tests.md",
+      "expected": "File exists; sections covering all three layers with rationale",
+      "actual": "File created. 'Why three layers' section explains reducer (milliseconds/1000 runs), multi-client (seconds/500 runs), full stack (minutes/20 runs) with wall-clock and scope distinctions.",
+      "status": "PASS"
+    },
+    {
+      "id": "VQ-3",
+      "question": "Does property-tests.md reference the invariant catalogue and provide a grep hint?",
+      "check": "grep 'spec.md\|grep' e2e/tests/property-tests.md",
+      "expected": "Link to specs/epic-property-based-invariants/spec.md; grep command showing how to find invariant IDs across test files",
+      "actual": "Section 'Invariant catalogue cross-reference' links to spec.md and provides grep -r example. Layer coverage table maps each file to its invariant IDs.",
+      "status": "PASS"
+    },
+    {
+      "id": "VQ-4",
+      "question": "Does property-tests.md explain how to read fast-check counterexample output?",
+      "check": "grep 'seed\|path\|Counterexample\|Shrunk' e2e/tests/property-tests.md",
+      "expected": "Explanation of seed, path, Counterexample, and Shrunk N time(s) fields",
+      "actual": "Section 'How to read fast-check counterexample output' covers all four fields with example output and explanation of Actor.Verb(args) DSL form.",
+      "status": "PASS"
+    },
+    {
+      "id": "VQ-5",
+      "question": "Does property-tests.md show how to reproduce via FAST_CHECK_SEED and FAST_CHECK_PATH?",
+      "check": "grep 'FAST_CHECK_SEED\|FAST_CHECK_PATH' e2e/tests/property-tests.md",
+      "expected": "Shell commands using both env vars for both layer 3 (playwright) and layers 1-2 (vitest)",
+      "actual": "Section 'How to reproduce a counterexample' shows bash commands for both Playwright and vitest, and explains how the env vars map to fast-check's seed/path options. Policy on not committing seeds also documented.",
+      "status": "PASS"
+    },
+    {
+      "id": "VQ-6",
+      "question": "Does property-tests.md distinguish asserted (S/A/C) from labelled-only (D) properties and explain why D1/D2/D3 are labelled?",
+      "check": "grep 'Asserted\|labelled\|D1\|D2\|D3' e2e/tests/property-tests.md",
+      "expected": "Clear distinction; individual explanation for each of D1, D2, D3",
+      "actual": "Section 'Asserted vs. labelled-only properties' defines both categories, then explains D1 (equal-timestamp LWW), D2 (publish-failure optimistic), and D3 (late snapshot) individually with their root causes and why fixing them is deferred.",
+      "status": "PASS"
+    },
+    {
+      "id": "VQ-7",
+      "question": "Do unit tests still pass unchanged after S7?",
+      "check": "make test",
+      "expected": "79 tests pass",
+      "actual": "79/79 pass. S7 is documentation-only — no source files touched.",
+      "status": "PASS"
+    }
+  ]
+}

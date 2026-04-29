@@ -296,6 +296,27 @@ Legend: `mu`=multi-user, `ts`=task-sync, `iv`=identity-visibility, `md`=multi-de
     - TP-90/-91 tie-breaker: requires a deterministic tie-resolution policy (CRDT, lex tiebreaker, or per-field LWW).
   - **n/a-by-design**: TP-61, TP-62 — DeviceList scope is local-only.
 
+## Property-test coverage
+
+The example-based scenarios in the matrix are now reinforced by random-sequence
+property tests in `src/store/*.property.test.ts` and
+`e2e/tests/multi-user.property.spec.ts`. The mapping below shows which
+invariants (defined in `specs/epic-property-based-invariants/spec.md`) are
+asserted for each scenario family.
+
+| Scenario family       | Invariants asserted                |
+| --------------------- | ---------------------------------- |
+| TP-01..04 (setup)     | A7, A8, A9, S5, S7                 |
+| TP-10..17 (A→B prop)  | A1..A5, C0, S4                     |
+| TP-20..24 (B→A mut)   | A1..A5, C0, C2, S3                 |
+| TP-30..32 (snapshot)  | A8, C0, D3                         |
+| TP-40..42 (leave)     | A9, A14, S5, C0                    |
+| TP-50..53 (forget)    | A10, A14, S5, S10, C0              |
+| TP-60..62 (rename)    | (UI-local; out of property scope)  |
+| TP-70..72 (3-party)   | (covered by 2-party C0 + induction)|
+| TP-80..82 (multi-dev) | A15, C0                            |
+| TP-90..91 (concurrent)| D1                                 |
+
 ## Updating this document
 
 When adding a new two-party test, add the scenario under the appropriate
