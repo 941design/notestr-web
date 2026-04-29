@@ -1,0 +1,67 @@
+{
+  "story_id": "S4",
+  "schema_version": "1.0",
+  "generated_at": "2026-04-28",
+  "questions": [
+    {
+      "id": "VQ-1",
+      "severity": 10,
+      "question": "Is the new file at the correct path and do all 6 invariant tests (C0, C1, C2, C3, A13, A15) plus 2 observability tests exist?",
+      "how_to_check": "ls src/store/multi-client.property.test.ts && grep -c 'it(\\[' src/store/multi-client.property.test.ts",
+      "expected": "File exists; grep returns 8 (6 invariants + 2 observability)",
+      "actual_at_time_of_writing": "File exists at src/store/multi-client.property.test.ts; 8 it() blocks: [AC-X-OBSERVABILITY-1] x2, [C0], [C1], [C2], [C3], [A13], [A15]"
+    },
+    {
+      "id": "VQ-2",
+      "severity": 9,
+      "question": "Does FakeBoard correctly track deliveredTo (never re-delivers), and is quiesce() total (every bus slot reaches every client)?",
+      "how_to_check": "npx vitest run src/store/multi-client.property.test.ts && grep -A5 'quiesce' src/store/multi-client.property.test.ts | head -20",
+      "expected": "All tests pass; quiesce loops over all bus slots × all clients and calls deliver(), which skips if deliveredTo already contains target",
+      "notes": "A13 test explicitly clears deliveredTo to force re-delivery and verifies idempotence. FakeBoard.deliver() guards on deliveredTo.has(targetIdx)."
+    },
+    {
+      "id": "VQ-3",
+      "severity": 10,
+      "question": "Is the total test count >= 69 + 6 = 75? (Baseline was 69, S4 adds 8 tests.)",
+      "how_to_check": "npx vitest run 2>&1 | grep 'Tests'",
+      "expected": "77 passed (69 baseline + 8 new)",
+      "actual_at_time_of_writing": "77 passed (69 baseline + 8 new = 77)"
+    },
+    {
+      "id": "VQ-4",
+      "severity": 7,
+      "question": "Do all test titles start with the invariant ID in brackets (AC-X-NAMING-2), and does each body begin with a comment line matching // {ID}: {description} (AC-X-NAMING-1)?",
+      "how_to_check": "grep 'it(\\[' src/store/multi-client.property.test.ts",
+      "expected": "All 8 it() titles start with [ID], e.g. '[C0] settled-state equality (task subset)'; first line of each body is a comment with the invariant ID"
+    },
+    {
+      "id": "VQ-5",
+      "severity": 8,
+      "question": "Does FAST_CHECK_NUM_RUNS=10000 complete in <60 seconds and pass?",
+      "how_to_check": "time FAST_CHECK_NUM_RUNS=10000 npx vitest run src/store/multi-client.property.test.ts",
+      "expected": "All 8 tests pass; wall-clock < 60s",
+      "actual_at_time_of_writing": "7.5s wall-clock, all 8 passed"
+    },
+    {
+      "id": "VQ-6",
+      "severity": 10,
+      "question": "Is no production code changed? (AC-X-NO-PROD-CHANGE-1)",
+      "how_to_check": "git diff --stat HEAD -- src/ | grep -v 'multi-client.property.test.ts'",
+      "expected": "No output — only multi-client.property.test.ts is new; all other src/ files unchanged"
+    },
+    {
+      "id": "VQ-7",
+      "severity": 6,
+      "question": "Does the schedule distribution fc.statistics report show non-degenerate schedules (at least some with >1 event and mixed event types)?",
+      "how_to_check": "FAST_CHECK_NUM_RUNS=200 npx vitest run src/store/multi-client.property.test.ts --reporter=verbose 2>&1 | grep -A 10 'schedule distribution'",
+      "expected": "Statistics output shows a mix of clients=2..5, events=1..20, dense-pre-delivery and sparse-pre-delivery; dominant event type distribution shows all 4 types (task.created, task.status_changed, task.assigned, task.deleted)"
+    },
+    {
+      "id": "VQ-8",
+      "severity": 8,
+      "question": "Is the single-writer constraint (all events dispatched by client 0) correctly documented and is the multi-client limitation (concurrent multi-client dispatch = D1 divergence) noted in the file?",
+      "how_to_check": "grep -n 'single.writer\\|MLS\\|concurrent\\|D1\\|lineariz' src/store/multi-client.property.test.ts | head -10",
+      "expected": "Multiple comments explaining single-writer model, MLS linearization rationale, and the concurrent dispatch D1 divergence exclusion"
+    }
+  ]
+}

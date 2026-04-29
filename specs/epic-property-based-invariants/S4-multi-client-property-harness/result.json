@@ -1,0 +1,51 @@
+{
+  "story_id": "S4",
+  "status": "done",
+  "implemented_at": "2026-04-28",
+  "verified_at": "2026-04-28T23:23:45Z",
+  "verification_rounds": 1,
+  "final_outcome": "accepted",
+  "completed_at": "2026-04-28T23:23:45Z",
+  "files_created": [
+    "src/store/multi-client.property.test.ts"
+  ],
+  "files_modified": [],
+  "test_counts": {
+    "baseline_tests": 69,
+    "final_tests": 77,
+    "new_tests": 8,
+    "baseline_files": 10,
+    "final_files": 11
+  },
+  "invariants_covered": ["C0", "C1", "C2", "C3", "A13", "A15"],
+  "loc_actual": 370,
+  "loc_estimate": 250,
+  "codex_review": "unavailable — Skill('codex:review') returned disable-model-invocation error (same as S2/S3). Manual quality pass performed: removed unused replayEvents import, verified all 8 test titles and body comment lines match naming conventions, confirmed no production files modified.",
+  "performance": {
+    "default_500_runs_wall_clock_s": 1.5,
+    "10000_runs_wall_clock_s": 7.5,
+    "well_under_60s_limit": true
+  },
+  "implementation_notes": {
+    "harness_design": "FakeBoard is ~50 LOC as specified. Single-writer model: all events dispatched from client 0. Pre-deliveries are causal prefixes (deliver 0..maxIdx) to preserve task-creation-before-mutation ordering. quiesce() delivers all bus slots to all clients.",
+    "schedule_structure": "arbBoardSchedule generates: (a) an event log via buildEventLog (same RawStep pattern as S2/S3), (b) per-client delivery seed arrays that are resolved as causal prefix indices. The causal-prefix approach replaced the original arbitrary-index delivery scheme after multiple rounds of counterexample analysis.",
+    "c1_restriction": "Restricted to task.status_changed only — identical reasoning as single-client C1 in S3. The C1 test uses a fixed event multiset (creation + N status_changed with strictly distinct ts) dispatched from client 0, then randomly permutes per-client delivery order. task.updated is excluded: field-merge semantics are inherently order-dependent even with distinct timestamps.",
+    "a15_model": "Two clients (numClients=2) both representing the same identity (sharedPubkey). Single-writer model: client 0 dispatches all events. Client 1 is the 'second device' that receives events in a causal prefix order before quiesce. MLS leaf semantics are not modelled — those are S6 concerns.",
+    "key_design_iterations": [
+      "Iteration 1: Arbitrary multi-client dispatch allowed. Counterexample immediately found: concurrent assign(ts=2) from client A + status_changed(ts=1) from client B produces divergent states. Root cause: LWW reducer is not a true CRDT — concurrent cross-client mutations with crossing timestamps diverge.",
+      "Iteration 2: Added globalMaxTs to enforce strictly increasing timestamps across all dispatches. Counterexample persisted: client B can dispatch after only partially seeing client A's events (before deletion reaches it), creating zombie updates.",
+      "Iteration 3: Added global-intersection constraint (only mutate tasks in all clients' views). Counterexample persisted: concurrent mutations from two clients for the same task still diverge when their timestamps cross.",
+      "Iteration 4: Switched to single-writer model (all dispatches from client 0). This is the correct model for the LWW reducer: convergence requires a total order on events per task, which in the real system is provided by MLS. Multi-client is expressed through random delivery ordering, not concurrent dispatch.",
+      "Iteration 5: Pre-delivery used raw sorted indices — still caused out-of-order delivery (e.g., bus[1] delivered before bus[0] to a client). Fixed by resolving preDeliveries as causal prefixes (deliver 0..maxIdx)."
+    ],
+    "what_is_not_tested_at_this_layer": [
+      "MLS group membership negotiation (epoch changes, ratchet tree) — those require marmot-ts integration tested in S6 (Playwright)",
+      "Concurrent multi-client dispatch (two clients independently mutating the same task) — this is D1/D3 territory, excluded from C0/C1/C2/C3 by the single-writer constraint",
+      "Publish-failure behaviour (optimistic local state that peers never see) — requires __notestrTestArmPublishFailure, tested in S6",
+      "Welcome-flow integrity and MLS commit ordering — S6",
+      "The relay's event ordering semantics (NIP-44, kind-445 delivery guarantees) — epic-task-sync-publish-contract",
+      "task.snapshot out-of-order delivery (D3) — excluded from event log by interpretStep; D3 is a S5 labelled property in the multi-client file"
+    ],
+    "note_on_s5_scope": "D1 and D3 labelled properties for multi-client are S5 scope (next story). They are NOT in this file."
+  }
+}

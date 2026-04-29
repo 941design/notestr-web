@@ -1,0 +1,23 @@
+{
+  "story_id": "S4",
+  "captured_at": "2026-04-28T23:04:00Z",
+  "command": "npx vitest run",
+  "framework": "vitest",
+  "vitest_version": "4.1.0",
+  "summary": {
+    "test_files_passed": 10,
+    "test_files_total": 10,
+    "tests_passed": 69,
+    "tests_total": 69,
+    "tests_failed": 0,
+    "duration_ms": 4140
+  },
+  "pre_state": {
+    "S1_done": true,
+    "S2_done": true,
+    "S3_done": true,
+    "task_reducer_property_test_loc": 1102,
+    "multi_client_property_test_exists": false
+  },
+  "notes": "S4 creates a NEW file src/store/multi-client.property.test.ts. Independent of the reducer property test file (S2/S3) but reuses applyEvent from src/store/task-reducer.ts. Note from S2: fc.gen + Map state has caching issues; use the RawStep pattern (or equivalent eager-arbitrary approach) for stateful generators."
+}
