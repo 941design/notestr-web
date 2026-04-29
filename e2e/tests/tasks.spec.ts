@@ -19,6 +19,53 @@ function isMobile(page: import('@playwright/test').Page) {
   return vp != null && vp.width < 768;
 }
 
+async function swipe(
+  panel: import('@playwright/test').Locator,
+  direction: 'left' | 'right',
+) {
+  const box = await panel.boundingBox();
+  if (!box) throw new Error('Mobile panel has no bounding box');
+  const startFrac = direction === 'left' ? 0.85 : 0.15;
+  const endFrac = direction === 'left' ? 0.15 : 0.85;
+  const startX = box.x + box.width * startFrac;
+  const endX = box.x + box.width * endFrac;
+  const y = box.y + box.height / 2;
+
+  await panel.evaluate(
+    (el, args) => {
+      const target = el as HTMLElement;
+      const make = (x: number, yy: number) =>
+        new Touch({
+          identifier: 0,
+          target,
+          clientX: x,
+          clientY: yy,
+          pageX: x,
+          pageY: yy,
+        });
+      target.dispatchEvent(
+        new TouchEvent('touchstart', {
+          bubbles: true,
+          cancelable: true,
+          touches: [make(args.startX, args.y)],
+          targetTouches: [make(args.startX, args.y)],
+          changedTouches: [make(args.startX, args.y)],
+        }),
+      );
+      target.dispatchEvent(
+        new TouchEvent('touchend', {
+          bubbles: true,
+          cancelable: true,
+          touches: [],
+          targetTouches: [],
+          changedTouches: [make(args.endX, args.y)],
+        }),
+      );
+    },
+    { startX, endX, y },
+  );
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await clearAppState(page);
@@ -100,4 +147,52 @@ test('delete task: card removed from board after confirmation', async ({ page })
 
   // Task should be gone from all columns
   await expect(openColumn).not.toContainText(TASK_TITLE, { timeout: 10000 });
+});
+
+test('mobile: left/right swipes navigate between board lanes', async ({ page }) => {
+  test.skip(!isMobile(page), 'Lane swipe is a mobile-only interaction');
+
+  const GROUP_NAME = 'E2E Swipe Group';
+
+  await page.getByRole('button', { name: /open menu/i }).click();
+  await page.waitForTimeout(250);
+  await page.getByPlaceholder('Group name').first().fill(GROUP_NAME);
+  await page.getByRole('button', { name: 'Create', exact: true }).first().click();
+  const sidebar = page.locator('aside');
+  await expect(sidebar.getByText(GROUP_NAME).first()).toBeVisible({ timeout: 30000 });
+  await expect(page.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 10000 });
+
+  const panel = page.getByTestId('board-mobile-panel');
+  await expect(panel).toBeVisible();
+  const tabFor = (name: RegExp) => page.getByRole('tab', { name });
+  const openTab = tabFor(/^Open\b/);
+  const inProgressTab = tabFor(/In Progress/);
+  const doneTab = tabFor(/Done/);
+
+  // Default state: Open is selected.
+  await expect(openTab).toHaveAttribute('aria-selected', 'true');
+
+  // Swipe left → In Progress.
+  await swipe(panel, 'left');
+  await expect(inProgressTab).toHaveAttribute('aria-selected', 'true');
+
+  // Swipe left → Done.
+  await swipe(panel, 'left');
+  await expect(doneTab).toHaveAttribute('aria-selected', 'true');
+
+  // Swipe left at the right edge: stays on Done (no wrap).
+  await swipe(panel, 'left');
+  await expect(doneTab).toHaveAttribute('aria-selected', 'true');
+
+  // Swipe right → In Progress.
+  await swipe(panel, 'right');
+  await expect(inProgressTab).toHaveAttribute('aria-selected', 'true');
+
+  // Swipe right → Open.
+  await swipe(panel, 'right');
+  await expect(openTab).toHaveAttribute('aria-selected', 'true');
+
+  // Swipe right at the left edge: stays on Open (no wrap).
+  await swipe(panel, 'right');
+  await expect(openTab).toHaveAttribute('aria-selected', 'true');
 });

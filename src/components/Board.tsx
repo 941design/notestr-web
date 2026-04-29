@@ -35,6 +35,12 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
   cancelled: "Cancelled",
 };
 
+// Swipe must travel at least this far horizontally and finish within the
+// time budget to count — otherwise vertical scrolls and slow drags slip
+// through and yank the wrong column into view.
+const SWIPE_DISTANCE_PX = 50;
+const SWIPE_TIME_MS = 600;
+
 export function Board({ currentUserPubkey, isDetached = false }: BoardProps) {
   const { tasks, dispatch, loading } = useTaskStore();
   const [modalOpen, setModalOpen] = useState(false);
@@ -42,12 +48,43 @@ export function Board({ currentUserPubkey, isDetached = false }: BoardProps) {
   const [pendingDeleteTaskId, setPendingDeleteTaskId] = useState<string | null>(null);
   const [liveMessage, setLiveMessage] = useState("");
   const liveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number; t: number } | null>(null);
 
   const announceStatusChange = useCallback((status: TaskStatus) => {
     if (liveTimeoutRef.current) clearTimeout(liveTimeoutRef.current);
     setLiveMessage(`Task moved to ${STATUS_LABELS[status]}`);
     liveTimeoutRef.current = setTimeout(() => setLiveMessage(""), 3000);
   }, []);
+
+  const navigateTab = useCallback((direction: -1 | 1) => {
+    setActiveTab((current) => {
+      const idx = COLUMNS.findIndex((col) => col.status === current);
+      const next = idx + direction;
+      if (next < 0 || next >= COLUMNS.length) return current;
+      return COLUMNS[next].status;
+    });
+  }, []);
+
+  function handleTouchStart(e: React.TouchEvent) {
+    const t = e.touches[0];
+    if (!t) return;
+    touchStartRef.current = { x: t.clientX, y: t.clientY, t: Date.now() };
+  }
+
+  function handleTouchEnd(e: React.TouchEvent) {
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    if (!start) return;
+    const t = e.changedTouches[0];
+    if (!t) return;
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    const dt = Date.now() - start.t;
+    if (dt > SWIPE_TIME_MS) return;
+    if (Math.abs(dx) < SWIPE_DISTANCE_PX) return;
+    if (Math.abs(dx) <= Math.abs(dy)) return;
+    navigateTab(dx < 0 ? 1 : -1);
+  }
 
   async function handleCreate(title: string, description: string) {
     const task = createTask(
@@ -210,7 +247,13 @@ export function Board({ currentUserPubkey, isDetached = false }: BoardProps) {
           </div>
 
           {/* Mobile single-column panel */}
-          <div className="flex-1 md:hidden" role="tabpanel">
+          <div
+            className="flex-1 md:hidden"
+            role="tabpanel"
+            data-testid="board-mobile-panel"
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+          >
             {COLUMNS.filter(({ status }) => status === activeTab).map(({ status, label }) => {
               const columnTasks = tasks.filter((t) => t.status === status);
               return (
