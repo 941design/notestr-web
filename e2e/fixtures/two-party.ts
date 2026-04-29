@@ -78,10 +78,17 @@ export async function selectGroup(page: Page, name: string): Promise<void> {
 
 /**
  * `Lg(g)` — leave the group whose card has the given name in the sidebar.
- * Confirms the AlertDialog. The group must be currently selectable.
+ * Confirms the AlertDialog. The group must be currently visible in the
+ * sidebar (not detached).
+ *
+ * The leave button is scoped to the `<li>` whose text contains `name` so
+ * dense multi-group sessions cannot accidentally leave the wrong group.
  */
-export async function leaveGroup(page: Page, _name: string): Promise<void> {
-  await page.locator('[data-testid="group-leave-btn"]').first().click();
+export async function leaveGroup(page: Page, name: string): Promise<void> {
+  const groupRow = page
+    .locator('nav[aria-label="Groups"] li')
+    .filter({ hasText: name });
+  await groupRow.locator('[data-testid="group-leave-btn"]').click();
   await page.locator('[data-testid="group-leave-confirm"]').click();
 }
 
@@ -121,31 +128,55 @@ export async function addTaskViaUi(
  * to another pubkey, `task.updated` field edits, etc.).
  *
  * The page must have the relevant group selected so its task store is mounted.
+ * Throws loudly if the hook is missing — silent fall-through would let weak
+ * assertions pass for the wrong reason.
  */
 export async function dispatchTaskEvent(
   page: Page,
   event: TaskEvent,
 ): Promise<void> {
   await page.evaluate(async (e) => {
-    await window.__notestrTestDispatchTaskEvent?.(e);
+    const fn = window.__notestrTestDispatchTaskEvent;
+    if (typeof fn !== "function") {
+      throw new Error(
+        "__notestrTestDispatchTaskEvent is not installed — is a group selected and TaskStoreProvider mounted?",
+      );
+    }
+    await fn(e);
   }, event);
 }
 
 /** Read the current pubkey of the authenticated identity (hex). */
 export async function getPubkeyHex(page: Page): Promise<string> {
-  const result = await page.evaluate(() => window.__notestrTestPubkey?.() ?? "");
+  const result = await page.evaluate(() => {
+    const fn = window.__notestrTestPubkey;
+    if (typeof fn !== "function") {
+      throw new Error("__notestrTestPubkey is not installed");
+    }
+    return fn();
+  });
   expect(result).toMatch(/^[0-9a-f]{64}$/);
   return result;
 }
 
 /**
- * Read the current group's marmot id from the test hook. Resolves the most
- * recently appended group, which matches the "currently selected" group in
- * all current uses (groups are appended on join/create and the selection
- * follows the latest).
+ * Read the marmot id of the most recently appended group from the
+ * `__notestrTestGroups()` test hook. Returns the LAST element of the array,
+ * not the actually-selected group (the selected id is not exposed to tests).
+ *
+ * Safe usage: capture the id IMMEDIATELY after `createGroup` / `selectGroup`,
+ * then pass it explicitly to subsequent operations. Do NOT call this after
+ * later group-mutating operations (auto-join, re-invite, detach) — array
+ * order may have shifted and you would silently target the wrong group.
  */
 export async function currentGroupId(page: Page): Promise<string> {
-  const groups = await page.evaluate(() => window.__notestrTestGroups?.() ?? []);
+  const groups = await page.evaluate(() => {
+    const fn = window.__notestrTestGroups;
+    if (typeof fn !== "function") {
+      throw new Error("__notestrTestGroups is not installed");
+    }
+    return fn();
+  });
   expect(groups.length).toBeGreaterThan(0);
   return groups[groups.length - 1]!.idStr;
 }
@@ -156,22 +187,35 @@ export function projectIsMobile(workerProject: { use: { isMobile?: boolean } }):
 }
 
 /**
- * Click the "Move to <next>" button for the first matching task card.
+ * Click the "Move to <next>" button on the task card whose title matches.
  *
  * The button on a card advances the task to the next status in the
  * open → in_progress → done lattice. There is no UI button to send a task
  * to `cancelled` from the board — use `dispatchTaskEvent` for that.
+ *
+ * The action is scoped to the `[data-testid="task-card"]` whose text
+ * contains `title` so dense boards cannot accidentally advance the wrong
+ * task.
  */
-export async function moveTaskToNext(page: Page, _title: string): Promise<void> {
-  await page
+export async function moveTaskToNext(page: Page, title: string): Promise<void> {
+  const taskCard = page
+    .locator('[data-testid="task-card"]')
+    .filter({ hasText: title });
+  await taskCard
     .getByRole("button", { name: /Move to (In Progress|Done)/i })
-    .first()
     .click();
 }
 
-/** Click the delete button on the first matching task card and confirm. */
-export async function deleteTaskViaUi(page: Page, _title: string): Promise<void> {
-  await page.locator('[data-testid="task-delete-btn"]').first().click();
+/**
+ * Click the delete button on the task card whose title matches, then
+ * confirm. Scoped by title to avoid clicking the wrong card on a dense
+ * board.
+ */
+export async function deleteTaskViaUi(page: Page, title: string): Promise<void> {
+  const taskCard = page
+    .locator('[data-testid="task-card"]')
+    .filter({ hasText: title });
+  await taskCard.locator('[data-testid="task-delete-btn"]').click();
   await page.locator('[data-testid="task-delete-confirm"]').click();
 }
 
@@ -187,6 +231,9 @@ export async function settle(page: Page, ms: number): Promise<void> {
  * so a spec can forget any leaf in a currently-loaded group, including
  * cross-npub ones. This calls `removeLeafByIndex` directly, which is the same
  * primitive `DeviceList` uses behind the Forget button.
+ *
+ * Throws loudly if the hook is missing — silent fall-through would mask a
+ * destructive no-op.
  */
 export async function forgetLeafByIndex(
   page: Page,
@@ -195,7 +242,13 @@ export async function forgetLeafByIndex(
 ): Promise<void> {
   await page.evaluate(
     async ({ groupId, idx }) => {
-      await window.__notestrTestForgetLeaf?.(groupId, idx);
+      const fn = window.__notestrTestForgetLeaf;
+      if (typeof fn !== "function") {
+        throw new Error(
+          "__notestrTestForgetLeaf is not installed — MarmotProvider not mounted?",
+        );
+      }
+      await fn(groupId, idx);
     },
     { groupId: groupIdStr, idx: leafIndex },
   );
@@ -208,7 +261,13 @@ export async function leafIndexesFor(
   pubkeyHex: string,
 ): Promise<number[]> {
   return page.evaluate(
-    ({ groupId, pk }) => window.__notestrTestPubkeyLeafIndexes?.(groupId, pk) ?? [],
+    ({ groupId, pk }) => {
+      const fn = window.__notestrTestPubkeyLeafIndexes;
+      if (typeof fn !== "function") {
+        throw new Error("__notestrTestPubkeyLeafIndexes is not installed");
+      }
+      return fn(groupId, pk);
+    },
     { groupId: groupIdStr, pk: pubkeyHex },
   );
 }
