@@ -1,0 +1,22 @@
+{
+  "story_id": "S2",
+  "captured_at": "2026-04-28T22:28:00Z",
+  "command": "npx vitest run",
+  "framework": "vitest",
+  "vitest_version": "4.1.0",
+  "summary": {
+    "test_files_passed": 9,
+    "test_files_total": 9,
+    "tests_passed": 48,
+    "tests_total": 48,
+    "tests_failed": 0,
+    "duration_ms": 1620
+  },
+  "pre_state": {
+    "fast_check_in_node_modules": true,
+    "fast_check_resolved_version": "3.23.2",
+    "property_test_files_exist": false,
+    "S1_done": true
+  },
+  "notes": "S2 starts after S1 dependency wiring is complete. fast-check 3.23.2 is installed and importable as `import * as fc from \"fast-check\"`. No property test file yet — S2 creates the first one (src/store/task-reducer.property.test.ts)."
+}
