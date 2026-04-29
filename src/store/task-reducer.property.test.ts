@@ -799,25 +799,30 @@ describe("reducer property tests — S2 story", () => {
   // ---------------------------------------------------------------------------
   // Helpers for C1: build a sequence whose permutation invariant holds.
   //
-  // C1 (permutation-independence) holds in this reducer only for event types
-  // that atomically replace a single field.  task.updated is excluded because
-  // it merges a subset of fields: two updates with different `changes` objects
-  // and distinct timestamps are NOT order-independent — whichever arrives with
-  // the higher timestamp sets the task's updatedAt, causing the other to be
-  // rejected as stale, leaving its fields unchanged.
+  // C1 (permutation-independence) holds in this reducer only for sequences of
+  // a SINGLE atomic-replace mutation kind targeting a single task. The reducer's
+  // `>=` guard at task-reducer.ts:16 is per-task-object, not per-field, so even
+  // an atomic-kind event can be silently dropped by a higher-timestamp event of
+  // a DIFFERENT atomic kind. Concrete counterexample (also documented in
+  // spec.md §"Known LWW non-commutativity"): given task t with updatedAt=1,
+  //   - status_changed(t, ts=2, →done)
+  //   - assigned(t, ts=3, →null)
+  // applied as [created, status_changed, assigned] yields status=done; applied
+  // as [created, assigned, status_changed] the status_changed at ts=2 is
+  // rejected as stale (the new updatedAt=3 from the assignment exceeds 2), so
+  // status remains "open". The two atomic kinds individually preserve the
+  // permutation invariant — but mixed on the same task, they don't.
   //
-  // Eligible kinds:
-  //   - task.status_changed — atomically replaces status
-  //   - task.assigned       — atomically replaces assignee
-  //   - task.deleted        — atomically removes the task
+  // task.updated is also excluded for the standard merge-semantics reason:
+  // two updates with disjoint `changes` and distinct timestamps lose the
+  // lower-ts update's fields entirely under reordering.
   //
-  // For these kinds, with strictly distinct timestamps per taskId, the "highest
-  // timestamp wins" rule is invariant to delivery order.
-  //
-  // The generator below produces: a fixed task creation + a sequence of
-  // status_changed events for that task with strictly increasing timestamps.
-  // We then permute only those status_changed events and verify the final task
-  // state is the same (the last event — highest ts — determines the status).
+  // The generator below restricts to: one task + N task.status_changed events
+  // with strictly increasing timestamps. Within this subset, the highest-ts
+  // event always determines the final status regardless of delivery order.
+  // Expanding to mixed kinds would expose the cross-kind divergence above and
+  // is explicitly out of scope (a different reducer design, possibly per-field
+  // LWW, would be a follow-up epic).
   // ---------------------------------------------------------------------------
 
   // A single task + N status_changed events with strictly distinct timestamps.
@@ -878,19 +883,18 @@ describe("reducer property tests — S2 story", () => {
     // C1: replayEvents(events) is invariant under permutation of status_changed
     //     events when each event's updatedAt is strictly distinct per taskId.
     //
-    // Scoping decision: C1 is asserted only for task.status_changed (and
-    // similarly task.assigned / task.deleted) — event kinds that atomically
-    // replace a single field.  task.updated is excluded because it merges a
-    // subset of fields: two updates with *different* changes objects are
-    // inherently order-dependent even with distinct timestamps (the lower-ts
-    // update is rejected as stale by the reducer's >= gate after the higher-ts
-    // one has already been applied, leaving its fields absent).  This scoping
-    // is documented in the arbC1Input helper above.
+    // Scoping (matches spec.md §C1 atomic-kind subset and acceptance-criteria
+    // AC-RED-15): the test exercises ONLY task.status_changed events for a
+    // single task. The reducer's `>=` guard is per-task-object — mixed-kind
+    // sequences (e.g. status_changed + assigned with crossing timestamps) are
+    // not order-independent even when each kind is individually atomic. That
+    // is documented as architectural in spec.md §"Known LWW non-commutativity"
+    // and is an architectural property the LWW reducer does NOT provide. The
+    // arbC1Input helper above carries the full reasoning.
     //
-    // The arbitrary generates one task + N status_changed events with timestamps
-    // task.updatedAt+1, +2, …  The permutation is applied to those N events.
-    // The invariant: the event with the highest timestamp (the last in original
-    // order) determines the final status regardless of delivery order.
+    // Within the status_changed-only subset, the invariant holds: the event
+    // with the highest timestamp determines the final status regardless of
+    // delivery order.
     fc.assert(
       fc.property(
         arbC1Input,

@@ -74,14 +74,27 @@ For each, "with newer timestamp" means `event.updatedAt ≥ existing.updatedAt`.
 
 ### C — Convergence properties (assert at quiescence)
 
-- **C0 — Settled-state equality (headline)** For every group `g`, at quiescence, every current member of `g` has identical:
+- **C0 — Settled-state equality (headline)** For every group `g`, at quiescence under MLS-faithful total-order delivery (every group member receives every event in the same total order; clients may PAUSE at different prefixes but never see events in *different* orders — the MLS application-message bus enforces this in production), every current member of `g` has identical:
   - `tasks(g)` — the deep-equal `Map<id, Task>` for the group,
   - `members(g) == getGroupMembers(g.state)` — the same set of pubkeys,
   - `epoch(g) == g.state.groupContext.epoch` — the same numeric epoch,
   - `leafCount(g, p) == getPubkeyLeafNodes(g.state, p).length` for every pubkey p ∈ members(g).
-- **C1 — Permutation-independence of task state** For events targeting the same task, when all timestamps are strictly distinct, the final reducer state is independent of delivery order.
-- **C2 — Author-irrelevance** The final reducer state for a group at quiescence is independent of which member authored each event (only the events themselves matter).
-- **C3 — Duplicate-tolerance** Delivering each event 1–N times (N small) produces the same settled state as delivering each event exactly once.
+- **C1 — Permutation-independence of task state (atomic-kind subset)** For a sequence of events targeting the same task, **drawn from a single atomic-replace mutation kind** (`task.status_changed` only, in practice — see *Known LWW non-commutativity* below for why this restriction is necessary), when all timestamps are strictly distinct, the final reducer state is independent of delivery order.
+- **C2 — Author-irrelevance** The final reducer state for a group at quiescence (under MLS-faithful delivery, per C0) is independent of which member authored each event (only the events themselves matter).
+- **C3 — Duplicate-tolerance** Delivering each event 1–N times (N small) produces the same settled state as delivering each event exactly once. Asserted under MLS-faithful delivery per C0.
+
+#### Known LWW non-commutativity (architectural constraint)
+
+The reducer's `>=` guard at `task-reducer.ts:16` is **per-task-object, not per-field**. Concretely: a `task.assigned(ts=3)` event applied to a task with `updatedAt=1` raises that task's `updatedAt` to 3, which then causes any subsequent `task.status_changed(ts=2)` to be rejected as stale — even though the two events touch *different fields* and would not conflict under a per-field LWW. In dispatch order they compose cleanly (status_changed at ts=2 applies first; assigned at ts=3 applies second; final state has both fields set). In the swapped order, the second event is silently dropped.
+
+This is **not a bug** — the real notestr system has MLS providing a single total order to every group member, so reordering of the kind that would expose this divergence cannot occur. C0 holds in production.
+
+It IS, however, a constraint on what the reducer-level property tests can claim:
+
+- **C1 cannot be asserted for mixed-kind sequences** even with strictly distinct timestamps. The single-client and multi-client C1 tests are therefore restricted to `task.status_changed`-only sequences targeting a single task. This is the broadest subset under which permutation-independence holds.
+- **The multi-client C0 test models MLS total-order delivery** (causal prefix + bus-ordered drain) rather than arbitrary per-client reorder. Arbitrary reorder is documented as out-of-scope at this layer because it would surface the divergence above and the system architecture (MLS bus) prevents it from mattering.
+
+If a future epic decides to harden the reducer with per-field LWW (or per-field LWW for atomic kinds + per-task LWW for `task.updated`'s merge semantics), the C1 restriction here can be relaxed and the multi-client C0 test can move to genuine arbitrary reorder. That is **not** a goal of this epic.
 
 ### D — Known-divergent properties (label-only; measured, not asserted)
 
