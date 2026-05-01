@@ -16,8 +16,12 @@ import NDK, { NDKPrivateKeySigner, NDKNip46Backend } from '@nostr-dev-kit/ndk';
 
 // Default: User A's deterministic test keypair (hex-encoded private key).
 // Override with BUNKER_PRIVATE_KEY env var for additional bunker instances.
+//
+// Keys rotated 2026-04-30 to drop accumulated state on relays. The pubkeys
+// derived from these are referenced as constants in `auth-helper.ts`,
+// `auth-helper-b.ts`, `auth-helper-c.ts`; rotate all four together.
 const privateKey = process.env.BUNKER_PRIVATE_KEY
-  || 'a1233c40904e48ddaad99366f9cc6d64fccdda09dca44204210a5b7c2e82b2cb';
+  || '7d556f5ab0c9aefe51889bb499694c14af21ab68e26bdcd49172033674c038dd';
 const label = process.env.BUNKER_LABEL || 'bunker';
 
 // Relay the bunker connects to (same relay the app uses during E2E tests)

@@ -16,14 +16,54 @@ import type { TaskEvent } from "../../src/store/task-events.ts";
 import { clearAppState } from "./cleanup.js";
 
 /**
+ * Pin the marmot clientId (KP slot identifier) for this page so the same
+ * logical role across test sessions publishes to the same kind 30443 slot.
+ * Without this, each fresh browser context generates a new random UUID and
+ * the relay accumulates one ghost KP per past session — every accumulated
+ * ghost looks like a sibling device the auto-invite scan should pull into
+ * every new group, and the per-ghost MLS commits drown the test timeout.
+ *
+ * `getOrCreateClientId` (`src/marmot/storage.ts`) reads
+ * `window.__notestrTestClientId` when `NEXT_PUBLIC_E2E === "1"`. Replaceable
+ * event semantics on kind 30443 then collapse repeated publishes at the same
+ * slot to a single entry on the relay.
+ *
+ * Default: derive from the bunker pubkey so single-context-per-role tests
+ * implicitly share a slot per role (A → one slot, B → one slot, etc.).
+ * Tests that spawn multiple contexts on the same bunker (multi-device) must
+ * pass an explicit `slot` to disambiguate.
+ */
+export async function pinClientSlot(
+  page: Page,
+  bunkerUrl: string,
+  slot?: string,
+): Promise<void> {
+  const bunkerPubkey = bunkerUrl.replace(/^bunker:\/\//, "").split("?", 1)[0]!;
+  const effectiveSlot = slot ?? `e2e-${bunkerPubkey.slice(0, 8)}`;
+  await page.addInitScript((s: string) => {
+    (window as { __notestrTestClientId?: string }).__notestrTestClientId = s;
+  }, `notestr-${effectiveSlot}`);
+}
+
+/**
  * `Au` — authenticate via bunker URL.
  *
  * Performs the same flow as `auth-helper.ts` / `auth-helper-b.ts` but is
  * parameterised over the bunker URL so a single helper covers A, B, C, …
  * Clears app state first so each call yields a clean session in the given
  * browser context.
+ *
+ * `slot` (optional) labels this context's KP slot. When omitted, derived
+ * from the bunker pubkey so a single context per role gets a stable slot
+ * across tests; pass an explicit value (e.g. `"A1"`, `"A2"`) when one
+ * test spawns multiple contexts on the same bunker.
  */
-export async function authenticate(page: Page, bunkerUrl: string): Promise<void> {
+export async function authenticate(
+  page: Page,
+  bunkerUrl: string,
+  slot?: string,
+): Promise<void> {
+  await pinClientSlot(page, bunkerUrl, slot);
   await page.goto("/");
   await clearAppState(page);
   await page.goto("/");
@@ -33,6 +73,17 @@ export async function authenticate(page: Page, bunkerUrl: string): Promise<void>
   await page
     .locator('[data-testid="pubkey-chip"]')
     .waitFor({ state: "visible", timeout: 30000 });
+  // Test hooks are installed by a useEffect inside MarmotProvider that
+  // depends on `state.client`, which initialises after the pubkey-chip
+  // appears. Without this poll, callers that immediately invoke
+  // `getPubkeyHex` (or any other test-hook helper) race the install and
+  // throw "__notestrTestPubkey is not installed".
+  await expect
+    .poll(
+      () => page.evaluate(() => typeof window.__notestrTestPubkey === "function"),
+      { timeout: 15000 },
+    )
+    .toBe(true);
 }
 
 /**

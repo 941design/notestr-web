@@ -7,13 +7,13 @@
 
 import type { Page } from '@playwright/test';
 
-// User B's bunker pubkey (derived from private key 3ad635dc...)
-const BUNKER_B_PUBKEY_HEX = 'd2f8e20d603f2f9ceddae1c70f311de027bf887f2f66cf17289b53dbe7f3db3d';
+// User B's bunker pubkey (derived from private key 645b5c22..., rotated 2026-04-30).
+const BUNKER_B_PUBKEY_HEX = '05b9cae746cd7f029084feac706bf67c28448ff0eab15a5c223e3b7a73a68bc8';
 const RELAY_URL = 'ws://localhost:7777';
 export const E2E_BUNKER_B_URL = `bunker://${BUNKER_B_PUBKEY_HEX}?relay=${encodeURIComponent(RELAY_URL)}`;
 
 /** User B's npub (for invite input) */
-export const USER_B_NPUB = 'npub16tuwyrtq8uheemw6u8rs7vgauqnmlzrl9anv79egndfahelnmv7stjfhcm';
+export const USER_B_NPUB = 'npub1qkuu4e6xe4ls9yyyl6k8q6lk0s5yfrlsa2c45hpz8cah5uax30yqcurp9j';
 
 /**
  * Authenticate as User B via bunker:// URL.

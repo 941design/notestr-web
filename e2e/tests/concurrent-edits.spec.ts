@@ -174,14 +174,17 @@ test.describe("TP-91: status race with deterministic LWW (B wins by 1s)", () => 
       }),
     ]);
 
-    await expect(pageA.locator('[data-column="done"]').first()).toContainText(
-      TASK_TITLE,
-      { timeout: 30000 },
-    );
-    await expect(pageB.locator('[data-column="done"]').first()).toContainText(
-      TASK_TITLE,
-      { timeout: 30000 },
-    );
+    // Title was already changed to `tB` by TP-90, so we cannot assert against
+    // TASK_TITLE here. Scope to the desktop "done" column (the mobile copy
+    // only renders the currently-active tab — `open` initially — so on
+    // desktop `data-column="done"` exists only in the desktop grid) and
+    // assert that the (single) task moved into it.
+    await expect(
+      pageA.locator('[data-column="done"] [data-testid="task-card"]'),
+    ).toHaveCount(1, { timeout: 30000 });
+    await expect(
+      pageB.locator('[data-column="done"] [data-testid="task-card"]'),
+    ).toHaveCount(1, { timeout: 30000 });
   });
 });
 

@@ -62,9 +62,9 @@ test.describe.serial("TP-60: rename a sibling device, persist across reload", ()
 
   test("A1 + A2 join (same npub), A1's DeviceList sees two leaves", async () => {
     test.skip(skipMobile, SKIP_MOBILE_REASON);
-    await authenticate(pageA1, E2E_BUNKER_URL);
+    await authenticate(pageA1, E2E_BUNKER_URL, "A1");
     await settle(pageA1, 3000);
-    await authenticate(pageA2, E2E_BUNKER_URL);
+    await authenticate(pageA2, E2E_BUNKER_URL, "A2");
     await settle(pageA2, 3000);
 
     await createGroup(pageA1, GROUP_NAME);
@@ -112,10 +112,16 @@ test.describe("TP-61/-62: rename is local-only, no cross-identity surface", () =
 
   test("A's DeviceList does not surface B's pubkey, so B's devices are unreachable", async ({
     page,
-  }) => {
-    // Single-context smoke: A authenticates, opens a group, the DeviceList
-    // header reads "Your devices" and shows only A's leaves. There is no
-    // affordance to view another identity's devices.
+  }, workerInfo) => {
+    // The assertion is about which leaves DeviceList renders for selfPubkey —
+    // a property of GroupManager's wiring, not of the mobile drawer layout.
+    // Mobile projects exercise the same code path through the drawer, but the
+    // sidebar is translated off-viewport when closed, so createGroup's button
+    // is unreachable. The chromium run already covers the property.
+    test.skip(
+      !!workerInfo.project.use.isMobile,
+      SKIP_MOBILE_REASON,
+    );
     await authenticate(page, E2E_BUNKER_URL);
     await createGroup(page, `RenameSurface ${Date.now()}`);
     await expect(

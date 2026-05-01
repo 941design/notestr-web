@@ -8,14 +8,14 @@
 
 import type { Page } from '@playwright/test';
 
-// User C's bunker pubkey (derived from private key 6a7c89e4...)
+// User C's bunker pubkey (derived from private key 8b7561c7..., rotated 2026-04-30).
 export const E2E_BUNKER_C_PUBKEY_HEX =
-  '2ea0d688f883325946f7756821a3b6496a8702722f455b6845d437f2d41ecd68';
+  '837f2b3061d526d73e7581c9bef47ebcd474dd7bf3db4d509256381de490aa1e';
 const RELAY_URL = 'ws://localhost:7777';
 export const E2E_BUNKER_C_URL = `bunker://${E2E_BUNKER_C_PUBKEY_HEX}?relay=${encodeURIComponent(RELAY_URL)}`;
 
 /** User C's npub (for invite input) */
-export const USER_C_NPUB = 'npub196sddz8csve9j3hhw45zrgakf94gwqnj9az4k6z96sml94q7e45qxfuche';
+export const USER_C_NPUB = 'npub1sdljkvrp65ndw0n4s8ymaar7hn28fhtm70d565yj2cupmeys4g0q30l7f7';
 
 /**
  * Authenticate as User C via bunker:// URL.

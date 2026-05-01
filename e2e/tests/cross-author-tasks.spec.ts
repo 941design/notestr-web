@@ -304,7 +304,7 @@ test.describe("TP-24: B deletes A's task → A observes removal", () => {
         updatedAt: now,
       },
     });
-    await expect(pageB.locator('[data-column="open"]')).toContainText(t3Title, {
+    await expect(pageB.locator('[data-column="open"]').first()).toContainText(t3Title, {
       timeout: 30000,
     });
 
@@ -344,7 +344,7 @@ test.describe("TP-17: A deletes own task → B observes removal", () => {
         updatedAt: now,
       },
     });
-    await expect(pageB.locator('[data-column="open"]')).toContainText(t4Title, {
+    await expect(pageB.locator('[data-column="open"]').first()).toContainText(t4Title, {
       timeout: 30000,
     });
 

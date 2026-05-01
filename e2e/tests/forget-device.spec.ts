@@ -116,6 +116,10 @@ test.describe.serial("TP-50/53: forget one of B's two leaves", () => {
   let pageB1: Page;
   let pageB2: Page;
   let skipMobile = false;
+  // A mid-body test.skip() in describe.serial only skips that single test;
+  // Playwright still runs subsequent tests with shared scope variables
+  // unset. Track the skip explicitly and propagate to the rest of the block.
+  let skipRest = false;
   const GROUP_NAME = `Forget2 ${Date.now()}`;
   let groupIdA: string;
   let pubkeyB: string;
@@ -139,9 +143,9 @@ test.describe.serial("TP-50/53: forget one of B's two leaves", () => {
 
   test("setup: B1 + B2 both authenticate (same npub)", async () => {
     test.skip(skipMobile, SKIP_MOBILE_REASON);
-    await authenticate(pageB1, E2E_BUNKER_B_URL);
+    await authenticate(pageB1, E2E_BUNKER_B_URL, "B1");
     await settle(pageB1, 3000);
-    await authenticate(pageB2, E2E_BUNKER_B_URL);
+    await authenticate(pageB2, E2E_BUNKER_B_URL, "B2");
     await settle(pageB2, 3000);
     pubkeyB = await getPubkeyHex(pageB1);
   });
@@ -175,6 +179,9 @@ test.describe.serial("TP-50/53: forget one of B's two leaves", () => {
     // because both invites picked up the same KP), skip with a clear note
     // rather than asserting an unstable post-condition.
     const indexes = await leafIndexesFor(pageA, groupIdA, pubkeyB);
+    if (indexes.length < 2) {
+      skipRest = true;
+    }
     test.skip(
       indexes.length < 2,
       `B has ${indexes.length} leaf(es), need ≥2 for this test — auto-invite/KP-rotation race`,
@@ -185,6 +192,7 @@ test.describe.serial("TP-50/53: forget one of B's two leaves", () => {
 
   test("A forgets one of B's leaves → A still sees {A, B} as members", async () => {
     test.skip(skipMobile, SKIP_MOBILE_REASON);
+    test.skip(skipRest, "Prior setup test was skipped — shared scope unset");
     const before = await leafIndexesFor(pageA, groupIdA, pubkeyB);
     expect(before.length).toBeGreaterThanOrEqual(2);
 

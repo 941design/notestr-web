@@ -153,12 +153,27 @@ export const TaskStoreProvider: React.FC<TaskStoreProviderProps> = ({
     [group, groupId, pubkey],
   );
 
+  // Keep the latest dispatch and groupId reachable via refs so the test
+  // hooks installed below can be registered ONCE per provider mount and
+  // stay registered across re-renders. Earlier wiring re-ran the effect
+  // whenever `dispatch` or `groupId` changed (which happens whenever a
+  // relay echo advances the group's MLS epoch and rebuilds the `group`
+  // reference under `useCallback`'s deps), so the cleanup briefly deleted
+  // `window.__notestrTestDispatchTaskEvent` between renders. A test that
+  // fired a `dispatchTaskEvent` during that window saw the hook missing.
+  const dispatchRef = useRef(dispatch);
+  const groupIdRef = useRef(groupId);
+  dispatchRef.current = dispatch;
+  groupIdRef.current = groupId;
+
   useEffect(() => {
     if (!isTestRuntime()) return;
 
-    window.__notestrTestDispatchTaskEvent = (taskEvent) => dispatch(taskEvent);
+    window.__notestrTestDispatchTaskEvent = (taskEvent) =>
+      dispatchRef.current(taskEvent);
     window.__notestrTestTasks = () => Array.from(stateRef.current.values());
-    window.__notestrTestPersistedTaskEvents = () => loadEvents(groupId);
+    window.__notestrTestPersistedTaskEvents = () =>
+      loadEvents(groupIdRef.current);
     window.__notestrTestArmPublishFailure = (message = "forced publish failure") => {
       window.__notestrTestPublishFailureOnce = message;
     };
@@ -170,7 +185,7 @@ export const TaskStoreProvider: React.FC<TaskStoreProviderProps> = ({
       delete window.__notestrTestArmPublishFailure;
       delete window.__notestrTestPublishFailureOnce;
     };
-  }, [dispatch, groupId]);
+  }, []);
 
   const tasks = Array.from(state.values());
 

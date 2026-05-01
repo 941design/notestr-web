@@ -31,36 +31,42 @@ async function swipe(
   const endX = box.x + box.width * endFrac;
   const y = box.y + box.height / 2;
 
+  // WebKit forbids `new Touch(...)` and `new TouchEvent(...)` ("Illegal
+  // constructor"), so we hand-roll a UIEvent and define `touches` /
+  // `changedTouches` properties on it. React's synthetic touch event reads
+  // through these, which is all the Board swipe handler relies on.
   await panel.evaluate(
     (el, args) => {
       const target = el as HTMLElement;
-      const make = (x: number, yy: number) =>
-        new Touch({
-          identifier: 0,
-          target,
-          clientX: x,
-          clientY: yy,
-          pageX: x,
-          pageY: yy,
-        });
-      target.dispatchEvent(
-        new TouchEvent('touchstart', {
-          bubbles: true,
-          cancelable: true,
-          touches: [make(args.startX, args.y)],
-          targetTouches: [make(args.startX, args.y)],
-          changedTouches: [make(args.startX, args.y)],
-        }),
-      );
-      target.dispatchEvent(
-        new TouchEvent('touchend', {
-          bubbles: true,
-          cancelable: true,
-          touches: [],
-          targetTouches: [],
-          changedTouches: [make(args.endX, args.y)],
-        }),
-      );
+      const point = (x: number, yy: number) => ({
+        identifier: 0,
+        target,
+        clientX: x,
+        clientY: yy,
+        pageX: x,
+        pageY: yy,
+        screenX: x,
+        screenY: yy,
+        radiusX: 1,
+        radiusY: 1,
+        rotationAngle: 0,
+        force: 1,
+      });
+      const fire = (
+        type: string,
+        touches: ReturnType<typeof point>[],
+        changedTouches: ReturnType<typeof point>[],
+      ) => {
+        const ev = new UIEvent(type, { bubbles: true, cancelable: true });
+        Object.defineProperty(ev, 'touches', { get: () => touches });
+        Object.defineProperty(ev, 'targetTouches', { get: () => touches });
+        Object.defineProperty(ev, 'changedTouches', { get: () => changedTouches });
+        target.dispatchEvent(ev);
+      };
+      const start = [point(args.startX, args.y)];
+      const end = [point(args.endX, args.y)];
+      fire('touchstart', start, start);
+      fire('touchend', [], end);
     },
     { startX, endX, y },
   );

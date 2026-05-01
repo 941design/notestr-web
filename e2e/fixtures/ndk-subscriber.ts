@@ -16,8 +16,10 @@ export interface NdkSubscriber {
   close(): Promise<void>;
 }
 
+// Shares User B's identity (rotated 2026-04-30); keep in sync with
+// `e2e/global-setup.ts` and `auth-helper-b.ts`.
 const SUBSCRIBER_PRIVATE_KEY =
-  "3ad635dc380ed603e85842e163bb6a0f6af83110cf61c78785fab7bce173c105";
+  "645b5c22a215745146817311d96e09cd0e4890e9c9dae7774a6e517d468523b4";
 
 export async function openNdkSubscriber(
   relays: string[],

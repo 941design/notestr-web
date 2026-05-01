@@ -74,8 +74,30 @@ export const joinedGroupsStore = createKVStore<true>("joined-groups");
  * Returns a stable per-browser client ID for kind 30443 addressable key packages.
  * Generated once and persisted in IndexedDB so it survives page reloads
  * but is unique per browser/device.
+ *
+ * E2E tests can pin the slot deterministically by setting
+ * `window.__notestrTestClientId` (via `page.addInitScript`) before the app
+ * boots. Without that, every fresh browser context generates a new UUID,
+ * and across many test sessions the relay accumulates ghost slots under
+ * the shared bunker pubkey — each one a "device" the auto-invite scan will
+ * try to pull into every new group. With the override, contexts that play
+ * the same logical role across tests publish to the same slot, kind 30443's
+ * replaceable semantics collapse them on the relay, and the scan sees one
+ * KP per intended device. Gated on `NEXT_PUBLIC_E2E` so production builds
+ * never honor the window var.
  */
 export async function getOrCreateClientId(): Promise<string> {
+  if (
+    process.env.NEXT_PUBLIC_E2E === "1" &&
+    typeof window !== "undefined"
+  ) {
+    const override = (window as { __notestrTestClientId?: unknown })
+      .__notestrTestClientId;
+    if (typeof override === "string" && override.length > 0) {
+      await identityStore.setItem("clientId", override);
+      return override;
+    }
+  }
   const existing = await identityStore.getItem("clientId");
   if (existing) return existing;
   const id = `notestr-${crypto.randomUUID()}`;

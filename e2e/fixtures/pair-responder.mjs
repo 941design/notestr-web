@@ -20,8 +20,10 @@ import NDK, { NDKPrivateKeySigner, NDKEvent } from '@nostr-dev-kit/ndk';
 
 // ── Key setup ────────────────────────────────────────────────────────────────
 
+// Shares User A's identity (rotated 2026-04-30); keep in sync with
+// `e2e/fixtures/bunker.mjs` and `auth-helper.ts`.
 const privateKey = process.env.BUNKER_PRIVATE_KEY
-  || 'a1233c40904e48ddaad99366f9cc6d64fccdda09dca44204210a5b7c2e82b2cb';
+  || '7d556f5ab0c9aefe51889bb499694c14af21ab68e26bdcd49172033674c038dd';
 
 // ── Parse nostrconnect:// URI from argv ──────────────────────────────────────
 

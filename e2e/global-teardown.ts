@@ -12,6 +12,9 @@ function killPid(pid: number | undefined, name: string) {
     process.kill(pid, 'SIGTERM');
     console.log(`[teardown] Killed ${name} (PID ${pid})`);
   } catch (err) {
+    // ESRCH = no such process — the PID file is stale (e.g. previous run
+    // was Ctrl+C'd). That's the desired outcome anyway, so don't warn.
+    if ((err as NodeJS.ErrnoException).code === 'ESRCH') return;
     console.warn(`[teardown] Could not kill ${name} (PID ${pid}):`, err);
   }
 }

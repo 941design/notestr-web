@@ -13,7 +13,9 @@
  * fetches and decrypts outside MLS.
  */
 
-import { test, expect, type BrowserContext, type Page } from '@playwright/test';
+import { type BrowserContext, type Page } from '@playwright/test';
+
+import { test, expect } from '@playwright/test';
 import { E2E_BUNKER_URL } from '../fixtures/auth-helper.js';
 import { E2E_BUNKER_B_URL, USER_B_NPUB } from '../fixtures/auth-helper-b.js';
 import { clearAppState } from '../fixtures/cleanup.js';

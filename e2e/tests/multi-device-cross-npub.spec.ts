@@ -68,9 +68,9 @@ test.describe.serial("TP-80: A1+A2 (same npub) + B (distinct) all in one group",
     await settle(pageB, 3000);
     // A1 second so it's the "creator" device. A2 third so it joins via
     // auto-invite from A1's MarmotProvider.
-    await authenticate(pageA1, E2E_BUNKER_URL);
+    await authenticate(pageA1, E2E_BUNKER_URL, "A1");
     await settle(pageA1, 3000);
-    await authenticate(pageA2, E2E_BUNKER_URL);
+    await authenticate(pageA2, E2E_BUNKER_URL, "A2");
     await settle(pageA2, 3000);
   });
 
@@ -148,7 +148,7 @@ test.describe("TP-82: B's status change reaches A1 and A2", () => {
         updatedAt: now,
       },
     });
-    await expect(pageB.locator('[data-column="open"]')).toContainText(title, {
+    await expect(pageB.locator('[data-column="open"]').first()).toContainText(title, {
       timeout: 30000,
     });
 
@@ -160,10 +160,10 @@ test.describe("TP-82: B's status change reaches A1 and A2", () => {
       updatedBy: pubkeyB,
     });
 
-    await expect(pageA1.locator('[data-column="in_progress"]')).toContainText(title, {
+    await expect(pageA1.locator('[data-column="in_progress"]').first()).toContainText(title, {
       timeout: 30000,
     });
-    await expect(pageA2.locator('[data-column="in_progress"]')).toContainText(title, {
+    await expect(pageA2.locator('[data-column="in_progress"]').first()).toContainText(title, {
       timeout: 30000,
     });
   });

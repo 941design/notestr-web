@@ -9,7 +9,9 @@
  * - User B authenticates in the same context and sees the group as detached
  */
 
-import { test, expect, devices } from '@playwright/test';
+import { devices } from '@playwright/test';
+
+import { test, expect } from '@playwright/test';
 import { authenticateViaBunker } from '../fixtures/auth-helper.js';
 import { authenticateAsBunkerB, USER_B_NPUB } from '../fixtures/auth-helper-b.js';
 import { clearAppState } from '../fixtures/cleanup.js';

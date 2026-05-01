@@ -12,7 +12,9 @@
  * Precondition: bunker running (globalSetup), relay up (make e2e-up).
  */
 
-import { test, expect, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+
+import { test, expect } from '@playwright/test';
 import { authenticateViaBunker } from '../fixtures/auth-helper.js';
 import { clearAppState } from '../fixtures/cleanup.js';
 

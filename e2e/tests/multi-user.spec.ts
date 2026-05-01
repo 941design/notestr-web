@@ -2,8 +2,8 @@
  * E2E tests: Multi-user group invite flow.
  *
  * Uses two separate browser contexts with distinct bunker identities:
- * - User A: bunker keypair (a1233c40...)
- * - User B: second keypair (3ad635dc...)
+ * - User A: bunker keypair (7d556f5a..., rotated 2026-04-30)
+ * - User B: second keypair (645b5c22..., rotated 2026-04-30)
  *
  * Precondition: both bunkers running (globalSetup), relay up (make e2e-up).
  *
@@ -24,7 +24,9 @@
  * shape (real outcome dependency across describes), just not a skip.
  */
 
-import { test, expect, type BrowserContext, type Page } from '@playwright/test';
+import { type BrowserContext, type Page } from '@playwright/test';
+
+import { test, expect } from '@playwright/test';
 import { E2E_BUNKER_URL } from '../fixtures/auth-helper.js';
 import { E2E_BUNKER_B_URL, USER_B_NPUB } from '../fixtures/auth-helper-b.js';
 import { clearAppState } from '../fixtures/cleanup.js';

@@ -153,7 +153,7 @@ export default async function globalSetup() {
     10000,
     PROJECT_ROOT,
     {
-      BUNKER_PRIVATE_KEY: '3ad635dc380ed603e85842e163bb6a0f6af83110cf61c78785fab7bce173c105',
+      BUNKER_PRIVATE_KEY: '645b5c22a215745146817311d96e09cd0e4890e9c9dae7774a6e517d468523b4',
       BUNKER_LABEL: 'bunker-B',
     },
   );
@@ -167,7 +167,7 @@ export default async function globalSetup() {
     10000,
     PROJECT_ROOT,
     {
-      BUNKER_PRIVATE_KEY: '6a7c89e451fd0d2c87b5c4a1d62e89f3148bc52a90dde6f7a3dfb0c2189f4a3b',
+      BUNKER_PRIVATE_KEY: '8b7561c728b13b8de18ce9202d4aab674e2a2780b5c2270362a194457856252f',
       BUNKER_LABEL: 'bunker-C',
     },
   );

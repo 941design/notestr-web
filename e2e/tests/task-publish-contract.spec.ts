@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import type { NDKKind } from "@nostr-dev-kit/ndk";
 
 import { authenticateViaBunker } from "../fixtures/auth-helper.js";
