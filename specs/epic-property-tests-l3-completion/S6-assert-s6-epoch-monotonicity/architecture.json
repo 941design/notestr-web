@@ -1,0 +1,32 @@
+{
+  "module_name": "multi-user.property.spec",
+  "purpose": "Migrate all 12 recordEpoch call sites from the groups.length proxy (readEpoch) to the real MLS epoch hook (getGroupEpochHook), update recordEpoch to accept number|null and skip on null, and implement assertS6 with the actual non-decreasing sequence assertion.",
+  "public_api": [],
+  "private_files": [
+    "e2e/tests/multi-user.property.spec.ts"
+  ],
+  "owned_data": [
+    "ModelState.epochSequenceA",
+    "ModelState.epochSequenceB"
+  ],
+  "dependencies_allowed": [
+    "e2e/fixtures/two-party.ts"
+  ],
+  "dependencies_forbidden": [
+    "src/marmot/client.tsx",
+    "src/types/notestr-test-hooks.d.ts",
+    "e2e/fixtures/ndk-subscriber.ts",
+    "src/store/task-reducer.ts"
+  ],
+  "external_ports": [
+    "getGroupEpochHook(page, groupId): Promise<number | null>"
+  ],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "AC-S6-1: all 12 recordEpoch sites use getGroupEpochHook",
+    "AC-S6-2: assertS6 walks epochSequenceA and epochSequenceB asserting non-decreasing",
+    "AC-S6-3: recordEpoch accepts number|null and skips on null",
+    "AC-S6-4: deliberate regression deferred to S8"
+  ]
+}

@@ -1,0 +1,109 @@
+{
+  "story_id": "S5",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S5-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-C0-1",
+      "question": "Are the existing task-subset assertions at `multi-user.property.spec.ts:830-855` (id set, status, assignee, title checks) UNCHANGED after S5's edit? Show `git diff` of those lines confirming no modification. AC-C0-1 is a preservation criterion — any deletion, reorder, or semantic change to these lines is a regression. The new members/epoch/leaf-count checks must be additions, not replacements."
+    },
+    {
+      "question_id": "VQ-S5-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-C0-2",
+      "question": "When `m.memberA && m.memberB && m.groupIdA && m.groupIdB`, does `assertC0` additionally assert `new Set(membersA) deep-equals new Set(membersB)`? Show (a) the guard condition, (b) the set-equality assertion, and (c) a test where `membersA !== membersB` causes a failure. Confirm the test is not a pure mock-spy proxy — it exercises the real `getGroupMembersHook` path."
+    },
+    {
+      "question_id": "VQ-S5-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-C0-3",
+      "question": "Under the same precondition (`m.memberA && m.memberB && m.groupIdA && m.groupIdB`), does `assertC0` assert `epochA === epochB`? Show (a) the calls to `getGroupEpochHook` for both parties, (b) the strict equality assertion, and (c) a test confirming the assertion fails when epochs diverge. Confirm the test is not a pure mock-spy proxy."
+    },
+    {
+      "question_id": "VQ-S5-004",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-C0-4",
+      "question": "Under the same precondition, does `assertC0` assert that `leafCount(g, p)` matches across A and B for every pubkey in `membersA ∪ membersB`? Show (a) the union construction, (b) the per-pubkey loop calling `getPubkeyLeafCountHook` on both parties, and (c) the equality assertion. Confirm a test exercises a cross-pubkey leaf-count divergence scenario. Confirm the test is not a pure mock-spy proxy."
+    },
+    {
+      "question_id": "VQ-S5-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-C0-5",
+      "question": "Was a deliberate divergence (e.g. stale epoch read on B's side) applied during implementation to confirm the `assertC0` full assertions fail? Show evidence of the deliberate regression and that it was reverted before commit. Confirm the production assertion code would catch this divergence in a real property-test run."
+    },
+    {
+      "question_id": "VQ-S5-006",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-S5-5",
+      "question": "Does the rewritten `assertS5` use the hook-based full biconditional: for every `p ∈ {m.pubkeyA, m.pubkeyB}`, assert `membersA.includes(p) === (leafCount(m.groupIdA, p) >= 1)` where `membersA` comes from `getGroupMembersHook(r.pageA, m.groupIdA)`? Show (a) the production code, (b) that the model-flag-based form from AC-S5-1 is fully replaced (not appended), and (c) a test confirming the hook-based truth source is used. Confirm the test is not a pure mock-spy proxy."
+    },
+    {
+      "question_id": "VQ-S5-007",
+      "phase": "pre-impl",
+      "category": "GOTCHA",
+      "question": "S5 depends on S1 (assertS5 body) and S4 (hooks). S1's partial body at `multi-user.property.spec.ts:830-855` is the input that S5 replaces. Has the implementation verified that the lines BEFORE the assertS5 function body (task-subset checks, AC-C0-1) are the ones from S1's edit and not an earlier baseline? Show a `git log --oneline` confirming S1 landed before S5, or show the line ranges explicitly."
+    },
+    {
+      "question_id": "VQ-S5-008",
+      "phase": "pre-impl",
+      "category": "SCOPE",
+      "question": "After implementation, does `git diff --stat` show changes ONLY to `e2e/tests/multi-user.property.spec.ts`? The story explicitly excludes `src/marmot/client.tsx`, `src/types/notestr-test-hooks.d.ts`, `e2e/fixtures/two-party.ts`, `e2e/fixtures/ndk-subscriber.ts`, and `src/store/task-reducer.ts`. Any modification to those files is a scope violation. Show the diff stat output."
+    },
+    {
+      "question_id": "VQ-S5-009",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `multi-user.property.spec.ts` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? `assertC0` now consumes `getGroupMembersHook`, `getGroupEpochHook`, and `getPubkeyLeafCountHook` from `e2e/fixtures/two-party.ts`. These are declared seam contracts (`NotestrTestHooksExtension`). Does the implementation import these helpers directly from `two-party.ts` (correct) rather than calling `page.evaluate(window.__notestrTest*)` inline (boundary violation)?"
+    },
+    {
+      "question_id": "VQ-S5-010",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `multi-user.property.spec.ts` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? S5 rewrites `assertS5` for the second time (first rewrite was S1). After S5's edit, is the S1 model-flag-based code fully gone — no commented-out remnant, no conditional fallback? Show `git diff` confirming the function body is entirely replaced."
+    },
+    {
+      "question_id": "VQ-S5-011",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Is there end-to-end test coverage that: (a) `assertC0` passes in a fully converged settled-state scenario, and (b) `assertC0` fails when members/epoch/leaf-count diverge across A and B? Does the test for (b) exercise the production hook path rather than mocking hook return values?"
+    },
+    {
+      "question_id": "VQ-S5-012",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the new code contain any TODO/FIXME/stub markers? After S5 replaces the assertS5 body, are there any remnant references to the model-flag-based partial form (e.g. comments like 'will be replaced by hooks in S5')? Those stale comments must be removed now that S5 has landed."
+    },
+    {
+      "question_id": "VQ-S5-013",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does the `test.describe.serial` block title at `multi-user.property.spec.ts:962` remain exactly `[S5,S6,S7,S10,A7-A12,A14,C0]` after S5's edit? Changing the title is forbidden by AC-X-DESCRIBE-TITLE-1. Show `git diff` of that line."
+    },
+    {
+      "question_id": "VQ-S5-PI-001",
+      "phase": "post-impl",
+      "category": "CORRECTNESS",
+      "question": "In `assertC0`, the guard `if (!m.memberA || !m.memberB) return` fires before the group-ID guard `if (!m.groupIdA || !m.groupIdB) return`. Is there a case where `m.memberA && m.memberB` is true but `m.groupIdA` or `m.groupIdB` is null? If so, the AC-C0-2/3/4 checks would be skipped silently. Verify the ModelState invariant that member flags can only be true when group IDs are set."
+    },
+    {
+      "question_id": "VQ-S5-PI-002",
+      "phase": "post-impl",
+      "category": "CORRECTNESS",
+      "question": "The `assertS5` body now calls `getPubkeyLeafCountHook` (from S4) instead of `leafIndexesFor(...).length` (the prior form). If `__notestrTestPubkeyLeafCount` is not yet installed (e.g. because the S4 hook registration missed this hook), the wrapper throws. Does the test framework surface this as a meaningful error rather than a silent skip? Confirm the wrapper in `two-party.ts` throws with a named-hook message."
+    },
+    {
+      "question_id": "VQ-S5-PI-003",
+      "phase": "post-impl",
+      "category": "EDGE_CASE",
+      "question": "In `assertC0` AC-C0-4, the leaf-count loop iterates `new Set([...(membersA ?? []), ...(membersB ?? [])])`. If `membersA` and `membersB` contain different pubkeys (i.e. members have diverged), the union includes pubkeys present on only one side. For those pubkeys, `getPubkeyLeafCountHook` on the side that does not have the pubkey returns 0 while the other side returns >= 1. Will the `expect(lcA).toBe(lcB)` assertion correctly catch this divergence? Confirm that the loop correctly exercises both-sides calls for every union member."
+    }
+  ]
+}

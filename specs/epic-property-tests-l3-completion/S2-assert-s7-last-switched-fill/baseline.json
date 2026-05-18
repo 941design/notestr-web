@@ -1,0 +1,18 @@
+{
+  "story_id": "S2",
+  "recorded_at": "2026-05-18T00:00:00Z",
+  "test_counts": {
+    "unit": 137,
+    "e2e": "not_run"
+  },
+  "pre_existing_dirty_files": [
+    "BACKLOG.json",
+    "specs/epic-property-tests-l3-completion/spec.md",
+    "specs/epic-property-tests-l3-completion/acceptance-criteria.md",
+    "e2e/tests/multi-user.property.spec.ts"
+  ],
+  "tsc_errors_pre_existing": [
+    "src/marmot/forget-device.test.ts(388,58): error TS2345",
+    "src/marmot/forget-device.test.ts(552,7): error TS2345"
+  ]
+}

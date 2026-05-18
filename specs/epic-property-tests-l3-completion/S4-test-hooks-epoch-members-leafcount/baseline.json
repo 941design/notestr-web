@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-05-18T00:00:00Z",
+  "test_suite": "tsc --noEmit + make test (production build)",
+  "tsc_errors": [
+    "src/marmot/forget-device.test.ts(388,58): error TS2345 — pre-existing type mismatch in test file (not introduced by S4)",
+    "src/marmot/forget-device.test.ts(552,7): error TS2345 — pre-existing type mismatch in test file (not introduced by S4)"
+  ],
+  "notes": "Two pre-existing tsc errors in forget-device.test.ts; these are baseline noise. Production build (make test) passes. S4 must not introduce new errors."
+}

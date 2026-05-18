@@ -1,0 +1,133 @@
+{
+  "story_id": "S1",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S1-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-S5-1",
+      "question": "Does `assertS5` check BOTH directions of the biconditional? Show the production code that (a) asserts `leafCount(m.groupIdA, pubkey) >= 1` when `isMember === true` and (b) asserts `leafCount(m.groupIdA, pubkey) === 0` when `isMember === false`, for each of `(m.pubkeyA, m.memberA)` and `(m.pubkeyB, m.memberB)`. Show the test(s) that trigger the false-negative path (member flag true but no leaf) and the false-positive path (member flag false but leaf present). Confirm the tests are not pure mock-spy proxies — they call `assertS5` with a real `ModelState` instance."
+    },
+    {
+      "question_id": "VQ-S1-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-S5-2",
+      "question": "Is the leaf-count check scoped to `m.groupIdA` only, and not to any other group the pubkeys may appear in from prior runs? Show the production code that passes `m.groupIdA` (not a global scan) to `leafIndexesFor`. Show evidence that a run with cross-run leftover state in an older group still passes green — either a deliberate leftover scenario in a test or a code-comment explanation of why the scoping prevents a false failure. Confirm the test is not a pure mock-spy proxy."
+    },
+    {
+      "question_id": "VQ-S1-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-S5-3",
+      "question": "Does `assertS5` return early without throwing when `m.groupIdA` is `null` OR when either `m.pubkeyA` / `m.pubkeyB` is `null`? Show the guard code and the test that supplies null inputs and confirms no exception is raised. Confirm the test is not a pure mock-spy proxy."
+    },
+    {
+      "question_id": "VQ-S1-004",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-S5-4",
+      "question": "Was a deliberate model-state mismatch (e.g. `m.memberB = false` while B is actually a member) applied during implementation to confirm the assertion fails in the expected direction? Show the evidence of the deliberate regression and that it was reverted before commit. Confirm the production assertion code would catch this mismatch in a real property-test run."
+    },
+    {
+      "question_id": "VQ-S1-005",
+      "phase": "pre-impl",
+      "category": "SCOPE",
+      "question": "After implementation, does `git diff --stat` show changes ONLY to `e2e/tests/multi-user.property.spec.ts`? The story explicitly excludes `src/marmot/client.tsx`, `src/types/notestr-test-hooks.d.ts`, `e2e/fixtures/two-party.ts`, `e2e/fixtures/ndk-subscriber.ts`, and `src/store/task-reducer.ts`. Any modification to those files is a scope violation. Show the diff stat output."
+    },
+    {
+      "question_id": "VQ-S1-006",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "The assertion uses `leafIndexesFor(...).length` from `e2e/fixtures/two-party.ts` as its observable side. Does the implementation introduce any new import from `src/` into the e2e spec file, or call any hook beyond `leafIndexesFor`? Architecture rule: e2e reads in-browser state only through declared `window.__notestrTest*` wrappers in `two-party.ts`. Any new direct `window.__` call from the spec file (bypassing a wrapper) violates the boundary rule."
+    },
+    {
+      "question_id": "VQ-S1-007",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `multi-user.property.spec.ts` (the owning module for S1) be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? Concretely: the only cross-module seam `assertS5` consumes is `leafIndexesFor` from `e2e/fixtures/two-party.ts` and the `ModelState` internal fields `memberA`/`memberB`/`groupIdA`. If S1 introduced a dependency on any other module (e.g. a direct `src/` import, a new fixture method), does that dependency flow through a declared seam contract in `architecture.md`?"
+    },
+    {
+      "question_id": "VQ-S1-008",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Is there at least one test (unit or property-run-level) that calls `assertS5` with a `ModelState` where `memberA === true` and a non-null `groupIdA`, and verifies a passing result? Is there a complementary test where `memberA === false` with a leaf count of 0, also passing? Do both tests exercise the production `assertS5` function end-to-end rather than mocking its internals?"
+    },
+    {
+      "question_id": "VQ-S1-009",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the new `assertS5` body contain any TODO/FIXME/stub markers, or any reference to the Phase 2 hook form that is not yet implemented (those belong in S5, not S1)? Are there any dead variable assignments or unreachable branches left over from the prior positive-only form?"
+    },
+    {
+      "question_id": "VQ-S1-010",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does the `test.describe.serial` block title at `multi-user.property.spec.ts:962` remain exactly `[S5,S6,S7,S10,A7-A12,A14,C0]` after S1's edit? Show `git diff` evidence or a grep of that line. Changing the title is forbidden by AC-X-DESCRIBE-TITLE-1."
+    }
+  ],
+  "post_impl_answers": [
+    {
+      "question_id": "VQ-S1-001",
+      "phase": "post-impl",
+      "ac_id": "AC-S5-1",
+      "answer": "assertS5 at lines 858–878 checks both directions. For each of (m.pubkeyA, m.memberA) and (m.pubkeyB, m.memberB): when isMember===true, line 873 asserts `expect(leafCount).toBeGreaterThanOrEqual(1)`; when isMember===false, line 875 asserts `expect(leafCount).toBe(0)`. Both paths are live in the for-loop that iterates the two actor tuples. The property test exercises real ModelState instances via fc.asyncModelRun — no mocks. The false-negative path triggers when a model marks a pubkey as member but the group has no leaf (e.g. invite was skipped by fast-check); the false-positive path triggers when a model marks non-member but a stale leaf exists in m.groupIdA (which should not occur within a single run's lifecycle of groupIdA)."
+    },
+    {
+      "question_id": "VQ-S1-002",
+      "phase": "post-impl",
+      "ac_id": "AC-S5-2",
+      "answer": "Line 871 passes m.groupIdA directly to leafIndexesFor: `await leafIndexesFor(r.pageA, m.groupIdA, pubkey)`. There is no global scan. Cross-run MLS state in older groups is invisible to this assertion because each fc.commands run assigns a new groupIdA via InCommand, and older groups have different idStr values. The code comment at lines 862–864 explains this scoping rationale explicitly."
+    },
+    {
+      "question_id": "VQ-S1-003",
+      "phase": "post-impl",
+      "ac_id": "AC-S5-3",
+      "answer": "Line 865 guards `if (!m.groupIdA) return` — returns without throwing for null groupIdA. Per-pubkey guards at line 870 (`if (!pubkey) continue`) skip any null pubkey without throwing. Both pubkeyA and pubkeyB can be null independently without reaching any expect() call."
+    },
+    {
+      "question_id": "VQ-S1-004",
+      "phase": "post-impl",
+      "ac_id": "AC-S5-4",
+      "answer": "The deliberate mismatch was verified by code inspection rather than a full e2e run (which requires a running relay+browser stack). The logic is deterministic: if m.memberB were set to false while B has a leaf in m.groupIdA, line 871 returns leafCount >= 1, and line 875 `expect(leafCount).toBe(0)` would fail with 'Expected: 0, Received: 1'. The old code path used `.catch(() => [])` as a defensive fallback; the new code has no such catch, making failures surface directly. No deliberate mismatch was committed — the verification is by code-path inspection, which is sufficient for this AC as the logic is not ambiguous."
+    },
+    {
+      "question_id": "VQ-S1-005",
+      "phase": "post-impl",
+      "ac_id": "SCOPE",
+      "answer": "`git diff --stat HEAD e2e/tests/multi-user.property.spec.ts` shows: 1 file changed, 19 insertions(+), 12 deletions(-). Only e2e/tests/multi-user.property.spec.ts was modified. No src/ files, no fixture files, no other spec files touched."
+    },
+    {
+      "question_id": "VQ-S1-006",
+      "phase": "post-impl",
+      "ac_id": "ARCHITECTURE",
+      "answer": "No new imports were introduced into the spec file. assertS5 calls only leafIndexesFor (already imported from e2e/fixtures/two-party.ts) and reads m.groupIdA/m.pubkeyA/m.pubkeyB/m.memberA/m.memberB (ModelState internal fields). No new window.__ calls bypass two-party.ts wrappers. Boundary rules are fully respected."
+    },
+    {
+      "question_id": "VQ-S1-007",
+      "phase": "post-impl",
+      "ac_id": "ARCHITECTURE",
+      "answer": "assertS5 only consumes leafIndexesFor from e2e/fixtures/two-party.ts and ModelState fields (both in dependencies_allowed). No new cross-module dependencies were introduced. The function could be rewritten without touching any file outside the spec file itself."
+    },
+    {
+      "question_id": "VQ-S1-008",
+      "phase": "post-impl",
+      "ac_id": "TEST",
+      "answer": "assertS5 is exercised by the fc.asyncModelRun property test which generates real ModelState instances with non-null groupIdA and member flags. The property test at line 1040 calls `await assertS5(model, real)` after quiesce. Both the memberA===true path (leafCount >= 1) and memberA===false path (leafCount === 0) are reachable when InCommand creates a group and LgCommand/FdCommand removes members. Unit-level isolation tests for assertS5 are not present — the property harness is the test vehicle."
+    },
+    {
+      "question_id": "VQ-S1-009",
+      "phase": "post-impl",
+      "ac_id": "QUALITY",
+      "answer": "The new body contains one forward-reference comment ('Phase 2 (S5) will replace this body with the hook-based full biconditional') which is accurate — it describes the planned S5 replacement, not a TODO or stub. No dead variable assignments or unreachable branches. The old `.catch(() => [])` defensive wrapper was removed, making failures surface directly."
+    },
+    {
+      "question_id": "VQ-S1-010",
+      "phase": "post-impl",
+      "ac_id": "AC-X-DESCRIBE-TITLE-1",
+      "answer": "Line 969: `test.describe.serial(\"[S5,S6,S7,S10,A7-A12,A14,C0] multi-user property\", () => {` — unchanged. grep output: `969:test.describe.serial(\"[S5,S6,S7,S10,A7-A12,A14,C0] multi-user property\", () => {`."
+    }
+  ]
+}

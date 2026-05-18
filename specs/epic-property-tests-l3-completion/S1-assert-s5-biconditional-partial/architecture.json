@@ -1,0 +1,39 @@
+{
+  "module_name": "multi-user.property.spec.ts",
+  "purpose": "L3 full-stack property test: assertS5 is the invariant check that member-iff-leaf holds for groupIdA. S1 replaces the positive-only body with the full biconditional using model flags as truth and leafIndexesFor(...).length as the observable.",
+  "public_api": [
+    {
+      "name": "assertS5",
+      "signature": "async function assertS5(m: ModelState, r: RealSystem): Promise<void>",
+      "description": "For each (pubkey, isMember) in [(m.pubkeyA, m.memberA), (m.pubkeyB, m.memberB)]: if isMember === true asserts leafCount(m.groupIdA, pubkey) >= 1; if isMember === false asserts leafCount(m.groupIdA, pubkey) === 0. Returns without throwing when m.groupIdA is null or a pubkey is null. Scoped to m.groupIdA only — cross-run leftover leaves in older groups are not observed."
+    }
+  ],
+  "private_files": [
+    "e2e/tests/multi-user.property.spec.ts"
+  ],
+  "owned_data": [
+    "ModelState.memberA",
+    "ModelState.memberB",
+    "ModelState.pubkeyA",
+    "ModelState.pubkeyB",
+    "ModelState.groupIdA"
+  ],
+  "dependencies_allowed": [
+    "e2e/fixtures/two-party.ts#leafIndexesFor"
+  ],
+  "dependencies_forbidden": [
+    "src/marmot/client.tsx",
+    "src/types/notestr-test-hooks.d.ts",
+    "e2e/fixtures/ndk-subscriber.ts",
+    "src/store/task-reducer.ts"
+  ],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "AC-S5-1: biconditional in both directions via model flags",
+    "AC-S5-2: scoped to m.groupIdA only",
+    "AC-S5-3: early-return on null groupIdA or null pubkey",
+    "AC-S5-4: deliberate mismatch causes failure (manual verification, then reverted)"
+  ]
+}

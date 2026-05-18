@@ -1,0 +1,58 @@
+{
+  "module_name": "MarmotProvider",
+  "purpose": "Install three new read-only test-only window hooks (__notestrTestGroupEpoch, __notestrTestGroupMembers, __notestrTestPubkeyLeafCount) inside the existing gated useEffect in src/marmot/client.tsx, declare them in the ambient Window type, and expose thin page.evaluate wrappers in the e2e fixtures layer.",
+  "public_api": [
+    {
+      "name": "__notestrTestGroupEpoch",
+      "signature": "(groupIdStr: string) => number | null",
+      "description": "Returns Number(g.state.groupContext.epoch) for the group with the given idStr, or null if absent. bigint coerced via Number() to cross the Playwright serialization boundary."
+    },
+    {
+      "name": "__notestrTestGroupMembers",
+      "signature": "(groupIdStr: string) => string[] | null",
+      "description": "Returns getGroupMembers(g.state) as a sorted array of hex strings, or null if no group with that idStr is loaded."
+    },
+    {
+      "name": "__notestrTestPubkeyLeafCount",
+      "signature": "(groupIdStr: string, pubkeyHex: string) => number",
+      "description": "Returns getPubkeyLeafNodes(g.state, pubkeyHex).length. Returns 0 for unknown pubkeys or absent groups."
+    },
+    {
+      "name": "getGroupEpochHook",
+      "signature": "(page: Page, groupIdStr: string) => Promise<number | null>",
+      "description": "e2e/fixtures/two-party.ts wrapper: calls __notestrTestGroupEpoch via page.evaluate. Throws if hook not installed."
+    },
+    {
+      "name": "getGroupMembersHook",
+      "signature": "(page: Page, groupIdStr: string) => Promise<string[] | null>",
+      "description": "e2e/fixtures/two-party.ts wrapper: calls __notestrTestGroupMembers via page.evaluate. Throws if hook not installed."
+    },
+    {
+      "name": "getPubkeyLeafCountHook",
+      "signature": "(page: Page, groupIdStr: string, pubkeyHex: string) => Promise<number>",
+      "description": "e2e/fixtures/two-party.ts wrapper: calls __notestrTestPubkeyLeafCount via page.evaluate. Throws if hook not installed."
+    }
+  ],
+  "private_files": [
+    "src/marmot/client.tsx"
+  ],
+  "owned_data": [
+    "state.groups (read-only)"
+  ],
+  "dependencies_allowed": [
+    "@internet-privacy/marmot-ts (getGroupMembers, getPubkeyLeafNodes)",
+    "src/types/notestr-test-hooks.d.ts"
+  ],
+  "dependencies_forbidden": [
+    "e2e/ (no compile-time import from src/ to e2e/)"
+  ],
+  "external_ports": [
+    "window.__notestrTestGroupEpoch (runtime bridge only, no compile-time coupling)"
+  ],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "npx tsc --noEmit",
+    "make test"
+  ]
+}

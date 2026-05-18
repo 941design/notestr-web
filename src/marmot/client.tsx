@@ -14,8 +14,10 @@ import {
   MarmotClient,
   createKeyPackageRelayListEvent,
   deserializeApplicationData,
+  getGroupMembers,
   getNostrGroupIdHex,
   getPubkeyLeafNodeIndexes,
+  getPubkeyLeafNodes,
   isAdmin,
 } from "@internet-privacy/marmot-ts";
 import type {
@@ -564,6 +566,22 @@ export function MarmotProvider({
       return Array.from(slots);
     };
 
+    window.__notestrTestGroupEpoch = (groupId: string): number | null => {
+      const entry = state.groups.find((e) => e.idStr === groupId);
+      if (!entry) return null;
+      return Number(entry.state.groupContext.epoch);
+    };
+    window.__notestrTestGroupMembers = (groupId: string): string[] | null => {
+      const entry = state.groups.find((e) => e.idStr === groupId);
+      if (!entry) return null;
+      return getGroupMembers(entry.state).slice().sort();
+    };
+    window.__notestrTestPubkeyLeafCount = (groupId: string, pubkeyHex: string): number => {
+      const entry = state.groups.find((e) => e.idStr === groupId);
+      if (!entry) return 0;
+      return getPubkeyLeafNodes(entry.state, pubkeyHex).length;
+    };
+
     window.__notestrTestArmAutoInvite = async (siblingKpEvent) => {
       if (!state.client) return;
       // Only proceed if the synthetic event is authored by the current
@@ -594,6 +612,9 @@ export function MarmotProvider({
       delete window.__notestrTestResetSentRumors;
       delete window.__notestrTestForgetLeaf;
       delete window.__notestrTestPubkeyLeafIndexes;
+      delete window.__notestrTestGroupEpoch;
+      delete window.__notestrTestGroupMembers;
+      delete window.__notestrTestPubkeyLeafCount;
       delete window.__notestrTestForgottenSlots;
     };
   }, [pubkey, relays, state.client, state.groups]);

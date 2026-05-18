@@ -1,0 +1,33 @@
+{
+  "story_id": "S8",
+  "status": "done",
+  "final_outcome": "accepted",
+  "architect_skipped": true,
+  "completed_at": "2026-05-18T23:30:00Z",
+  "files_modified": [
+    "src/store/task-reducer.ts (flipped >= to > and reverted)",
+    "e2e/tests/property-tests.md (documentation appended)"
+  ],
+  "ac_outcomes": {
+    "AC-VAL-1-RR-1": "satisfied — task-reducer.ts:16 flipped from `>=` to `>`, make test-property invoked at default FAST_CHECK_NUM_RUNS=10000",
+    "AC-VAL-1-RR-2": "satisfied — counterexample appeared after 9 fast-check runs (wall-clock 21.92s, well within 60s budget). Shrunk 129 times to a pair of events with updatedAt = 1. Property: [A3] task.updated non-stale applies changes and preserves other fields. Got `expected ' ' to be '!'`.",
+    "AC-VAL-1-RR-3": "satisfied — git diff src/store/task-reducer.ts returns empty",
+    "AC-VAL-1-RR-4": "satisfied — documentation appended to e2e/tests/property-tests.md with seed, path, counterexample, wall-clock, and L3-scope follow-up note"
+  },
+  "counterexample": {
+    "seed": -1617746223,
+    "path": "8:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:1:0:0:0:0:0:0:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1",
+    "failing_property": "[A3] task.updated non-stale applies changes and preserves other fields",
+    "file": "src/store/task-reducer.property.test.ts:511",
+    "shrink_count": 129,
+    "wall_clock_to_first_failure_seconds": 21.92,
+    "got": "expected ' ' to be '!'"
+  },
+  "remediation_rounds": 0,
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "AC-VAL-1 was designed for the L1/L2 reducer-layer property tests, but the broader 'this epic broadens the L3 assertion surface' framing suggested S8 would also exercise the deferred L3 behavioral verifications (AC-S5-4, AC-A14-6, AC-C0-5, AC-S6-4, AC-S10-4). It does not — make test-property runs only L1/L2. The deferred L3 verifications still require a separate live Playwright run with the relay container up, which is a follow-up item.",
+    "surprised_by": "make test-property command runs only L1/L2; L3 is invoked via make e2e. This mismatch means the deferred 'verify once with a deliberate regression, then revert' ACs for stories S1/S2/S3/S5/S6/S7 are NOT covered by S8.",
+    "scope": "project_specific"
+  }
+}

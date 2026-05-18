@@ -1,0 +1,289 @@
+{
+  "epic_name": "property-tests-l3-completion",
+  "created_at": "2026-05-18T00:00:00Z",
+  "updated_at": "2026-05-18T00:00:00Z",
+  "total_stories": 8,
+  "story_order": ["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"],
+  "dependency_notes": "S1, S2, S3 are independent of each other and of S4 — any of the three may land first. S4 (test hooks) is pure infrastructure with no story dependency. S5, S6, S7 each depend on S4; S5 additionally depends on S1 because it rewrites the assertS5 body S1 authored. S8 is a manual one-shot that must run after all of S1–S7 have landed, as it exercises the full broadened assertion surface.",
+  "mock_resolution_plan": "This epic introduces no temporary mocks. All assertion fills and test infrastructure operate against the live browser state via window.__notestrTest* hooks. No mock-registry entries are created.",
+  "seams": [
+    {
+      "data": "Test hook interface: group epoch, members, and pubkey leaf count exposed from MarmotProvider to e2e layer",
+      "contract": {
+        "type_name": "NotestrTestHooksExtension",
+        "fields": [
+          { "name": "__notestrTestGroupEpoch", "type": "(groupIdStr: string) => number | null", "optional": true },
+          { "name": "__notestrTestGroupMembers", "type": "(groupIdStr: string) => string[] | null", "optional": true },
+          { "name": "__notestrTestPubkeyLeafCount", "type": "(groupIdStr: string, pubkeyHex: string) => number", "optional": true }
+        ],
+        "invariants": [
+          "All three hooks are installed only inside the isTestRuntime() gate in client.tsx",
+          "__notestrTestGroupEpoch returns Number(g.state.groupContext.epoch) or null if group absent",
+          "__notestrTestGroupMembers returns sorted hex pubkeys via getGroupMembers or null if absent",
+          "__notestrTestPubkeyLeafCount returns getPubkeyLeafNodes(g.state, pubkeyHex).length, 0 for unknown pubkeys",
+          "None of the three hooks mutate state"
+        ]
+      },
+      "source": {
+        "story": "S4",
+        "artifact": "src/marmot/client.tsx hook install block + src/types/notestr-test-hooks.d.ts declarations"
+      },
+      "intermediaries": [
+        {
+          "story": "S4",
+          "artifact": "e2e/fixtures/two-party.ts — getGroupMembersHook, getGroupEpochHook, getPubkeyLeafCountHook wrappers"
+        }
+      ],
+      "destination": {
+        "story": "S5",
+        "artifact": "assertC0 / assertS5 in e2e/tests/multi-user.property.spec.ts"
+      }
+    },
+    {
+      "data": "waitForDuration fixture method: collect relay events for a fixed duration without rejecting",
+      "contract": {
+        "type_name": "NdkSubscriberWaitForDuration",
+        "fields": [
+          { "name": "waitForDuration", "type": "(filter: NDKFilter, ms: number) => Promise<NDKEvent[]>" }
+        ],
+        "invariants": [
+          "Never rejects on timeout; always resolves with the array of events received",
+          "Closes the subscription before resolving",
+          "Collects events for exactly ms milliseconds using setTimeout"
+        ]
+      },
+      "source": {
+        "story": "S3",
+        "artifact": "e2e/fixtures/ndk-subscriber.ts — waitForDuration addition"
+      },
+      "destination": {
+        "story": "S3",
+        "artifact": "LgCommand.run and FdCommand.run in e2e/tests/multi-user.property.spec.ts"
+      }
+    }
+  ],
+  "stories": [
+    {
+      "id": "S1",
+      "name": "assert-s5-biconditional-partial",
+      "title": "assertS5 biconditional (partial, model-flag-based), scoped to current group",
+      "description": "Replace the positive-only assertS5 body with a full biconditional using m.memberA/m.memberB as truth and leafIndexesFor(...).length as the observable side, scoped to m.groupIdA. Both directions (member → leafCount >= 1; non-member → leafCount === 0) are enforced. Includes the early-return guard for null groupIdA / pubkeys.",
+      "acceptance_criteria": ["AC-S5-1", "AC-S5-2", "AC-S5-3", "AC-S5-4"],
+      "scope": {
+        "includes": [
+          "e2e/tests/multi-user.property.spec.ts"
+        ],
+        "excludes": [
+          "src/marmot/client.tsx",
+          "src/types/notestr-test-hooks.d.ts",
+          "e2e/fixtures/two-party.ts",
+          "e2e/fixtures/ndk-subscriber.ts",
+          "src/store/task-reducer.ts"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "status": "done",
+      "owning_module": "multi-user.property.spec.ts",
+      "creates_seam": false,
+      "lighter_path": false,
+      "notes": "S5 will later replace this body with the hook-based full biconditional (AC-S5-5). S1's model-flag-based form is the stable intermediate state until S4's hooks land. No new imports needed; leafIndexesFor already exists in the file."
+    },
+    {
+      "id": "S2",
+      "name": "assert-s7-last-switched-fill",
+      "title": "assertS7 fill via lastSwitched model field",
+      "description": "Extend ModelState with a lastSwitched field (initialised to null in constructor AND reset in model.reset()), populate it in SwCommand.run immediately before the switch, and implement assertS7 to read post-switch __notestrTestTasks and assert no task carries a groupId in lastSwitched.priorGroupIds. Remove the stale comment claiming the check lives in SwCommand.run.",
+      "acceptance_criteria": ["AC-S7-1", "AC-S7-2", "AC-S7-3", "AC-S7-4", "AC-S7-5"],
+      "scope": {
+        "includes": [
+          "e2e/tests/multi-user.property.spec.ts"
+        ],
+        "excludes": [
+          "src/marmot/client.tsx",
+          "src/types/notestr-test-hooks.d.ts",
+          "e2e/fixtures/two-party.ts",
+          "e2e/fixtures/ndk-subscriber.ts",
+          "src/store/task-reducer.ts"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "status": "done",
+      "owning_module": "multi-user.property.spec.ts",
+      "creates_seam": false,
+      "lighter_path": false,
+      "notes": "Architecture constraint (implementation note 6): SwCommand.run MUST capture priorGroupIds BEFORE the switch, not after. The lastSwitched field must be reset in BOTH the constructor and model.reset() per AC-S7-1 amendment."
+    },
+    {
+      "id": "S3",
+      "name": "a14-ndk-subscriber-wiring",
+      "title": "A14 wiring in LgCommand and FdCommand via openNdkSubscriber",
+      "description": "Replace the dead tasksBefore/tasksAfter capture-and-discard in LgCommand.run and FdCommand.run (last-leaf branch) with a real subscriber assertion using openNdkSubscriber. Add getNostrGroupIdHex helper to two-party.ts. Add waitForDuration(filter, ms) to ndk-subscriber.ts — a never-reject variant of waitForEvents. Wire the existing dead import, making it live.",
+      "acceptance_criteria": ["AC-A14-1", "AC-A14-2", "AC-A14-3", "AC-A14-4", "AC-A14-5", "AC-A14-6", "AC-A14-7", "AC-A14-8"],
+      "scope": {
+        "includes": [
+          "e2e/tests/multi-user.property.spec.ts",
+          "e2e/fixtures/two-party.ts",
+          "e2e/fixtures/ndk-subscriber.ts"
+        ],
+        "excludes": [
+          "src/marmot/client.tsx",
+          "src/types/notestr-test-hooks.d.ts",
+          "src/store/task-reducer.ts"
+        ]
+      },
+      "complexity": "medium",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "status": "done",
+      "owning_module": "ndk-subscriber.ts",
+      "creates_seam": true,
+      "consumes_seams": [],
+      "lighter_path": false,
+      "notes": "waitForDuration is a NEW method on NdkSubscriber — do NOT modify waitForEvents. The A14 assertion is wire-level (AC-A14-8): zero kind-445 events on the subscriber's connection in 2 seconds. FdCommand.run only applies in the leafCount === 1 (last-leaf) branch. ~65 LOC estimated."
+    },
+    {
+      "id": "S4",
+      "name": "test-hooks-epoch-members-leafcount",
+      "title": "Add three test hooks: __notestrTestGroupEpoch, __notestrTestGroupMembers, __notestrTestPubkeyLeafCount",
+      "description": "Declare the three new optional Window properties in src/types/notestr-test-hooks.d.ts. Install all three hooks in the single useEffect in src/marmot/client.tsx alongside the existing __notestrTestPubkeyLeafIndexes. Add getGroupMembersHook, getGroupEpochHook, and getPubkeyLeafCountHook wrappers to e2e/fixtures/two-party.ts. No assertion changes; pure infrastructure.",
+      "acceptance_criteria": ["AC-HOOK-1", "AC-HOOK-2", "AC-HOOK-3", "AC-HOOK-4", "AC-HOOK-5", "AC-HOOK-6", "AC-HOOK-7"],
+      "scope": {
+        "includes": [
+          "src/types/notestr-test-hooks.d.ts",
+          "src/marmot/client.tsx",
+          "e2e/fixtures/two-party.ts"
+        ],
+        "excludes": [
+          "e2e/tests/multi-user.property.spec.ts",
+          "e2e/fixtures/ndk-subscriber.ts",
+          "src/store/task-reducer.ts"
+        ]
+      },
+      "complexity": "medium",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "status": "done",
+      "owning_module": "MarmotProvider",
+      "creates_seam": true,
+      "consumes_seams": [],
+      "lighter_path": false,
+      "notes": "Critical import landmine: getGroupMembers and getPubkeyLeafNodes are NOT yet imported in client.tsx (only getPubkeyLeafNodeIndexes is). Both must be added to the @internet-privacy/marmot-ts import block at client.tsx:13-20 or tsc will fail. The epoch hook coerces bigint to number via Number(g.state.groupContext.epoch) — precision loss accepted per AC-HOOK-3. Two notestr-test-hooks.d.ts files exist (src/types/ and src/marmot/); only src/types/ is the target."
+    },
+    {
+      "id": "S5",
+      "name": "assert-c0-full-assert-s5-hooks",
+      "title": "assertC0 full settled-state equality + assertS5 hook-based full biconditional",
+      "description": "Extend assertC0 (without replacing its existing task-subset check) with members equality, epoch equality, and per-pubkey leaf-count equality using the Phase 2 hooks. Rewrite assertS5 body from the model-flag partial form (S1) to the hook-based full biconditional using getGroupMembersHook and getPubkeyLeafCountHook.",
+      "acceptance_criteria": ["AC-C0-1", "AC-C0-2", "AC-C0-3", "AC-C0-4", "AC-C0-5", "AC-S5-5"],
+      "scope": {
+        "includes": [
+          "e2e/tests/multi-user.property.spec.ts"
+        ],
+        "excludes": [
+          "src/marmot/client.tsx",
+          "src/types/notestr-test-hooks.d.ts",
+          "e2e/fixtures/two-party.ts",
+          "e2e/fixtures/ndk-subscriber.ts",
+          "src/store/task-reducer.ts"
+        ]
+      },
+      "complexity": "medium",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "status": "done",
+      "owning_module": "multi-user.property.spec.ts",
+      "creates_seam": false,
+      "consumes_seams": ["NotestrTestHooksExtension"],
+      "lighter_path": false,
+      "notes": "Depends on S4 (for the hooks) AND S1 (rewrites the assertS5 body S1 authored — same function, sequential ownership). AC-C0-1 is a preservation criterion: the existing task-subset check lines must remain intact."
+    },
+    {
+      "id": "S6",
+      "name": "assert-s6-epoch-monotonicity",
+      "title": "assertS6 epoch monotonicity + recordEpoch swap to real epoch hook",
+      "description": "Swap all 12 recordEpoch call sites in the L3 file from the groups.length proxy to __notestrTestGroupEpoch(page, groupId). Implement assertS6 to walk epochSequenceA and epochSequenceB asserting each sequence is non-decreasing. Handle null epoch returns by not pushing to the sequence. Remove the proxy readEpoch function if no callers remain.",
+      "acceptance_criteria": ["AC-S6-1", "AC-S6-2", "AC-S6-3", "AC-S6-4"],
+      "scope": {
+        "includes": [
+          "e2e/tests/multi-user.property.spec.ts"
+        ],
+        "excludes": [
+          "src/marmot/client.tsx",
+          "src/types/notestr-test-hooks.d.ts",
+          "e2e/fixtures/two-party.ts",
+          "e2e/fixtures/ndk-subscriber.ts",
+          "src/store/task-reducer.ts"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "status": "done",
+      "owning_module": "multi-user.property.spec.ts",
+      "creates_seam": false,
+      "consumes_seams": ["NotestrTestHooksExtension"],
+      "lighter_path": false,
+      "notes": "Architecture note 5 lists 12 recordEpoch call sites (lines 242, 281, 325, 377, 429, 481, 531, 580, 628, 674, 719, 767) — all must be migrated. The proxy readEpoch function and its comment (lines 209-218) become obsolete once all callers are swapped."
+    },
+    {
+      "id": "S7",
+      "name": "assert-s10-strict-equality",
+      "title": "assertS10 switch to getPubkeyLeafCountHook and assert strict equality",
+      "description": "Replace assertS10's toBeGreaterThanOrEqual(0) with a strict toBe equality between the DOM device-row count and getPubkeyLeafCountHook(r.pageA, m.groupIdA, m.pubkeyA). Add the null-guard early return when m.groupIdA or m.pubkeyA is null.",
+      "acceptance_criteria": ["AC-S10-1", "AC-S10-2", "AC-S10-3", "AC-S10-4"],
+      "scope": {
+        "includes": [
+          "e2e/tests/multi-user.property.spec.ts"
+        ],
+        "excludes": [
+          "src/marmot/client.tsx",
+          "src/types/notestr-test-hooks.d.ts",
+          "e2e/fixtures/two-party.ts",
+          "e2e/fixtures/ndk-subscriber.ts",
+          "src/store/task-reducer.ts"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "status": "done",
+      "owning_module": "multi-user.property.spec.ts",
+      "creates_seam": false,
+      "consumes_seams": ["NotestrTestHooksExtension"],
+      "lighter_path": false,
+      "notes": "~10 LOC. Single function rewrite. lighter_path is false because ac_complete fails — AC-S10-1 through AC-S10-4 lack MUST/MUST NOT normative form."
+    },
+    {
+      "id": "S8",
+      "name": "ac-val-1-rerun",
+      "title": "AC-VAL-1 re-run: manual counterexample validation on broadened assertion surface",
+      "description": "Manual one-shot: flip the >= to > at src/store/task-reducer.ts:16, invoke make test-property (FAST_CHECK_NUM_RUNS=10000), confirm a counterexample appears within 60 seconds containing at least one pair of events sharing an updatedAt value, then revert the change. Document the seed, counterexample text, and elapsed wall-clock in e2e/tests/property-tests.md.",
+      "acceptance_criteria": ["AC-VAL-1-RR-1", "AC-VAL-1-RR-2", "AC-VAL-1-RR-3", "AC-VAL-1-RR-4"],
+      "scope": {
+        "includes": [
+          "src/store/task-reducer.ts",
+          "e2e/tests/property-tests.md"
+        ],
+        "excludes": [
+          "src/marmot/client.tsx",
+          "src/types/notestr-test-hooks.d.ts",
+          "e2e/tests/multi-user.property.spec.ts",
+          "e2e/fixtures/two-party.ts",
+          "e2e/fixtures/ndk-subscriber.ts"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "status": "done",
+      "owning_module": "multi-user.property.spec.ts",
+      "creates_seam": false,
+      "lighter_path": false,
+      "notes": "This is a manual one-shot story. No architect implementation code is written. The src/store/task-reducer.ts edit is a deliberate temporary regression that MUST be reverted (AC-VAL-1-RR-3). The only durable artifact is the documentation entry in e2e/tests/property-tests.md. Run this only after S1–S7 have all landed."
+    }
+  ]
+}

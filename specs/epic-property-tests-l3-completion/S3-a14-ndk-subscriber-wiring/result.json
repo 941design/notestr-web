@@ -1,0 +1,47 @@
+{
+  "story_id": "S3",
+  "status": "done",
+  "final_outcome": "accepted_with_caveats",
+  "completed_at": "2026-05-18T22:00:00Z",
+  "caveats": [
+    "AC-A14-6 deliberate-regression behavioral verification deferred to S8 (same pattern as S1/S2). Implementation is structurally correct: waitForDuration resolves on timeout, filter narrows by #h tag, assertion fails on non-zero count.",
+    "Architect did one self-corrected remediation round to add `as NDKKind` casts on the `kinds: [445]` literal (NDKFilter.kinds is typed as NDKKind[]). Runtime semantics unchanged; relay accepts bare integer per NIP-01.",
+    "getNostrGroupIdHex lookup happens on the REMAINING actor's page rather than the leaving page, since the leaving page nulls its group state post-leave. Subscriber assertion semantics unchanged."
+  ],
+  "remediation_rounds": 1,
+  "files_created": [
+    "specs/epic-property-tests-l3-completion/S3-a14-ndk-subscriber-wiring/architecture.json",
+    "specs/epic-property-tests-l3-completion/S3-a14-ndk-subscriber-wiring/baseline.json",
+    "specs/epic-property-tests-l3-completion/S3-a14-ndk-subscriber-wiring/result.json"
+  ],
+  "files_modified": [
+    "e2e/fixtures/ndk-subscriber.ts",
+    "e2e/fixtures/two-party.ts",
+    "e2e/tests/multi-user.property.spec.ts",
+    "specs/epic-property-tests-l3-completion/S3-a14-ndk-subscriber-wiring/verification.json"
+  ],
+  "implementation_summary": "Added `waitForDuration(filter, ms)` to the NdkSubscriber interface and implementation — resolves after exactly `ms` milliseconds with all collected events, never rejects. Added `getNostrGroupIdHex(page, groupIdStr)` to two-party.ts. Wired both into LgCommand.run (unconditional A14 check) and FdCommand.run (leafCount===1 branch only). Removed dead tasksBefore/tasksAfter capture-and-discard blocks from both commands. Added NDKFilter and NDKKind imports to the test file.",
+  "tests_baseline": {
+    "files": 15,
+    "passing": 137
+  },
+  "tests_final": {
+    "files": 15,
+    "passing": 137
+  },
+  "type_check": {
+    "command": "npx tsc --noEmit",
+    "result": "pass — zero new errors introduced; two pre-existing errors in src/marmot/forget-device.test.ts are baseline noise"
+  },
+  "mocks_introduced": [],
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The NDKFilter.kinds type requires NDKKind[] not number[]; the numeric literal 445 fails assignment without `as NDKKind`. This was not called out in the spec reference or constraints, requiring one remediation round to add the import and cast.",
+    "surprised_by": "",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  }
+}

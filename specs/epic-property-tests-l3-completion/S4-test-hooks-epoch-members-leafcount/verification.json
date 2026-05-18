@@ -1,0 +1,116 @@
+{
+  "story_id": "S4",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S4-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-HOOK-1",
+      "question": "Does `src/types/notestr-test-hooks.d.ts` declare all three new optional Window properties — `__notestrTestGroupEpoch`, `__notestrTestGroupMembers`, `__notestrTestPubkeyLeafCount` — with the correct signatures? Show the declaration block. Confirm `tsc --noEmit` passes after the addition. Confirm the test exercising each hook wrapper in `two-party.ts` is not a pure mock-spy proxy."
+    },
+    {
+      "question_id": "VQ-S4-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-HOOK-2",
+      "question": "Are all three new hooks installed at the same site as `__notestrTestPubkeyLeafIndexes` (the single `useEffect` in `client.tsx:415–599`)? Show the install assignments and the matching cleanup deletions in the `return` block. Confirm no new `useEffect` was introduced and no new dependency was added to the existing effect's deps array."
+    },
+    {
+      "question_id": "VQ-S4-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-HOOK-3",
+      "question": "Does `__notestrTestGroupEpoch(idStr)` return `Number(g.state.groupContext.epoch)` — explicitly coercing from `bigint` — or `null` if no group with that `idStr` is loaded? Show (a) the coercion at the hook boundary, (b) that the return type declared in `notestr-test-hooks.d.ts` is `number | null`, and (c) a test confirming `null` is returned when the group is absent. Confirm that TypeScript `strict: true` does not flag an implicit bigint-to-number coercion (i.e. `Number()` is used, not bare assignment)."
+    },
+    {
+      "question_id": "VQ-S4-004",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-HOOK-4",
+      "question": "Does `__notestrTestGroupMembers(idStr)` return `getGroupMembers(g.state)` as a sorted array of hex strings, or `null` when the group is absent? Show (a) the call to `getGroupMembers`, (b) the sort applied to the result, and (c) that the return type in `notestr-test-hooks.d.ts` is `string[] | null`. Confirm a test covers both the found and absent-group paths. Confirm the test is not a pure mock-spy proxy."
+    },
+    {
+      "question_id": "VQ-S4-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-HOOK-5",
+      "question": "Does `__notestrTestPubkeyLeafCount(idStr, pubkeyHex)` return `getPubkeyLeafNodes(g.state, pubkeyHex).length` and return `0` (not `null`) for unknown pubkeys? Show (a) the call to `getPubkeyLeafNodes`, (b) the `.length` projection, and (c) the absent-group path that returns `0`. Confirm a test exercises the unknown-pubkey case and confirms `0` is returned."
+    },
+    {
+      "question_id": "VQ-S4-006",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-HOOK-6",
+      "question": "Do none of the three new hooks mutate `state.groups` or any other MarmotProvider state? Show that each hook body is a read-only expression (no `=` assignment to `g.state.*`, no `state.groups.push(...)`, no dispatch calls). Confirm `tsc --noEmit` passes and `make build` (production build) is unaffected — show the build output or CI status."
+    },
+    {
+      "question_id": "VQ-S4-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-HOOK-7",
+      "question": "Does `e2e/fixtures/two-party.ts` export `getGroupMembersHook`, `getGroupEpochHook`, and `getPubkeyLeafCountHook` as thin `page.evaluate(...)` wrappers, each throwing loudly when the corresponding hook is not installed on `window`? Show the wrapper bodies and compare them to the `leafIndexesFor` template (two-party.ts:399–414). Confirm a test exercises the throw path for at least one of the three wrappers."
+    },
+    {
+      "question_id": "VQ-S4-008",
+      "phase": "pre-impl",
+      "category": "GOTCHA",
+      "question": "`getGroupMembers` and `getPubkeyLeafNodes` are NOT currently imported in `src/marmot/client.tsx`. Only `getPubkeyLeafNodeIndexes` is. Before the hook bodies can reference these functions, both must be added to the `@internet-privacy/marmot-ts` import block at `client.tsx:13–20`. Show the updated import block. Show that `tsc --noEmit` FAILS before the import addition and passes after. This is a hard compile error if missed."
+    },
+    {
+      "question_id": "VQ-S4-009",
+      "phase": "pre-impl",
+      "category": "GOTCHA",
+      "question": "Two `notestr-test-hooks.d.ts` files exist: `src/types/notestr-test-hooks.d.ts` (canonical target) and `src/marmot/notestr-test-hooks.d.ts` (secondary copy). Which file does the install site at `client.tsx` actually reference? Show the tsconfig `include` / `typeRoots` configuration confirming that `src/types/notestr-test-hooks.d.ts` is the ambient declaration consumed at the install site, and that editing only `src/types/` is sufficient for the type to be visible."
+    },
+    {
+      "question_id": "VQ-S4-010",
+      "phase": "pre-impl",
+      "category": "GOTCHA",
+      "question": "`group.state.groupContext.epoch` is `bigint` in the `ts-mls` type system. `bigint` cannot cross the Playwright `page.evaluate` serialization boundary — it will be silently dropped or cause a runtime error. Show that `Number(g.state.groupContext.epoch)` is the exact coercion used at the hook boundary (not `.toString()`, not bare assignment), and that the return type seen by the e2e caller is `number | null` (not `bigint | null`). Show that TypeScript `strict: true` + `target: ES2022` accepts this coercion without error."
+    },
+    {
+      "question_id": "VQ-S4-011",
+      "phase": "pre-impl",
+      "category": "SCOPE",
+      "question": "After implementation, does `git diff --stat` show changes ONLY to `src/types/notestr-test-hooks.d.ts`, `src/marmot/client.tsx`, and `e2e/fixtures/two-party.ts`? The story explicitly excludes `e2e/tests/multi-user.property.spec.ts`, `e2e/fixtures/ndk-subscriber.ts`, and `src/store/task-reducer.ts`. Any modification to those files is a scope violation. Show the diff stat output."
+    },
+    {
+      "question_id": "VQ-S4-012",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `MarmotProvider` (the owning module for S4, `src/marmot/client.tsx`) be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? The three new hooks are installed inside the single `useEffect`; they are pure reads over `state.groups` via `marmot-ts` helpers. If S4 restructures the `useEffect` or adds a new `useEffect`, that is an architectural deviation from constraint 1 in `architecture.md`. Show that the `useEffect` deps array is unchanged after S4."
+    },
+    {
+      "question_id": "VQ-S4-013",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `MarmotProvider` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? Specifically: the boundary rule states production code (`src/`) never imports from `e2e/`. The new hooks expose MarmotProvider internals to the e2e layer — but only through `window.__notestrTest*` at runtime, not through compile-time imports. Confirm no `import from 'e2e/'` was introduced in `client.tsx` and that the one-directional boundary is preserved."
+    },
+    {
+      "question_id": "VQ-S4-014",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Is there e2e or integration test coverage that installs all three hooks via the real MarmotProvider and confirms each wrapper in `two-party.ts` returns the correct value for a known group? Does the test cover the absent-group null/0 return paths? Are the tests live (against the real hook install via the browser) rather than mocking `window.__notestrTest*` at the fixture level?"
+    },
+    {
+      "question_id": "VQ-S4-015",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the new code in `client.tsx` contain any TODO/FIXME/stub markers? Are the hook assignments written in the same style as the existing `__notestrTestPubkeyLeafIndexes` assignment (no extra abstraction layers)? Are there any dead variable declarations or unreachable branches introduced by this story?"
+    },
+    {
+      "question_id": "VQ-S4-P01",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "question": "The `getGroupMembers(entry.state)` call returns a `string[]` whose order is determined by ts-mls internals. The implementation uses `.slice().sort()` (alphabetical sort on hex strings). S5 and S6 callers that consume `getGroupMembersHook` must sort their expected arrays the same way. Does S5's `assertS5` sort its expected member set before comparing? If not, the assertion will be order-sensitive to ts-mls internal ordering — a fragile tie."
+    },
+    {
+      "question_id": "VQ-S4-P02",
+      "phase": "post-impl",
+      "category": "SCOPE",
+      "question": "The `src/marmot/notestr-test-hooks.d.ts` file noted in the story as a potential duplicate does not exist on disk (confirmed: `cat` returns FILE NOT FOUND). The canonical file at `src/types/notestr-test-hooks.d.ts` is the only one, so no mirroring was needed. Does the verifier confirm there is still no secondary `.d.ts` copy?"
+    }
+  ]
+}

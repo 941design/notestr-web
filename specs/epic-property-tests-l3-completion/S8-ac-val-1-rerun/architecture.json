@@ -1,0 +1,6 @@
+{
+  "story_id": "S8",
+  "decision": "manual_one_shot",
+  "architect_skipped": true,
+  "reason": "Manual one-shot: reducer flip, make test-property, document, revert. No architect implementation code is written."
+}

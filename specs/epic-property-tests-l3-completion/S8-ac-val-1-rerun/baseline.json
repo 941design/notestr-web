@@ -1,0 +1,5 @@
+{
+  "story_id": "S8",
+  "test_snapshot": "skipped",
+  "reason": "Manual one-shot story; baseline test count irrelevant. AC-VAL-1-RR-2 explicitly expects the run to fail under the deliberate regression."
+}

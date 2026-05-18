@@ -1,0 +1,124 @@
+{
+  "story_id": "S3",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S3-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-A14-1",
+      "question": "Does `LgCommand.run` open an `NdkSubscriber` on `[RELAY_URL]`, subscribe to `{ kinds: [445], \"#h\": [groupNostrIdHex] }`, call `waitForDuration(filter, 2000)`, and assert `events.length === 0`? Show (a) the production code block, (b) the `finally` block that closes the subscriber, and (c) a test or deliberate regression (e.g. keep kind-445 traffic flowing) that causes the assertion to fail with a non-zero count. Confirm the test is not a pure mock-spy proxy."
+    },
+    {
+      "question_id": "VQ-S3-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-A14-2",
+      "question": "Does `FdCommand.run` apply the subscription-wait assertion ONLY in the `leafCount === 1` (last-leaf) branch? Show (a) the branch condition, (b) the subscriber code path under that branch, and (c) evidence that the `leafCount > 1` branch retains its existing A10 check without a new subscription. Confirm a test exercises the last-leaf branch and the non-last-leaf branch independently."
+    },
+    {
+      "question_id": "VQ-S3-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-A14-3",
+      "question": "Is `getNostrGroupIdHex(page, groupIdStr)` added to `e2e/fixtures/two-party.ts`? Show (a) the function body: reads `__notestrTestGroups()`, finds the entry with matching `idStr`, returns `nostrGroupIdHex`, and (b) the throw path when the entry is not found. Confirm a test exercises both the found and not-found paths. Confirm the test is not a pure mock-spy proxy."
+    },
+    {
+      "question_id": "VQ-S3-004",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-A14-4",
+      "question": "Are the dead `tasksBefore`/`tasksAfter` capture-and-discard assignments at `LgCommand.run:329-340` and `FdCommand.run:384-389` removed? Show `git diff` of those line ranges confirming removal. Confirm no equivalent dead assignment was re-introduced elsewhere in either command."
+    },
+    {
+      "question_id": "VQ-S3-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-A14-5",
+      "question": "Is the `openNdkSubscriber` import at `multi-user.property.spec.ts:41` now live (removing it would break the build)? Show that a deliberate removal of the import causes a TypeScript/build error, or show that the import symbol is referenced in the compiled output. Confirm `tsc --noEmit` passes with the import present."
+    },
+    {
+      "question_id": "VQ-S3-006",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-A14-6",
+      "question": "Was a deliberate regression (e.g. comment out the leave commit so kind-445 traffic continues) applied during implementation to confirm the A14 assertion fails with a non-zero event count? Show evidence of the deliberate regression and that it was reverted before commit. Does the shrunk counterexample from fast-check clearly name the failing command?"
+    },
+    {
+      "question_id": "VQ-S3-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-A14-7",
+      "question": "Is `waitForDuration(filter: NDKFilter, ms: number): Promise<NDKEvent[]>` added to `e2e/fixtures/ndk-subscriber.ts` as a NEW method that NEVER rejects on timeout? Show (a) the method body using `setTimeout` to settle after `ms` milliseconds, (b) that it closes the subscription before resolving, and (c) a test confirming it resolves (not rejects) when the timeout elapses with zero events. Confirm `waitForEvents` is UNCHANGED — show a diff or grep confirming no lines in `waitForEvents` were modified."
+    },
+    {
+      "question_id": "VQ-S3-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-A14-8",
+      "question": "Does the architect understand and enforce the wire-level (not MLS-decrypt) semantics of AC-A14-8? Specifically: the assertion trusts strfry to honour `#h` tag filtering in REQ responses (NIP-01 standard); it does not attempt to decrypt kind-445 payloads or verify MLS epoch transitions. Show the code comment or documentation confirming this interpretation is embedded near the assertion. If a future epic needs the decryption-attempt form, the fixture must be extended rather than the current assertion modified."
+    },
+    {
+      "question_id": "VQ-S3-009",
+      "phase": "pre-impl",
+      "category": "GOTCHA",
+      "question": "`waitForEvents` rejects on timeout — using it for the 2-second settle would cause false failures when zero events arrive (the expected outcome). Show that the implementation calls `waitForDuration` and NOT `waitForEvents` at all A14 assertion sites. Show that no code path in `LgCommand.run` or `FdCommand.run` calls `waitForEvents` for the A14 check."
+    },
+    {
+      "question_id": "VQ-S3-010",
+      "phase": "pre-impl",
+      "category": "SCOPE",
+      "question": "After implementation, does `git diff --stat` show changes ONLY to `e2e/tests/multi-user.property.spec.ts`, `e2e/fixtures/two-party.ts`, and `e2e/fixtures/ndk-subscriber.ts`? The story explicitly excludes `src/marmot/client.tsx`, `src/types/notestr-test-hooks.d.ts`, and `src/store/task-reducer.ts`. Any modification to those files is a scope violation. Show the diff stat output."
+    },
+    {
+      "question_id": "VQ-S3-011",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `ndk-subscriber.ts` (the owning module for S3) be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? `waitForDuration` is a pure addition to the `NdkSubscriber` interface — it must not bleed any new dependency into the interface that callers in `multi-user.property.spec.ts` must accommodate. Does `waitForDuration` share the same NDK instance and `RELAY_URL` as the existing methods, or does it open a second connection?"
+    },
+    {
+      "question_id": "VQ-S3-012",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `ndk-subscriber.ts` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? Specifically: the `afterAll` in the property spec closes `contextA`/`contextB` at timeout boundary. Does `waitForDuration` tolerate 'Target closed' errors that may occur if the page context is torn down before the 2-second timeout elapses? Show the error-handling path or confirm the `finally` block is sufficient."
+    },
+    {
+      "question_id": "VQ-S3-013",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Is there end-to-end test coverage that: (a) a real `Lg` or `Fd` (last-leaf) command fires, the subscriber observes zero kind-445 events in 2 seconds, and the assertion passes; and (b) a deliberate regression causes a non-zero count and the assertion fails? Are both tests exercising the live relay at `ws://localhost:7777` in the e2e environment rather than mocking the NDK connection?"
+    },
+    {
+      "question_id": "VQ-S3-014",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the new code contain any TODO/FIXME/stub markers? Are there dead variable bindings (such as the removed `tasksBefore`/`tasksAfter`) fully deleted rather than commented out? Does the `finally` block in `LgCommand.run` / `FdCommand.run` for subscriber cleanup add no unnecessary try/catch wrapping beyond what is needed?"
+    },
+    {
+      "question_id": "VQ-S3-015",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does the `test.describe.serial` block title at `multi-user.property.spec.ts:962` remain exactly `[S5,S6,S7,S10,A7-A12,A14,C0]` after S3's edit? Changing the title is forbidden by AC-X-DESCRIBE-TITLE-1. Show `git diff` of that line."
+    },
+    {
+      "question_id": "VQ-S3-016",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "ac_id": "AC-A14-6",
+      "question": "AC-A14-6 (deliberate regression) is deferred to S8's AC-VAL-1 re-run, consistent with the story spec's explicit deferral note ('Behavioral verification deferred to S8, same as S1's AC-S5-4'). The implementation is structurally correct: waitForDuration resolves rather than rejects, the filter narrows to the group's nostrGroupIdHex via #h, and the expect(events.length).toBe(0) will fail with a non-zero count if the relay forwards kind-445 traffic after leave. S8 provides the live relay validation pass."
+    },
+    {
+      "question_id": "VQ-S3-017",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "LgCommand.run captures groupId and remainingPage BEFORE the model update nulls m.groupIdA/m.groupIdB, because the getNostrGroupIdHex call must target the still-loaded remaining member's page. Is this capture sequence correct for both actor='A' and actor='B' variants? Specifically: when actor='A', groupId=m.groupIdA! (before null), remainingPage=r.pageB — B still has the group; when actor='B', groupId=m.groupIdB! (before null), remainingPage=r.pageA — A still has the group. Confirm no edge case where both actors leave simultaneously invalidates this assumption."
+    },
+    {
+      "question_id": "VQ-S3-018",
+      "phase": "post-impl",
+      "category": "GOTCHA",
+      "question": "NDKFilter.kinds is typed as NDKKind[] in the installed ndk version, so the numeric literal 445 requires `as NDKKind` cast. Two sites were updated: LgCommand.run and FdCommand.run. Does the cast introduce any runtime risk (NDKKind is a branded number type; the relay accepts the bare integer 445 in REQ filters regardless)? Confirm tsc --noEmit passes cleanly on the three story files with no NEW errors vs the pre-existing forget-device.test.ts errors."
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "story_id": "S4",
+  "status": "done",
+  "final_outcome": "accepted",
+  "completed_at": "2026-05-18T22:30:00Z",
+  "caveats": [
+    "S4 __notestrTestGroupMembers returns sorted array via .slice().sort(). S5 must sort its expected arrays identically (e.g. via new Set comparison) to avoid spurious order-mismatch failures."
+  ],
+  "remediation_rounds": 0,
+  "files_created": [
+    "specs/epic-property-tests-l3-completion/S4-test-hooks-epoch-members-leafcount/architecture.json",
+    "specs/epic-property-tests-l3-completion/S4-test-hooks-epoch-members-leafcount/baseline.json",
+    "specs/epic-property-tests-l3-completion/S4-test-hooks-epoch-members-leafcount/result.json"
+  ],
+  "files_modified": [
+    "src/types/notestr-test-hooks.d.ts",
+    "src/marmot/client.tsx",
+    "e2e/fixtures/two-party.ts",
+    "specs/epic-property-tests-l3-completion/S4-test-hooks-epoch-members-leafcount/verification.json"
+  ],
+  "implementation_summary": "Added getGroupMembers and getPubkeyLeafNodes to the @internet-privacy/marmot-ts import block in client.tsx. Appended three window hook assignments (__notestrTestGroupEpoch, __notestrTestGroupMembers, __notestrTestPubkeyLeafCount) inside the existing gated useEffect at lines 415-599 — before the cleanup return. Added matching delete statements to the cleanup block. Declared all three hooks as optional Window properties in src/types/notestr-test-hooks.d.ts (appended to the existing interface Window block). Exported getGroupEpochHook, getGroupMembersHook, and getPubkeyLeafCountHook from e2e/fixtures/two-party.ts, mirroring the leafIndexesFor pattern (page.evaluate wrapper that throws loudly when the hook is absent).",
+  "test_counts": {
+    "baseline_tsc_errors": 2,
+    "final_tsc_errors": 2,
+    "note": "Both errors are pre-existing in src/marmot/forget-device.test.ts (S4 introduced zero new errors). Production build (make test) passes clean."
+  },
+  "mocks_introduced": [],
+  "ac_coverage": {
+    "AC-HOOK-1": "DONE — three new Window properties declared in src/types/notestr-test-hooks.d.ts",
+    "AC-HOOK-2": "DONE — all three installed inside the existing useEffect at lines 415-599, same site as __notestrTestPubkeyLeafIndexes, with matching cleanup deletions",
+    "AC-HOOK-3": "DONE — Number(entry.state.groupContext.epoch) coercion; returns null when group absent",
+    "AC-HOOK-4": "DONE — getGroupMembers(entry.state).slice().sort(); returns null when group absent",
+    "AC-HOOK-5": "DONE — getPubkeyLeafNodes(entry.state, pubkeyHex).length; returns 0 when group absent",
+    "AC-HOOK-6": "DONE — all hooks are read-only; tsc --noEmit introduces no new errors; make test passes",
+    "AC-HOOK-7": "DONE — three wrappers exported from two-party.ts, each throwing if hook not installed"
+  },
+  "retrospective": {
+    "skipped": true,
+    "reason": "clean_run"
+  }
+}

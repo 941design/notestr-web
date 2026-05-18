@@ -1,0 +1,11 @@
+{
+  "story_id": "S6",
+  "captured_at": "2026-05-18T00:00:00Z",
+  "baseline_commit": "c7ad8b7",
+  "tsc_errors_in_scope_file": 0,
+  "tsc_errors_pre_existing": 2,
+  "pre_existing_error_files": [
+    "src/marmot/forget-device.test.ts"
+  ],
+  "status": "BASELINE_CLEAN"
+}

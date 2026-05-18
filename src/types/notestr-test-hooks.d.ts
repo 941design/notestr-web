@@ -51,6 +51,12 @@ declare global {
     __notestrTestForgetLeaf?: (groupId: string, leafIndex: number) => Promise<void>;
     /** Test-only: list MLS leaf indexes belonging to the given pubkey in the loaded group. */
     __notestrTestPubkeyLeafIndexes?: (groupId: string, pubkeyHex: string) => number[];
+    /** Test-only: read the MLS epoch (coerced from bigint via Number()) for the group with the given idStr. Returns null if absent. */
+    __notestrTestGroupEpoch?: (groupIdStr: string) => number | null;
+    /** Test-only: read the sorted member pubkey set for a group. Returns null if absent. */
+    __notestrTestGroupMembers?: (groupIdStr: string) => string[] | null;
+    /** Test-only: count leaves belonging to a pubkey in a group. Returns 0 for unknown pubkey/group. */
+    __notestrTestPubkeyLeafCount?: (groupIdStr: string, pubkeyHex: string) => number;
     /**
      * Test-only: dump the MLS receive-pipeline trace buffer.
      *

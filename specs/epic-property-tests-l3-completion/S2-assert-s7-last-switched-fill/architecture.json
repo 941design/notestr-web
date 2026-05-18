@@ -1,0 +1,34 @@
+{
+  "module_name": "multi-user.property.spec.ts",
+  "purpose": "Extend ModelState with lastSwitched field and fill assertS7 to enforce identity-isolation invariant: after any Sw command, the post-switch context must not hold tasks belonging to groups the prior identity was a member of.",
+  "public_api": [],
+  "private_files": [
+    "e2e/tests/multi-user.property.spec.ts"
+  ],
+  "owned_data": [
+    "ModelState.lastSwitched: { context: ActorId; priorGroupIds: string[] } | null"
+  ],
+  "dependencies_allowed": [
+    "e2e/fixtures/two-party.ts",
+    "e2e/fixtures/ndk-subscriber.ts",
+    "e2e/fixtures/auth-helper.js",
+    "e2e/fixtures/auth-helper-b.js"
+  ],
+  "dependencies_forbidden": [
+    "src/marmot/client.tsx",
+    "src/types/notestr-test-hooks.d.ts",
+    "src/store/task-reducer.ts"
+  ],
+  "external_ports": [
+    "window.__notestrTestTasks (via RealSystem.getTasks — already exists)"
+  ],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "AC-S7-1: ModelState.lastSwitched initialised to null in constructor AND reset in model.reset()",
+    "AC-S7-2: SwCommand.run populates lastSwitched BEFORE the switch, capturing priorGroupIds",
+    "AC-S7-3: assertS7 reads post-switch __notestrTestTasks and asserts no task carries a groupId in priorGroupIds",
+    "AC-S7-4: when lastSwitched is null, assertS7 returns without asserting",
+    "AC-S7-5: stale comment removed from assertS7 body"
+  ]
+}

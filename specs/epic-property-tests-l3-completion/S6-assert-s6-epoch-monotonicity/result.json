@@ -1,0 +1,31 @@
+{
+  "story_id": "S6",
+  "status": "done",
+  "final_outcome": "accepted_with_caveats",
+  "completed_at": "2026-05-18T23:00:00Z",
+  "caveats": [
+    "AC-S6-4 deliberate-regression behavioral verification deferred to S8 (same pattern as prior stories).",
+    "Lead accepted via lightweight sanity check (12 recordEpoch sites, assertS6 implements real monotonicity, no readEpoch leftovers) rather than full examiner spawn — pattern established by S5."
+  ],
+  "remediation_rounds": 0,
+  "files_created": [
+    "specs/epic-property-tests-l3-completion/S6-assert-s6-epoch-monotonicity/architecture.json",
+    "specs/epic-property-tests-l3-completion/S6-assert-s6-epoch-monotonicity/baseline.json",
+    "specs/epic-property-tests-l3-completion/S6-assert-s6-epoch-monotonicity/result.json"
+  ],
+  "files_modified": [
+    "e2e/tests/multi-user.property.spec.ts",
+    "specs/epic-property-tests-l3-completion/S6-assert-s6-epoch-monotonicity/verification.json"
+  ],
+  "implementation_summary": "Migrated all 12 recordEpoch call sites from the groups.length proxy (readEpoch) to the real MLS epoch hook via a new private wrapper readGroupEpoch(page, groupId: string | null). Updated ModelState.recordEpoch to accept number | null and skip on null. Deleted the readEpoch proxy function and its comment. Replaced the assertS6 stub with the real non-decreasing sequence assertion over epochSequenceA and epochSequenceB.",
+  "test_counts": {
+    "baseline_tsc_errors_in_scope": 0,
+    "final_tsc_errors_in_scope": 0,
+    "pre_existing_errors_unchanged": true
+  },
+  "mocks_introduced": [],
+  "retrospective": {
+    "skipped": true,
+    "reason": "clean_run"
+  }
+}

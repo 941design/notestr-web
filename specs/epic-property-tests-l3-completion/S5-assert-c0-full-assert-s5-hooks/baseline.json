@@ -1,0 +1,6 @@
+{
+  "captured_at": "2026-05-18T00:00:00Z",
+  "tsc_errors": 2,
+  "tsc_error_files": ["src/marmot/forget-device.test.ts"],
+  "notes": "2 pre-existing TS errors in forget-device.test.ts (out of S5 scope). No errors in e2e/tests/multi-user.property.spec.ts or e2e/fixtures/two-party.ts."
+}

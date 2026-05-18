@@ -1,0 +1,47 @@
+{
+  "module_name": "ndk-subscriber",
+  "purpose": "Extends the NdkSubscriber fixture with a waitForDuration method that collects relay events for a fixed window without rejecting on timeout, enabling wire-level A14 assertions in LgCommand and FdCommand.",
+  "public_api": [
+    {
+      "name": "waitForDuration",
+      "signature": "(filter: NDKFilter, ms: number) => Promise<NDKEvent[]>",
+      "description": "Subscribes to the relay, collects events matching filter for exactly ms milliseconds via setTimeout, then resolves with all collected events. NEVER rejects. Closes the subscription before resolving."
+    },
+    {
+      "name": "getNostrGroupIdHex",
+      "signature": "(page: Page, groupIdStr: string) => Promise<string>",
+      "description": "Added to e2e/fixtures/two-party.ts. Reads window.__notestrTestGroups(), finds the entry with matching idStr, and returns its nostrGroupIdHex. Throws if not found."
+    }
+  ],
+  "private_files": [
+    "e2e/fixtures/ndk-subscriber.ts",
+    "e2e/fixtures/two-party.ts",
+    "e2e/tests/multi-user.property.spec.ts"
+  ],
+  "owned_data": [
+    "NDK instance lifecycle within openNdkSubscriber closure",
+    "activeSubscriptions Set within openNdkSubscriber closure"
+  ],
+  "dependencies_allowed": [
+    "@nostr-dev-kit/ndk",
+    "@playwright/test",
+    "e2e/fixtures/ndk-subscriber.ts",
+    "e2e/fixtures/two-party.ts"
+  ],
+  "dependencies_forbidden": [
+    "src/marmot/client.tsx",
+    "src/types/notestr-test-hooks.d.ts",
+    "src/store/task-reducer.ts"
+  ],
+  "external_ports": [
+    "ws://localhost:7777 (ephemeral e2e relay via NDK)"
+  ],
+  "events_emitted": [],
+  "events_consumed": [
+    "kind:445 Nostr events (MLS commits) filtered by #h tag"
+  ],
+  "test_targets": [
+    "tsc --noEmit (type contract for waitForDuration and getNostrGroupIdHex)",
+    "make test (unit suite baseline)"
+  ]
+}

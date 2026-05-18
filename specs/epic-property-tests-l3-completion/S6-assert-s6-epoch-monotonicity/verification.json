@@ -1,0 +1,95 @@
+{
+  "story_id": "S6",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S6-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-S6-1",
+      "question": "Does every `recordEpoch(actor, ...)` call site in the L3 file now pass the value returned by `__notestrTestGroupEpoch(actorPage, groupId)` rather than `(await __notestrTestGroups()).length` or any other proxy? Show the updated call at each of the 12 sites (lines 242, 281, 325, 377, 429, 481, 531, 580, 628, 674, 719, 767). A partial migration (any site still using the groups.length proxy) is a correctness failure. Show the diff confirming all 12 are updated."
+    },
+    {
+      "question_id": "VQ-S6-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-S6-2",
+      "question": "Does `assertS6` walk both `epochSequenceA` and `epochSequenceB` and assert each sequence is non-decreasing (`seq[i] >= seq[i-1]` for all `i >= 1`)? Show (a) the production loop/iteration code, (b) the comparison expression used, and (c) a test or deliberate regression (e.g. a forged decreasing epoch) that causes the assertion to fail. Confirm the test is not a pure mock-spy proxy."
+    },
+    {
+      "question_id": "VQ-S6-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-S6-3",
+      "question": "When `__notestrTestGroupEpoch` returns `null` (group not loaded), does `recordEpoch` skip the push to the sequence (no null values are pushed)? Show the guard code in `recordEpoch` and confirm a test exercises a scenario where the group is absent mid-run and the sequence still satisfies the monotonicity assertion over only the non-null observations. Confirm the test is not a pure mock-spy proxy."
+    },
+    {
+      "question_id": "VQ-S6-004",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-S6-4",
+      "question": "Was a deliberate regression (e.g. record a forged decreasing epoch in the sequence) applied during implementation to confirm the monotonicity assertion fails? Show evidence of the deliberate regression and that it was reverted before commit. Confirm the production assertion code would catch an actual epoch regression in a real property-test run."
+    },
+    {
+      "question_id": "VQ-S6-005",
+      "phase": "pre-impl",
+      "category": "GOTCHA",
+      "question": "The architecture document lists exactly 12 `recordEpoch` call sites: lines 242, 281, 325, 377, 429, 481, 531, 580, 628, 674, 719, 767. A partial migration leaves a mixed proxy/hook state where `epochSequenceA`/`epochSequenceB` contain heterogeneous values (groups.length integers alongside real epoch numbers), making the monotonicity assertion meaningless. Show a `grep -n 'recordEpoch'` or equivalent confirming exactly 12 call sites exist and all 12 have been updated. No residual proxy calls."
+    },
+    {
+      "question_id": "VQ-S6-006",
+      "phase": "pre-impl",
+      "category": "GOTCHA",
+      "question": "`LgCommand.run:325` records the OTHER actor's epoch (if `this.actor === 'A'` then records B's epoch, and vice versa) because the leaving actor's group is gone post-leave. The new hook calls at these leave-command call sites must therefore target the REMAINING actor's page and group ID, not the leaving actor's. Show that the 12-site migration preserves this actor-flip logic and does not accidentally read the leaving actor's (now-absent) group epoch."
+    },
+    {
+      "question_id": "VQ-S6-007",
+      "phase": "pre-impl",
+      "category": "SCOPE",
+      "question": "After implementation, does `git diff --stat` show changes ONLY to `e2e/tests/multi-user.property.spec.ts`? The story explicitly excludes `src/marmot/client.tsx`, `src/types/notestr-test-hooks.d.ts`, `e2e/fixtures/two-party.ts`, `e2e/fixtures/ndk-subscriber.ts`, and `src/store/task-reducer.ts`. Any modification to those files is a scope violation. Show the diff stat output."
+    },
+    {
+      "question_id": "VQ-S6-008",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `multi-user.property.spec.ts` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? S6 consumes `getGroupEpochHook` from `e2e/fixtures/two-party.ts` (declared seam `NotestrTestHooksExtension`). Does the implementation call the wrapper (correct) rather than calling `page.evaluate(window.__notestrTestGroupEpoch)` inline (boundary violation)? Show the import and call sites."
+    },
+    {
+      "question_id": "VQ-S6-009",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `multi-user.property.spec.ts` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? Once all 12 `recordEpoch` sites are migrated, the `readEpoch` proxy function (lines 209-218) and its comment become dead code. Does the implementation delete `readEpoch` entirely if it has no remaining callers? A dead function left in place is a code-hygiene violation. Show evidence of deletion or show a remaining caller if deletion was deferred."
+    },
+    {
+      "question_id": "VQ-S6-010",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Is there a test that exercises the full epoch-recording path: a property run fires several commands, epoch values are recorded via the real `getGroupEpochHook`, and `assertS6` passes on a non-decreasing sequence? Is there a complementary test (deliberate forged decrease) that confirms the assertion fails? Are the tests exercising the production assertion code rather than mocking the sequences?"
+    },
+    {
+      "question_id": "VQ-S6-011",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the new code contain any TODO/FIXME/stub markers? After deleting `readEpoch`, are there any dangling comments that reference the groups.length proxy or the old `readEpoch` function? Are there any new dead variable declarations left over from the migration?"
+    },
+    {
+      "question_id": "VQ-S6-012",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does the `test.describe.serial` block title at `multi-user.property.spec.ts:962` remain exactly `[S5,S6,S7,S10,A7-A12,A14,C0]` after S6's edit? Changing the title is forbidden by AC-X-DESCRIBE-TITLE-1. Show `git diff` of that line."
+    },
+    {
+      "question_id": "VQ-S6-013",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "The implementation introduces a thin private wrapper `readGroupEpoch(page, groupId: string | null)` inside the spec file to handle null groupIds at call sites without modifying `getGroupEpochHook`'s signature in two-party.ts. Does this wrapper correctly return null when groupId is null, and delegate to getGroupEpochHook when groupId is non-null? Confirm the wrapper is not exported and has no callers outside the spec file."
+    },
+    {
+      "question_id": "VQ-S6-014",
+      "phase": "post-impl",
+      "category": "GOTCHA",
+      "question": "In LgCommand, `remainingGroupId` is derived from `m.groupIdA` or `m.groupIdB` AFTER the model update clears the leaving actor's groupId. If the remaining actor is not a member (e.g. B never joined), `remainingGroupId` will be null, causing `readGroupEpoch` to return null and `recordEpoch` to skip. Confirm this behavior is correct per AC-S6-3 and does not mask a missing-epoch bug."
+    }
+  ]
+}

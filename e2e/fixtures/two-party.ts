@@ -232,6 +232,30 @@ export async function currentGroupId(page: Page): Promise<string> {
   return groups[groups.length - 1]!.idStr;
 }
 
+/**
+ * Read the Nostr group id hex for the group matching `groupIdStr` from the
+ * `__notestrTestGroups()` test hook.
+ *
+ * Used by A14 assertions to subscribe via `waitForDuration` with a filter on
+ * `#h: [groupNostrIdHex]`, verifying at the wire level that no kind-445
+ * events arrive after a leave/forget-last-leaf.
+ *
+ * Throws if the hook is absent or no group with the given `idStr` is found.
+ */
+export async function getNostrGroupIdHex(page: Page, groupIdStr: string): Promise<string> {
+  return page.evaluate((id) => {
+    const fn = window.__notestrTestGroups;
+    if (typeof fn !== "function") {
+      throw new Error("__notestrTestGroups hook not installed");
+    }
+    const entry = fn().find((g) => g.idStr === id);
+    if (!entry) {
+      throw new Error(`group not found: ${id}`);
+    }
+    return entry.nostrGroupIdHex;
+  }, groupIdStr);
+}
+
 /** True iff the worker's project is mobile (multi-context tests skip on mobile). */
 export function projectIsMobile(workerProject: { use: { isMobile?: boolean } }): boolean {
   return !!workerProject.use.isMobile;
@@ -410,5 +434,51 @@ export async function leafIndexesFor(
       return fn(groupId, pk);
     },
     { groupId: groupIdStr, pk: pubkeyHex },
+  );
+}
+
+/** Read the MLS epoch (number) for the given group. Returns null if the group is not loaded. */
+export async function getGroupEpochHook(
+  page: Page,
+  groupIdStr: string,
+): Promise<number | null> {
+  return page.evaluate((id) => {
+    const fn = window.__notestrTestGroupEpoch;
+    if (typeof fn !== "function") {
+      throw new Error("__notestrTestGroupEpoch is not installed");
+    }
+    return fn(id);
+  }, groupIdStr);
+}
+
+/** Read the sorted member pubkey array for the given group. Returns null if the group is not loaded. */
+export async function getGroupMembersHook(
+  page: Page,
+  groupIdStr: string,
+): Promise<string[] | null> {
+  return page.evaluate((id) => {
+    const fn = window.__notestrTestGroupMembers;
+    if (typeof fn !== "function") {
+      throw new Error("__notestrTestGroupMembers is not installed");
+    }
+    return fn(id);
+  }, groupIdStr);
+}
+
+/** Count MLS leaf nodes belonging to pubkeyHex in the given group. Returns 0 for unknown pubkeys or absent groups. */
+export async function getPubkeyLeafCountHook(
+  page: Page,
+  groupIdStr: string,
+  pubkeyHex: string,
+): Promise<number> {
+  return page.evaluate(
+    ({ id, pk }) => {
+      const fn = window.__notestrTestPubkeyLeafCount;
+      if (typeof fn !== "function") {
+        throw new Error("__notestrTestPubkeyLeafCount is not installed");
+      }
+      return fn(id, pk);
+    },
+    { id: groupIdStr, pk: pubkeyHex },
   );
 }

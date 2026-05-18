@@ -13,6 +13,19 @@ export interface NdkSubscriber {
     count: number,
     timeoutMs: number,
   ): Promise<NDKEvent[]>;
+  /**
+   * Subscribe to the relay with `filter`, collect events for exactly `ms`
+   * milliseconds, then resolve with all collected events. NEVER rejects on
+   * timeout — resolves with an empty array when nothing arrives.
+   *
+   * Wire-level interpretation (AC-A14-8): trusts the relay to honour `#h`
+   * tag filtering; does NOT attempt to decrypt kind-445 payloads or verify
+   * MLS epoch transitions. If a future epic needs decryption-attempt form,
+   * extend this fixture rather than modifying this method.
+   *
+   * Closes the subscription before resolving.
+   */
+  waitForDuration(filter: NDKFilter, ms: number): Promise<NDKEvent[]>;
   close(): Promise<void>;
 }
 
@@ -131,6 +144,31 @@ export async function openNdkSubscriber(
         subscription.on("close", () => {
           clearTimeout(timeout);
         });
+      });
+    },
+    waitForDuration(filter, ms) {
+      ensureOpen();
+      return new Promise<NDKEvent[]>((resolve) => {
+        const hasSince = filter.since != null;
+        const hasIdsFilter =
+          Array.isArray(filter.ids) && filter.ids.length > 0;
+        const filterWithSince: NDKFilter =
+          hasSince || hasIdsFilter
+            ? filter
+            : { ...filter, since: Math.floor(Date.now() / 1000) };
+
+        const events: NDKEvent[] = [];
+
+        const subscription = ndk.subscribe(filterWithSince, { closeOnEose: false });
+        activeSubscriptions.add(subscription);
+        subscription.on("event", (event: NDKEvent) => {
+          events.push(event);
+        });
+
+        setTimeout(() => {
+          stopSubscription(subscription);
+          resolve(events);
+        }, ms);
       });
     },
     async close() {

@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-05-18T00:00:00Z",
+  "test_suite": "make test",
+  "test_files": 15,
+  "tests_passing": 137,
+  "tests_failing": 0,
+  "pre_existing_dirty_files": ["BACKLOG.json"]
+}

@@ -1,0 +1,83 @@
+{
+  "story_id": "S7",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S7-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-S10-1",
+      "question": "Does `assertS10` read `getPubkeyLeafCountHook(r.pageA, m.groupIdA, m.pubkeyA)` and assert it equals `await r.pageA.locator('[data-testid=\"device-row\"]').count()` using strict `toBe` equality? Show (a) the call to `getPubkeyLeafCountHook`, (b) the DOM count locator, and (c) the `toBe` assertion. Confirm a test exercises a scenario where the counts match. Confirm the test is not a pure mock-spy proxy."
+    },
+    {
+      "question_id": "VQ-S7-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-S10-2",
+      "question": "Is the previous `expect(deviceRows).toBeGreaterThanOrEqual(0)` assertion removed from `assertS10`? Show `git diff` of the function confirming the `toBeGreaterThanOrEqual` expression is absent and replaced by the strict `toBe` equality. Confirm no equivalent vacuous assertion was introduced elsewhere in the function."
+    },
+    {
+      "question_id": "VQ-S7-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-S10-3",
+      "question": "When `m.groupIdA` or `m.pubkeyA` is `null`, does `assertS10` return early without throwing? Show the null guard and a test that calls `assertS10` with null inputs confirming it is a no-op. Confirm the test is not a pure mock-spy proxy."
+    },
+    {
+      "question_id": "VQ-S7-004",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-S10-4",
+      "question": "Was a deliberate UI regression (e.g. a stray `data-testid=\"device-row\"` element injected into the DOM) applied during implementation to confirm the strict equality assertion fails? Show evidence of the deliberate regression and that it was reverted before commit. Confirm the production assertion would catch a real DOM/hook divergence in a property-test run."
+    },
+    {
+      "question_id": "VQ-S7-005",
+      "phase": "pre-impl",
+      "category": "SCOPE",
+      "question": "S7 is approximately 10 LOC modifying a single function. After implementation, does `git diff --stat` show changes ONLY to `e2e/tests/multi-user.property.spec.ts`? The story explicitly excludes `src/marmot/client.tsx`, `src/types/notestr-test-hooks.d.ts`, `e2e/fixtures/two-party.ts`, `e2e/fixtures/ndk-subscriber.ts`, and `src/store/task-reducer.ts`. Any modification to those files is a scope violation. Show the diff stat output. Show the total lines changed to confirm the ~10 LOC estimate."
+    },
+    {
+      "question_id": "VQ-S7-006",
+      "phase": "pre-impl",
+      "category": "SCOPE",
+      "question": "S7 is a single-function rewrite. Has the implementation modified ONLY the `assertS10` function body and left all other functions in `multi-user.property.spec.ts` untouched? Show `git diff` confirming no hunks outside the `assertS10` function boundary were modified."
+    },
+    {
+      "question_id": "VQ-S7-007",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `multi-user.property.spec.ts` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? `assertS10` now consumes `getPubkeyLeafCountHook` from `e2e/fixtures/two-party.ts` (declared seam `NotestrTestHooksExtension`). Does the implementation call the wrapper (correct) rather than calling `page.evaluate(window.__notestrTestPubkeyLeafCount)` inline (boundary violation)? Show the import and call site."
+    },
+    {
+      "question_id": "VQ-S7-008",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `multi-user.property.spec.ts` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? `assertS10` checks both a hook value (`getPubkeyLeafCountHook`) and a DOM locator count. These are two different observable surfaces. Does the implementation call `quiesceFor` or equivalent before taking the DOM count to ensure the UI has settled? Or does the assertion accept that a race between UI render and hook state is possible? Show the ordering of operations."
+    },
+    {
+      "question_id": "VQ-S7-009",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Is there a test that exercises `assertS10` in the happy path: hook count equals DOM device-row count, assertion passes? Is there a test that exercises the deliberate-regression path: counts diverge, assertion fails? Are both tests using the production `assertS10` code rather than mocking the hook or the DOM locator?"
+    },
+    {
+      "question_id": "VQ-S7-010",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the rewritten `assertS10` contain any TODO/FIXME/stub markers? Is the removed `toBeGreaterThanOrEqual(0)` truly gone with no commented-out remnant? Does the null-guard use the same pattern as other assert functions in the file (e.g. `assertS5`'s early return) for consistency?"
+    },
+    {
+      "question_id": "VQ-S7-011",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does the `test.describe.serial` block title at `multi-user.property.spec.ts:962` remain exactly `[S5,S6,S7,S10,A7-A12,A14,C0]` after S7's edit? Changing the title is forbidden by AC-X-DESCRIBE-TITLE-1. Show `git diff` of that line."
+    },
+    {
+      "question_id": "VQ-S7-012",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "question": "The old assertS10 used `.catch(() => 0)` on the locator count, swallowing errors. The new implementation omits the catch. If the locator throws (e.g. page is detached), the error will propagate. Is this acceptable given the surrounding property-test harness, or should the call be wrapped?"
+    }
+  ]
+}

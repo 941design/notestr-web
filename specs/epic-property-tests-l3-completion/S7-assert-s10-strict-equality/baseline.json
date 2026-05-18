@@ -1,0 +1,7 @@
+{
+  "captured_at": "2026-05-18T00:00:00Z",
+  "test_files": 15,
+  "tests_passing": 137,
+  "tests_failing": 0,
+  "tsc_errors": "pre-existing, unrelated to S7 scope"
+}

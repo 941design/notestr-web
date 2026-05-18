@@ -1,0 +1,83 @@
+{
+  "story_id": "S8",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S8-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-VAL-1-RR-1",
+      "question": "Was `src/store/task-reducer.ts:16` manually edited from `>=` to `>` before invoking `make test-property`? Show a `git diff src/store/task-reducer.ts` (or equivalent) confirming the single-character mutation was applied. Confirm `make test-property` was invoked with `FAST_CHECK_NUM_RUNS=10000` (not a lower budget). Confirm this is understood as a deliberate temporary regression: the L1 reducer test is what catches this mutation, not an L3 browser test."
+    },
+    {
+      "question_id": "VQ-S8-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-VAL-1-RR-2",
+      "question": "Did a counterexample appear within 60 seconds of invoking `make test-property`? Show the shrunk counterexample output from fast-check confirming it contains an event sequence with at least one pair of events sharing an `updatedAt` value. If the counterexample took longer than 60 seconds or did not appear, document the actual elapsed time and the explanation."
+    },
+    {
+      "question_id": "VQ-S8-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-VAL-1-RR-3",
+      "question": "Was the `>=` to `>` mutation in `src/store/task-reducer.ts` reverted before any code was committed? Show `git diff src/store/task-reducer.ts` returning empty (no diff) after the revert. This is a mandatory step — committing the mutated reducer is a production regression that must not be shipped. Confirm that `git status` shows `src/store/task-reducer.ts` as unmodified."
+    },
+    {
+      "question_id": "VQ-S8-004",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-VAL-1-RR-4",
+      "question": "Is a note appended to `e2e/tests/property-tests.md` capturing the fast-check seed, the counterexample text, and the elapsed wall-clock to first failure? Show the appended content. The note must be self-contained: a reader must be able to reproduce the counterexample using `FAST_CHECK_SEED=<value>` and `FAST_CHECK_PATH=<value>` without the commit context."
+    },
+    {
+      "question_id": "VQ-S8-005",
+      "phase": "pre-impl",
+      "category": "GOTCHA",
+      "question": "S8 is a manual one-shot story — no architect implementation code is written (no new functions, no new types, no new test logic). The only durable artifact is the documentation entry in `e2e/tests/property-tests.md`. Has the architect understood that this story's sole purpose is validation of the full broadened assertion surface assembled by S1–S7, and that the 'implementation' is a run-and-document exercise, not a code change? Show that the only file changed in the final commit is `e2e/tests/property-tests.md`."
+    },
+    {
+      "question_id": "VQ-S8-006",
+      "phase": "pre-impl",
+      "category": "GOTCHA",
+      "question": "S8 MUST run after all of S1–S7 have landed. Has the architect confirmed that all 7 prerequisite stories are merged before executing the `make test-property` mutation run? Running S8's mutation against a baseline that lacks S1–S7 assertions would yield a counterexample from a narrower assertion surface and would not validate the full broadened suite. Show the git log confirming all prerequisite stories are present in the branch."
+    },
+    {
+      "question_id": "VQ-S8-007",
+      "phase": "pre-impl",
+      "category": "SCOPE",
+      "question": "After completing S8, does `git diff --stat` show changes ONLY to `e2e/tests/property-tests.md` and (optionally) `src/store/task-reducer.ts` with an empty diff (reverted)? The story explicitly excludes `src/marmot/client.tsx`, `src/types/notestr-test-hooks.d.ts`, `e2e/tests/multi-user.property.spec.ts`, `e2e/fixtures/two-party.ts`, and `e2e/fixtures/ndk-subscriber.ts`. Any modification to those files is a scope violation. Show the diff stat output."
+    },
+    {
+      "question_id": "VQ-S8-008",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `multi-user.property.spec.ts` (the owning module, even though S8 does not modify it) be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? S8 validates that the complete assertion surface assembled by S1–S7 catches a regression in the task-reducer. Does the counterexample output identify which assertion (assertC0, assertS5, assertS6, assertS7, assertS10, or A14) first fails? Document the failing assertion in the `property-tests.md` note."
+    },
+    {
+      "question_id": "VQ-S8-009",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `multi-user.property.spec.ts` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? The `make test-property` command runs L1+L2 only (FAST_CHECK_NUM_RUNS=10000 for vitest). It does NOT run L3 (browser Playwright). The mutation in `task-reducer.ts` is caught by the L1 reducer property test, not by any L3 assertion. Has the architect understood this scoping? If the intent was to validate L3 assertions under the mutation, what additional command would be needed (and is it within scope of this story)?"
+    },
+    {
+      "question_id": "VQ-S8-010",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "S8 is itself the test. Is there evidence that `make test-property` was actually run (not simulated) — e.g. a screenshot of the terminal output, the raw fast-check output block in `property-tests.md`, or a CI log link? The validation is only meaningful if the run was real."
+    },
+    {
+      "question_id": "VQ-S8-011",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Is the `e2e/tests/property-tests.md` entry well-formatted and self-contained? Does it include: (1) the date, (2) the `FAST_CHECK_SEED` value, (3) the `FAST_CHECK_PATH` value, (4) the shrunk counterexample text verbatim, (5) the elapsed wall-clock to first failure, and (6) a note confirming the reducer revert? A reader unfamiliar with the run must be able to reproduce the counterexample from this entry alone."
+    },
+    {
+      "question_id": "VQ-S8-012",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "The `task-reducer.ts` mutation changes the LWW tie-breaking guard from `>=` to `>`. This means two events with identical `updatedAt` timestamps could both be applied — a state-consistency vulnerability in multi-device scenarios. S8's revert removes this vulnerability. Has the architect confirmed the revert was complete (no residual `>` in the guard, no other tie-breaking guard modified), and that `make test` passes cleanly post-revert?"
+    }
+  ]
+}

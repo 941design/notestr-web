@@ -1,0 +1,29 @@
+{
+  "module_name": "multi-user.property.spec.ts",
+  "purpose": "Extend assertC0 with full settled-state equality checks (members, epoch, per-pubkey leaf counts) and rewrite assertS5 from the partial model-flag-based biconditional (S1) to the hook-based full biconditional (S5).",
+  "public_api": [],
+  "private_files": [
+    "e2e/tests/multi-user.property.spec.ts"
+  ],
+  "owned_data": [],
+  "dependencies_allowed": [
+    "e2e/fixtures/two-party.ts"
+  ],
+  "dependencies_forbidden": [
+    "src/marmot/client.tsx",
+    "src/types/notestr-test-hooks.d.ts",
+    "e2e/fixtures/ndk-subscriber.ts",
+    "src/store/task-reducer.ts"
+  ],
+  "external_ports": [
+    "getGroupMembersHook(page, groupIdStr) → Promise<string[] | null>",
+    "getGroupEpochHook(page, groupIdStr) → Promise<number | null>",
+    "getPubkeyLeafCountHook(page, groupIdStr, pubkeyHex) → Promise<number>"
+  ],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "assertC0: AC-C0-1 (preservation), AC-C0-2 (members equality), AC-C0-3 (epoch equality), AC-C0-4 (per-pubkey leaf-count equality)",
+    "assertS5: AC-S5-5 (hook-based full biconditional)"
+  ]
+}

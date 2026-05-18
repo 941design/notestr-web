@@ -1,0 +1,108 @@
+{
+  "explored_at": "2026-05-18T18:31:35Z",
+  "focuses": ["similar-features", "architecture", "testing-and-conventions"],
+
+  "similar_features": {
+    "relevant_files": [
+      {"path": "e2e/tests/multi-user.property.spec.ts", "purpose": "Primary edit target. All Phase-1 and Phase-2 assertion fills land here. 13 Command classes (225–824), 5 assert* functions (830–909), recordEpoch call sites (12), readEpoch proxy (209–218), fc.assert invocation (1005–1046)."},
+      {"path": "src/marmot/client.tsx", "purpose": "Install site for 3 new hooks (line 446 area). useEffect block 415–599 installs all MarmotProvider hooks; cleanup at 584–598 must be extended. getGroupMembers and getPubkeyLeafNodes NOT yet imported here — must be added."},
+      {"path": "src/types/notestr-test-hooks.d.ts", "purpose": "TypeScript declarations for all window.__notestrTest* hooks. Append three new optional Window properties. Existing pattern: sync return, primitive args, null on absent (except __notestrTestForgetLeaf/ArmAutoInvite which are async)."},
+      {"path": "e2e/fixtures/two-party.ts", "purpose": "Canonical location for page.evaluate wrappers. leafIndexesFor (399–414) is the template for getGroupMembersHook/getGroupEpochHook/getPubkeyLeafCountHook. getNostrGroupIdHex (AC-A14-3) lands here too."},
+      {"path": "e2e/fixtures/ndk-subscriber.ts", "purpose": "NdkSubscriber fixture. waitForDuration (AC-A14-7) absent — must be added. waitForEvents (100–135) rejects on timeout — wrong primitive for the 2s settle."},
+      {"path": "specs/epic-property-based-invariants/acceptance-criteria.md", "purpose": "Parent epic AC. AC-FS-5..12 are the contracts this epic strengthens. Every new assertion references one of these by ID."}
+    ],
+    "key_patterns": [
+      {"pattern": "Test hook install in useEffect gated by isTestRuntime()", "where": "src/marmot/client.tsx:415–599", "applicability": "All 3 new hooks: window.__notestrTest* = ...; cleanup return deletes each. Deps [pubkey, relays, state.client, state.groups] already cover the data the hooks read."},
+      {"pattern": "Hook resolves group by idStr string lookup", "where": "client.tsx:446–449", "applicability": "state.groups.find(e => e.idStr === groupId); null on absent matches AC-HOOK-3/4 semantics."},
+      {"pattern": "page.evaluate wrapper with destructured args + loud throw on missing hook", "where": "e2e/fixtures/two-party.ts:399–414", "applicability": "All new wrappers follow this exact shape (AC-HOOK-7)."},
+      {"pattern": "waitForEvents REJECTS on timeout — never use for fixed-duration waits", "where": "e2e/fixtures/ndk-subscriber.ts:100–135", "applicability": "S3/A14 must add waitForDuration; never reuse waitForEvents for the 2s settle."},
+      {"pattern": "epoch is bigint; coerce to number via Number()", "where": "client.tsx:208–218 (Map<string, bigint>), :465 .toString()", "applicability": "Hook returns Number(g.state.groupContext.epoch); bigint cannot cross page.evaluate serialization boundary."},
+      {"pattern": "recordEpoch currently uses groups.length proxy via readEpoch", "where": "multi-user.property.spec.ts:209–218; call sites 242, 281, 325, 377, 429, 481, 531, 580, 628, 674, 719, 767", "applicability": "S6 must swap each call site to the new __notestrTestGroupEpoch hook; this is the prerequisite for assertS6 monotonicity becoming meaningful."},
+      {"pattern": "fc.asyncModelRun resets ModelState per run, not the browser/bunker", "where": "multi-user.property.spec.ts:1013–1017", "applicability": "lastSwitched (S2's new field) must be reset to null per-run; cross-run MLS state pollution is real and is why assertS5 is scoped to m.groupIdA."}
+    ],
+    "existing_helpers_to_reuse": [
+      "leafIndexesFor (two-party.ts:399)",
+      "openNdkSubscriber (ndk-subscriber.ts:25) — currently dead import at L3:41",
+      "quiesceFor / switchIdentity / getPubkeyHex / settle / forgetLeafByIndex (two-party.ts)",
+      "getPubkeyLeafNodeIndexes (client.tsx:18, imported) — leaf-count hook calls same function and returns .length",
+      "getNostrGroupIdHex from client.tsx:17 (already imported)"
+    ],
+    "missing_imports_in_client_tsx": [
+      "getGroupMembers — used in detached-groups.ts, device-sync.ts; must add to client.tsx import block (13–20)",
+      "getPubkeyLeafNodes — used in DeviceList.tsx; must add to client.tsx import block"
+    ]
+  },
+
+  "architecture": {
+    "paradigm": "Package-by-feature React (Context Provider) + functional core (marmot-ts / ts-mls) + e2e Playwright fixtures. MarmotProvider owns all MLS state and test-hook registrations. Production code has zero knowledge of e2e. e2e communicates with the browser exclusively through window.__notestrTest* hooks (via page.evaluate) and Playwright DOM locators.",
+    "module_map": [
+      {"name": "MarmotProvider", "purpose": "React Context Provider; owns MarmotClient lifecycle and state.groups; installs all window.__notestrTest* hooks inside a useEffect gated by isTestRuntime()", "location": "src/marmot/client.tsx:120–619", "owned_data": "state.groups (MarmotGroup[]), state.client, pubkey, relays"},
+      {"name": "marmot-ts helpers", "purpose": "Pure functions over ClientState: getGroupMembers, getPubkeyLeafNodes, getPubkeyLeafNodeIndexes", "location": "node_modules/@internet-privacy/marmot-ts/dist/core/group-members.d.ts", "owned_data": "stateless"},
+      {"name": "notestr-test-hooks.d.ts", "purpose": "Ambient Window type declarations for every __notestrTest* hook", "location": "src/types/notestr-test-hooks.d.ts", "owned_data": "type-only"},
+      {"name": "two-party.ts", "purpose": "Page-level fixture wrappers. Each helper is one page.evaluate over a window.__ hook with a loud throw on missing hook.", "location": "e2e/fixtures/two-party.ts", "owned_data": "stateless"},
+      {"name": "ndk-subscriber.ts", "purpose": "Out-of-band NDK relay subscriber for A14. Hardcoded User-B private key. Connects to RELAY_URL (ws://localhost:7777).", "location": "e2e/fixtures/ndk-subscriber.ts", "owned_data": "NDK instance + Set<NDKSubscription>"},
+      {"name": "multi-user.property.spec.ts", "purpose": "L3 full-stack property test. ModelState, RealSystem, 13 Command classes, invariant assertions.", "location": "e2e/tests/multi-user.property.spec.ts", "owned_data": "ModelState per run; pageA/pageB are beforeAll-scoped"}
+    ],
+    "boundary_rules": [
+      "Production code (src/) never imports from e2e/. The boundary is one-directional.",
+      "Test hooks are installed only when isTestRuntime() is true (NEXT_PUBLIC_E2E=1 or NODE_ENV=test). Never installed in production builds.",
+      "e2e talks to the browser exclusively through window.__notestrTest* hooks (via page.evaluate) or Playwright DOM locators.",
+      "All hooks installed in the same useEffect share one closure over state.groups, state.client, pubkey. Installing a new hook in this block adds no new dependencies.",
+      "marmot-ts pure helpers (getGroupMembers, etc.) are importable freely in src/."
+    ],
+    "seams": [
+      "Group lookup by idStr: state.groups.find(e => e.idStr === groupId) — pattern at client.tsx:441–450; reused by all three new hooks.",
+      "Epoch path: group.state.groupContext.epoch (bigint) → coerce via Number() at hook boundary (AC-HOOK-3).",
+      "Property-test data flow: fc.commands → Command.run → two-party.ts helper → page.evaluate(window.__hook) → state.groups → marmot-ts pure helper → serialized return → expect().",
+      "A14 data flow: openNdkSubscriber(relays) → subscriber.waitForDuration(filter, 2000) → expect(events.length).toBe(0). Wire-level observation, not MLS-decrypt."
+    ]
+  },
+
+  "testing_and_conventions": {
+    "test_commands": {
+      "make test": "vitest run (unit only) + verify-static-export.mjs — L1/L2 property tests at default budget, no browser",
+      "make test-property": "FAST_CHECK_NUM_RUNS=10000 vitest L1+L2 only. L3 is NOT included. S8's `>=` → `>` mutation is a reducer bug caught by L1.",
+      "make e2e": "make e2e-up + npx playwright test — boots strfry ephemeral relay on port 7777, then full Playwright suite including L3. AC-X-CI-1 envelope: TIMEOUT=600000ms (10 min) at property.spec.ts:49.",
+      "tsc --noEmit": "No make target. Run `npx tsc --noEmit` directly or via `make build` (which delegates to next build with TS plugin)."
+    },
+    "conventions": [
+      "L3 numRuns=20, maxCommands=10 hardcoded at property.spec.ts:1040, :1007 — do not increase (out of scope).",
+      "FAST_CHECK_NUM_RUNS env var applies to L1/L2 only; L3's numRuns is hardcoded.",
+      "Counterexample repro via FAST_CHECK_SEED + FAST_CHECK_PATH (property-tests.md:88–111). Do not commit seeds as snapshot tests.",
+      "S8 documentation: append seed, counterexample, wall-clock to e2e/tests/property-tests.md (AC-VAL-1-RR-4).",
+      "Relay-state-independence (memory/project): no test asserts relay state; no test starts/stops/wipes relay. assertS5 scoping to m.groupIdA is a direct consequence of this principle.",
+      "pinClientSlot called inside authenticate() (two-party.ts:36–46, 66–69) — every e2e auth pins the slot. Property spec inherits this.",
+      "Between fc.commands runs only model.reset() is called — no clearAppState, no relay reset. Cross-run MLS state pollution is real and addressed by scoping.",
+      "test.describe.serial title at L3:962 is the invariant manifest: `[S5,S6,S7,S10,A7-A12,A14,C0]` — unchanged after this epic (AC-X-DESCRIBE-TITLE-1)."
+    ],
+    "tooling": {
+      "playwright": "@playwright/test ^1.58.2",
+      "fast_check": "^3.23.0",
+      "vitest": "^4.1.0",
+      "typescript": "5.9.3, strict:true, target:ES2022 — bigint assignment to number errors without explicit coercion. ES2022 supports bigint literals natively.",
+      "ts_noUnusedLocals": "false — dead openNdkSubscriber import does not error today; AC-A14-5 requires the import to become live, not be removed.",
+      "relay": "strfry via dockurr/strfry:latest, tmpfs at /app/strfry-db. No server-side kind/tag filter plugin — #h filtering is REQ-level (NIP-01 standard).",
+      "strfry_tag_filter_assumption": "AC-A14-8 documents the wire-level interpretation: the test trusts strfry honours #h tag filtering in REQ responses (standard NIP-01). No write-policy plugin gates kind-445 server-side.",
+      "RELAY_URL": "ws://localhost:7777 (property.spec.ts:47, matches docker-compose.e2e.yml:4)"
+    },
+    "forbidden_files": {
+      "description": "AC-X-NO-EXAMPLE-DELETION-COMP-1: no e2e/tests/*.spec.ts is deleted, renamed, or .skip-ed.",
+      "exemptions_for_this_epic": [
+        "e2e/tests/multi-user.property.spec.ts (primary target)",
+        "e2e/tests/property-tests.md (S8 completion note)"
+      ]
+    }
+  },
+
+  "consolidated_gotchas": [
+    "getGroupMembers and getPubkeyLeafNodes NOT imported in src/marmot/client.tsx — S4 must add to the @internet-privacy/marmot-ts import.",
+    "waitForEvents (ndk-subscriber.ts:100) REJECTS on timeout — S3 cannot use it for the 2s settle. waitForDuration must be added.",
+    "groupContext.epoch is bigint — cannot cross page.evaluate serialization. Coerce via Number() at the hook boundary.",
+    "assertS5 negative direction is unsafe without scoping to m.groupIdA — cross-run pubkey-B leaves on older groups will trigger false positives.",
+    "SwCommand.run currently calls `void tasks` at line 818 — the real S7 assertion is absent. lastSwitched must be a new ModelState field that S2 populates BEFORE the switch (priorGroupIds must be captured pre-switch).",
+    "LgCommand.run:325 recordEpoch records the OTHER actor's epoch (this.actor === 'A' ? 'B' : 'A') — intentional (leaving actor's group is gone post-leave). New hook calls must target the remaining actor's page.",
+    "SUBSCRIBER_PRIVATE_KEY in ndk-subscriber.ts:22 is User B's rotated key — kept in sync with global-setup.ts and auth-helper-b.ts. The A14 subscriber observes on the leaving side's relay subscription; wire-level interpretation per AC-A14-8.",
+    "afterAll closes contextA/B (property.spec.ts:958) — any helper that wraps a new hook must tolerate 'Target closed' errors near timeout boundary.",
+    "S5 depends on S1 (rewrites the assertS5 body S1 authored) — sequencing is enforced by the planner."
+  ]
+}

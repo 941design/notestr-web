@@ -1,0 +1,31 @@
+{
+  "story_id": "S5",
+  "status": "done",
+  "final_outcome": "accepted_with_caveats",
+  "completed_at": "2026-05-18T22:45:00Z",
+  "caveats": [
+    "AC-C0-5 deliberate-divergence behavioral verification deferred to S8 (same pattern as prior stories). Implementation is structurally sound."
+  ],
+  "remediation_rounds": 0,
+  "files_created": [
+    "specs/epic-property-tests-l3-completion/S5-assert-c0-full-assert-s5-hooks/architecture.json",
+    "specs/epic-property-tests-l3-completion/S5-assert-c0-full-assert-s5-hooks/baseline.json",
+    "specs/epic-property-tests-l3-completion/S5-assert-c0-full-assert-s5-hooks/result.json"
+  ],
+  "files_modified": [
+    "e2e/tests/multi-user.property.spec.ts",
+    "specs/epic-property-tests-l3-completion/S5-assert-c0-full-assert-s5-hooks/verification.json"
+  ],
+  "implementation_summary": "Extended assertC0 with three new settled-state equality checks (AC-C0-2: members set equality via new Set; AC-C0-3: epoch equality; AC-C0-4: per-pubkey leaf-count equality across A and B). All three checks are guarded by `if (!m.groupIdA || !m.groupIdB) return` and appended after the unchanged task-subset assertions (AC-C0-1 preservation). Replaced assertS5 body (S1's partial model-flag-based form) with the hook-based full biconditional (AC-S5-5): uses getGroupMembersHook as production truth source and getPubkeyLeafCountHook for leaf count, asserting `membersA.includes(p) === (leafCount >= 1)` for every p in {pubkeyA, pubkeyB}. Added getGroupEpochHook, getGroupMembersHook, and getPubkeyLeafCountHook to the import block from ../fixtures/two-party.js.",
+  "test_counts": {
+    "baseline_tsc_errors": 2,
+    "final_tsc_errors": 2,
+    "new_errors_introduced": 0
+  },
+  "mocks_introduced": [],
+  "ac_c0_5_deliberate_divergence_note": "AC-C0-5 behavioral verification deferred to S8 per spec. The assertC0 implementation uses strict `expect(epochA).toBe(epochB)` and `expect(lcA).toBe(lcB)` — any divergence in these values would cause immediate assertion failure. The `new Set(membersA!).toEqual(new Set(membersB!))` deep-equality check catches member-set divergence. These assertions are structurally sound for catching the divergence scenarios AC-C0-5 describes.",
+  "retrospective": {
+    "skipped": true,
+    "reason": "clean_run"
+  }
+}

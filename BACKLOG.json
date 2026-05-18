@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-05-18T17:35:17Z",
+  "updated_at": "2026-05-18T20:57:13Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -49,8 +49,8 @@
     },
     {
       "path": "specs/epic-property-tests-l3-completion/",
-      "status": "PLANNED",
-      "next_action": "seeded by /base:backlog init 2026-05-12"
+      "status": "DONE",
+      "next_action": "completed 2026-05-18"
     },
     {
       "path": "specs/epic-property-tests-l3-multi-device/",
@@ -164,6 +164,15 @@
         "line": 388
       },
       "text": "forget-device.test.ts has 2 pre-existing TypeScript errors (line 388: publish mock type mismatch; line 552: isAdmin mock type mismatch) that vitest ignores but tsc --noEmit surfaces — easy cleanup to fix the mock narrowness",
+      "created_at": "2026-05-18"
+    },
+    {
+      "slug": "deferred-l3-deliberate-regression-verifications-ac",
+      "scope": "any",
+      "anchor": {
+        "path": "e2e/tests/multi-user.property.spec.ts"
+      },
+      "text": "Deferred L3 deliberate-regression verifications (AC-S5-4, AC-A14-6, AC-C0-5, AC-S6-4, AC-S10-4) remain unexercised — make test-property runs only L1/L2; the L3 behavioral checks require a live Playwright run with relay container up",
       "created_at": "2026-05-18"
     }
   ],

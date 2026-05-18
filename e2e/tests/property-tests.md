@@ -155,3 +155,44 @@ Labelled properties print output like:
 
 A sustained increase in these rates across CI runs is a signal that an
 unintended change affected the divergent behaviour.
+
+## AC-VAL-1 re-run (epic-property-tests-l3-completion, S8)
+
+**Date:** 2026-05-18
+**Context:** S8 of `epic-property-tests-l3-completion`. Validated that the L1
+reducer-layer property suite continues to catch the `>=` vs `>` LWW guard
+regression after Phase 1 + Phase 2 of that epic landed (S1–S7 broadened the
+L3 assertion surface but did not touch the reducer).
+
+**Procedure:**
+
+1. Flipped `src/store/task-reducer.ts:16` from `event.updatedAt >= existing.updatedAt`
+   to `event.updatedAt > existing.updatedAt`.
+2. Ran `make test-property` (`FAST_CHECK_NUM_RUNS=10000`).
+3. Property `[A3] task.updated non-stale applies changes and preserves other
+   fields` (in `src/store/task-reducer.property.test.ts`) failed after **9 tests**.
+4. Counterexample shrunk **129 times** to a minimal pair of events sharing
+   `updatedAt: 1`. Got `expected ' ' to be '!'` — the apparent update was
+   suppressed because `event.updatedAt > existing.updatedAt` is false when
+   the two values are equal.
+5. Reverted the reducer; `git diff src/store/task-reducer.ts` returns empty.
+
+**Reproduction:**
+
+```bash
+FAST_CHECK_SEED=-1617746223 FAST_CHECK_PATH="8:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:1:0:0:0:0:0:0:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1:1" \
+  FAST_CHECK_NUM_RUNS=10000 \
+  npx vitest run src/store/task-reducer.property.test.ts
+```
+
+**Wall-clock to first failure:** 21.92s (well within the 60s budget in
+AC-VAL-1-RR-2).
+
+**Notes (epic L3-completion scope):** The deliberate-regression behavioral
+verifications for AC-S5-4, AC-A14-6, AC-C0-5, AC-S6-4, AC-S10-4 (S1/S2/S3/S5/
+S6/S7) were deferred to this S8 step, but `make test-property` runs only the
+L1/L2 reducer-layer property tests — not the L3 full-stack property test
+where those broadened L3 assertions live. To exercise the L3 broadened surface
+deliberately, a future run of `npx playwright test e2e/tests/multi-user.property.spec.ts`
+with the relay container up is required. This is a follow-up item for
+`epic-property-tests-l3-completion`'s retro, not a regression.

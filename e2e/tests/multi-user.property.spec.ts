@@ -27,7 +27,11 @@ import {
   currentGroupId,
   dispatchTaskEvent,
   forgetLeafByIndex,
+  getGroupEpochHook,
+  getGroupMembersHook,
+  getNostrGroupIdHex,
   getPubkeyHex,
+  getPubkeyLeafCountHook,
   inviteByNpub,
   leafIndexesFor,
   projectIsMobile,
@@ -38,6 +42,7 @@ import {
   settle,
   switchIdentity,
 } from "../fixtures/two-party.js";
+import { type NDKFilter, type NDKKind } from "@nostr-dev-kit/ndk";
 import { openNdkSubscriber } from "../fixtures/ndk-subscriber.js";
 
 // ---------------------------------------------------------------------------
@@ -81,6 +86,10 @@ class ModelState {
   // Track recorded epochs per context for S6 monotonicity check
   epochSequenceA: number[] = [];
   epochSequenceB: number[] = [];
+  // AC-S7-1: populated by SwCommand.run before the switch; null when no Sw
+  // has fired in the current run.  Reset here AND in reset() so cross-run
+  // state cannot bleed from run N into run N+1.
+  lastSwitched: { context: ActorId; priorGroupIds: string[] } | null = null;
 
   reset(): void {
     this.groupName = null;
@@ -95,6 +104,7 @@ class ModelState {
     this.epochB = 0;
     this.epochSequenceA = [];
     this.epochSequenceB = [];
+    this.lastSwitched = null;
   }
 
   actorIsAuthenticated(actor: ActorId): boolean {
@@ -109,7 +119,8 @@ class ModelState {
     return actor === "A" ? this.groupIdA !== null : this.groupIdB !== null;
   }
 
-  recordEpoch(actor: ActorId, epoch: number): void {
+  recordEpoch(actor: ActorId, epoch: number | null): void {
+    if (epoch === null) return;
     if (actor === "A") {
       this.epochSequenceA.push(epoch);
       this.epochA = epoch;
@@ -203,18 +214,13 @@ class RealSystem {
 }
 
 // ---------------------------------------------------------------------------
-// Epoch helper via groups hook
+// Epoch helper — reads the real MLS epoch via hook; returns null when the
+// group is not loaded on the page (groupId is null or hook returns null).
 // ---------------------------------------------------------------------------
 
-async function readEpoch(page: Page): Promise<number> {
-  return page.evaluate(() => {
-    const fn = window.__notestrTestGroups;
-    if (typeof fn !== "function") return 0;
-    const groups = fn();
-    // epoch is not in the test hook's return type, but we track monotonicity
-    // via the count of groups as a proxy when epoch isn't surfaced
-    return groups.length;
-  });
+async function readGroupEpoch(page: Page, groupId: string | null): Promise<number | null> {
+  if (groupId === null) return null;
+  return getGroupEpochHook(page, groupId);
 }
 
 // ---------------------------------------------------------------------------
@@ -238,7 +244,7 @@ class CgCommand implements fc.AsyncCommand<ModelState, RealSystem> {
     m.groupIdA = gid;
     m.memberA = true;
 
-    const epoch = await readEpoch(r.pageA);
+    const epoch = await readGroupEpoch(r.pageA, m.groupIdA);
     m.recordEpoch("A", epoch);
 
     // A7: creator is sole member
@@ -277,7 +283,7 @@ class InCommand implements fc.AsyncCommand<ModelState, RealSystem> {
     m.groupIdB = await currentGroupId(r.pageB);
     m.memberB = true;
 
-    const epoch = await readEpoch(r.pageA);
+    const epoch = await readGroupEpoch(r.pageA, m.groupIdA);
     m.recordEpoch("A", epoch);
 
     // A8: B is now a member — verify B has the group
@@ -307,6 +313,12 @@ class LgCommand implements fc.AsyncCommand<ModelState, RealSystem> {
     // A14: after Lg (last leaf), no kind-445 events decryptable on leaving context
     const page = r.page(this.actor);
     const groupName = m.groupName!;
+
+    // Capture groupId and remaining page before model update nulls them (A14 needs them).
+    const groupId = this.actor === "A" ? m.groupIdA! : m.groupIdB!;
+    const remainingActor: ActorId = this.actor === "A" ? "B" : "A";
+    const remainingPage = r.page(remainingActor);
+
     const groupRow = page
       .locator('nav[aria-label="Groups"] li')
       .filter({ hasText: groupName });
@@ -321,22 +333,27 @@ class LgCommand implements fc.AsyncCommand<ModelState, RealSystem> {
       m.groupIdB = null;
     }
 
-    const epoch = await readEpoch(r.page(this.actor === "A" ? "B" : "A"));
-    m.recordEpoch(this.actor === "A" ? "B" : "A", epoch);
+    const remainingGroupId = remainingActor === "A" ? m.groupIdA : m.groupIdB;
+    const epoch = await readGroupEpoch(remainingPage, remainingGroupId);
+    m.recordEpoch(remainingActor, epoch);
 
-    // A14: verify no new kind-445 events arrive on the leaving context
-    // Use poll on __notestrTestTasks as the fallback (ndk-subscriber uses B's key)
-    const tasksBefore = await r.getTasks(this.actor);
-    await settle(page, 2000);
-    const tasksAfter = await r.getTasks(this.actor);
-    // If tasks are no longer accessible (hook absent after leave), that's fine — A14 holds
-    // If they are accessible, they should not have grown (no new delivery)
-    if (tasksBefore.size > 0 && tasksAfter.size > 0) {
-      // New tasks should not appear on the leaving side after leave
-      for (const [id] of tasksAfter) {
-        // Tasks that existed before leave may still be cached locally — that's ok
-        // The invariant is about NEW deliveries, not cached state
-      }
+    // A14: verify no new kind-445 events arrive at the relay connection for this
+    // group in the 2-second window after leave (wire-level check per AC-A14-8).
+    // Uses the remaining member's page to resolve groupNostrIdHex since the
+    // leaving page no longer has the group loaded.
+    const groupNostrIdHex = await getNostrGroupIdHex(remainingPage, groupId);
+    const subscriber = await openNdkSubscriber([RELAY_URL]);
+    try {
+      const filter: NDKFilter = {
+        kinds: [445 as NDKKind],
+        "#h": [groupNostrIdHex],
+      };
+      const events = await subscriber.waitForDuration(filter, 2000);
+      // A14: no new kind-445 events arrive at the leaving context's relay
+      // connection. Wire-level interpretation per AC-A14-8.
+      expect(events.length).toBe(0);
+    } finally {
+      await subscriber.close();
     }
   }
 
@@ -373,7 +390,7 @@ class FdCommand implements fc.AsyncCommand<ModelState, RealSystem> {
       return; // MLS commit error — skip postconditions for this command
     }
 
-    const epoch = await readEpoch(r.pageA);
+    const epoch = await readGroupEpoch(r.pageA, m.groupIdA);
     m.recordEpoch("A", epoch);
 
     if (leafCount === 1) {
@@ -381,14 +398,23 @@ class FdCommand implements fc.AsyncCommand<ModelState, RealSystem> {
       m.memberB = false;
       m.groupIdB = null;
 
-      // A14: wait 2s and confirm no new tasks arrive on B's side
-      const tasksBefore = await r.getTasks("B");
-      await settle(r.pageB, 2000);
-      const tasksAfter = await r.getTasks("B");
-      // After B is removed, B should not receive new group events
-      // We verify by checking the leaf count went to 0
-      const remainingLeaves = await leafIndexesFor(r.pageA, groupId, pubkeyB);
-      expect(remainingLeaves).toHaveLength(0);
+      // A14: verify no new kind-445 events arrive at the relay connection for
+      // this group in the 2-second window after B's last leaf is forgotten
+      // (wire-level check per AC-A14-8).
+      const groupNostrIdHex = await getNostrGroupIdHex(r.pageA, groupId);
+      const subscriber = await openNdkSubscriber([RELAY_URL]);
+      try {
+        const filter: NDKFilter = {
+          kinds: [445 as NDKKind],
+          "#h": [groupNostrIdHex],
+        };
+        const events = await subscriber.waitForDuration(filter, 2000);
+        // A14: no new kind-445 events arrive at the relay connection after
+        // B's last leaf is removed. Wire-level interpretation per AC-A14-8.
+        expect(events.length).toBe(0);
+      } finally {
+        await subscriber.close();
+      }
     } else {
       // A10: K > 1 → B remains member with K-1 leaves
       await expect
@@ -425,7 +451,7 @@ class RdCommand implements fc.AsyncCommand<ModelState, RealSystem> {
     await input.fill(newName);
     await input.blur();
 
-    const epoch = await readEpoch(r.pageA);
+    const epoch = await readGroupEpoch(r.pageA, m.groupIdA);
     m.recordEpoch("A", epoch);
   }
 
@@ -477,7 +503,7 @@ class CtCommand implements fc.AsyncCommand<ModelState, RealSystem> {
       updatedAt: now,
     });
 
-    const epoch = await readEpoch(r.page(this.actor));
+    const epoch = await readGroupEpoch(r.page(this.actor), this.actor === "A" ? m.groupIdA : m.groupIdB);
     m.recordEpoch(this.actor, epoch);
 
     // A1: verify task appears locally
@@ -527,7 +553,7 @@ class UtCommand implements fc.AsyncCommand<ModelState, RealSystem> {
 
     m.tasks.set(targetId, { ...existing, title: this.title, updatedAt });
 
-    const epoch = await readEpoch(r.page(this.actor));
+    const epoch = await readGroupEpoch(r.page(this.actor), this.actor === "A" ? m.groupIdA : m.groupIdB);
     m.recordEpoch(this.actor, epoch);
 
     // A3: verify title changed
@@ -576,7 +602,7 @@ class ScCommand implements fc.AsyncCommand<ModelState, RealSystem> {
 
     m.tasks.set(targetId, { ...existing, status: this.status, updatedAt });
 
-    const epoch = await readEpoch(r.page(this.actor));
+    const epoch = await readGroupEpoch(r.page(this.actor), this.actor === "A" ? m.groupIdA : m.groupIdB);
     m.recordEpoch(this.actor, epoch);
 
     // A2: verify status
@@ -624,7 +650,7 @@ class AsCommand implements fc.AsyncCommand<ModelState, RealSystem> {
 
     m.tasks.set(targetId, { ...existing, assignee, updatedAt });
 
-    const epoch = await readEpoch(r.page(this.actor));
+    const epoch = await readGroupEpoch(r.page(this.actor), this.actor === "A" ? m.groupIdA : m.groupIdB);
     m.recordEpoch(this.actor, epoch);
 
     // A4: verify assignee
@@ -670,7 +696,7 @@ class UnCommand implements fc.AsyncCommand<ModelState, RealSystem> {
 
     m.tasks.set(targetId, { ...existing, assignee: null, updatedAt });
 
-    const epoch = await readEpoch(r.page(this.actor));
+    const epoch = await readGroupEpoch(r.page(this.actor), this.actor === "A" ? m.groupIdA : m.groupIdB);
     m.recordEpoch(this.actor, epoch);
 
     // A4: verify unassigned
@@ -715,7 +741,7 @@ class DtCommand implements fc.AsyncCommand<ModelState, RealSystem> {
 
     m.tasks.delete(targetId);
 
-    const epoch = await readEpoch(r.page(this.actor));
+    const epoch = await readGroupEpoch(r.page(this.actor), this.actor === "A" ? m.groupIdA : m.groupIdB);
     m.recordEpoch(this.actor, epoch);
 
     // A5: verify task absent
@@ -763,7 +789,7 @@ class RlCommand implements fc.AsyncCommand<ModelState, RealSystem> {
         .catch(() => {});
     }
 
-    const epoch = await readEpoch(page);
+    const epoch = await readGroupEpoch(page, this.actor === "A" ? m.groupIdA : m.groupIdB);
     m.recordEpoch(this.actor, epoch);
 
     // A11: tasks should be identical after reload
@@ -794,6 +820,20 @@ class SwCommand implements fc.AsyncCommand<ModelState, RealSystem> {
   async run(m: ModelState, r: RealSystem): Promise<void> {
     // A12: after Sw(B), context shows B's groups, not A's
     // S7: identity isolation — A's tasks not visible after Sw(B)
+
+    // AC-S7-2: capture priorGroupIds BEFORE the switch so they reflect
+    // the identity-before-switch, not the identity-after-switch.
+    // Only groups that are EXCLUSIVE to A's prior identity belong here.
+    // If B is also a member of A's group (groupIdA === groupIdB), that group
+    // is legitimately accessible to the post-switch identity (B) and must
+    // not be flagged as a prior-identity group — doing so would cause a
+    // false positive when assertS7 sees B's copy of the shared group.
+    const priorGroupIds: string[] = [];
+    if (m.groupIdA !== null && m.groupIdA !== m.groupIdB) {
+      priorGroupIds.push(m.groupIdA);
+    }
+    m.lastSwitched = { context: "A", priorGroupIds };
+
     const targetBunker = E2E_BUNKER_B_URL;
     await switchIdentity(r.pageA, targetBunker);
 
@@ -808,14 +848,6 @@ class SwCommand implements fc.AsyncCommand<ModelState, RealSystem> {
     // S7: After identity switch, reset epoch sequence for this context —
     // epoch monotonicity is per continuous identity session, not per context slot
     m.epochSequenceA = [];
-
-    // A12/S7: verify context A no longer shows the original A's groups
-    // (the group was created under the old pubkey — it should not be accessible)
-    const tasks = await r.getTasks("A");
-    // After switching to B's identity, A's tasks should not be visible
-    // (they were in a group that B may or may not be a member of)
-    // We just verify the hook returns what B can see
-    void tasks; // accepted result — the assertion is about identity isolation, not specific tasks
   }
 
   toString(): string {
@@ -853,59 +885,90 @@ async function assertC0(m: ModelState, r: RealSystem): Promise<void> {
       expect(taskA.title).toBe(taskB.title);
     }
   }
+
+  // AC-C0-2, AC-C0-3, AC-C0-4: full settled-state equality (members, epoch, leaf counts).
+  // Only checked when both actors have a known group — guards match the AC precondition.
+  if (!m.groupIdA || !m.groupIdB) return;
+
+  // AC-C0-2: members set equality (order-independent; S4 hook returns sorted arrays).
+  const membersA = await getGroupMembersHook(r.pageA, m.groupIdA);
+  const membersB = await getGroupMembersHook(r.pageB, m.groupIdB);
+  expect(membersA).not.toBeNull();
+  expect(membersB).not.toBeNull();
+  expect(new Set(membersA!)).toEqual(new Set(membersB!));
+
+  // AC-C0-3: epoch equality.
+  const epochA = await getGroupEpochHook(r.pageA, m.groupIdA);
+  const epochB = await getGroupEpochHook(r.pageB, m.groupIdB);
+  expect(epochA).toBe(epochB);
+
+  // AC-C0-4: per-pubkey leaf-count equality across A and B.
+  for (const p of new Set([...(membersA ?? []), ...(membersB ?? [])])) {
+    const lcA = await getPubkeyLeafCountHook(r.pageA, m.groupIdA, p);
+    const lcB = await getPubkeyLeafCountHook(r.pageB, m.groupIdB, p);
+    expect(lcA).toBe(lcB);
+  }
 }
 
 async function assertS5(m: ModelState, r: RealSystem): Promise<void> {
-  // S5: member-iff-leaf — only verify when both actors are in the same group
-  // Skip if group state is uncertain (e.g. no group created yet, or B not invited)
-  if (!m.groupIdA || !m.pubkeyB || !m.memberB) return;
+  // S5: hook-based full biconditional, scoped to m.groupIdA.
+  // AC-S5-5: for every p ∈ {pubkeyA, pubkeyB}, assert
+  //   membersA.includes(p) === (leafCount(m.groupIdA, p) >= 1)
+  // where membersA comes from getGroupMembersHook — the production truth source.
+  // Scoping to m.groupIdA avoids false negatives from cross-run MLS leftover
+  // leaves that pubkeys may have in older groups from prior fc.commands runs.
+  if (!m.groupIdA || !m.pubkeyA || !m.pubkeyB) return;
 
-  // Only assert the positive direction (B IS a member → B has ≥1 leaf).
-  // The negative direction (B not member → 0 leaves) is across-run state
-  // accumulation — prior runs' invites can leave B's leaves in older groups
-  // with potentially reused IDs. We check S5 only when B is definitively a member.
-  const leafsB = await leafIndexesFor(r.pageA, m.groupIdA, m.pubkeyB).catch(
-    () => [],
-  );
-  expect(leafsB.length).toBeGreaterThanOrEqual(1);
+  const membersA = await getGroupMembersHook(r.pageA, m.groupIdA);
+  if (membersA === null) return; // group not loaded on A — skip
+
+  for (const p of [m.pubkeyA, m.pubkeyB]) {
+    const isMember = membersA.includes(p);
+    const leafCount = await getPubkeyLeafCountHook(r.pageA, m.groupIdA, p);
+    expect(isMember).toBe(leafCount >= 1);
+  }
 }
 
 async function assertS6(m: ModelState): Promise<void> {
-  // S6: the real MLS epoch is not exposed via __notestrTestGroups, so we cannot
-  // assert monotonicity here. The proxy (groups.length) is non-monotonic: Lg
-  // reduces it. Per-command recordEpoch() still records the proxy value so
-  // counterexamples include it, but no assertion is made at this layer.
-  // The real S6 invariant is verified at the reducer layer (task-reducer.property.test.ts).
-  void m;
+  // S6: per-actor epoch monotonicity. Each actor's own observed epoch
+  // sequence must be non-decreasing. Cross-actor epochs are not synchronized
+  // between dispatches.
+  for (const seq of [m.epochSequenceA, m.epochSequenceB]) {
+    for (let i = 1; i < seq.length; i++) {
+      expect(seq[i]).toBeGreaterThanOrEqual(seq[i - 1]);
+    }
+  }
 }
 
 async function assertS7(m: ModelState, r: RealSystem): Promise<void> {
-  // S7: identity isolation — groups/tasks visible under A not visible under B after Sw(B)
-  // This is checked in SwCommand.run() directly; here we verify the current state
-  // is consistent with identity isolation at quiescence
-  void m;
-  void r;
+  // AC-S7-4: when no Sw has fired in the run, lastSwitched is null and
+  // assertS7 is a no-op.  The assertion only runs when there is something to check.
+  if (m.lastSwitched === null) return;
+
+  const { context, priorGroupIds } = m.lastSwitched;
+
+  // AC-S7-3: read the groups currently loaded on the switched context.
+  // __notestrTestGroups() returns all groups loaded by MarmotProvider on
+  // that page; none of them should carry an idStr from the prior identity's
+  // group set.  Tasks are scoped to the currently loaded group, so asserting
+  // at the group level is sufficient and avoids relying on a groupId field
+  // that is absent from the Task interface.
+  const loadedGroupIds = await r.page(context).evaluate(() => {
+    const fn = window.__notestrTestGroups;
+    if (typeof fn !== "function") return [] as string[];
+    return fn().map((g) => g.idStr);
+  });
+
+  for (const gid of loadedGroupIds) {
+    expect(priorGroupIds).not.toContain(gid);
+  }
 }
 
 async function assertS10(m: ModelState, r: RealSystem): Promise<void> {
-  // S10: DeviceList row count == leaf count
-  if (!m.groupIdA) return;
-
-  const deviceRows = await r.pageA
-    .locator('[data-testid="device-row"]')
-    .count()
-    .catch(() => 0);
-  // Device rows rendered for the local pubkey should match leaf count
-  // The DeviceList only renders leaves for selfPubkey, so count must match
-  if (m.pubkeyA && deviceRows > 0) {
-    const leafsA = await leafIndexesFor(r.pageA, m.groupIdA, m.pubkeyA).catch(
-      () => [],
-    );
-    // leafsA.length may differ from deviceRows since device count can include
-    // all members — just verify it's non-negative
-    expect(deviceRows).toBeGreaterThanOrEqual(0);
-    expect(leafsA.length).toBeGreaterThanOrEqual(0);
-  }
+  if (!m.groupIdA || !m.pubkeyA) return;
+  const leafCount = await getPubkeyLeafCountHook(r.pageA, m.groupIdA, m.pubkeyA);
+  const deviceRows = await r.pageA.locator('[data-testid="device-row"]').count();
+  expect(deviceRows).toBe(leafCount);
 }
 
 // ---------------------------------------------------------------------------

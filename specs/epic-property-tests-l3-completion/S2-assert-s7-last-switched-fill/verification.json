@@ -1,0 +1,96 @@
+{
+  "story_id": "S2",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S2-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-S7-1",
+      "question": "Does `ModelState` declare `lastSwitched: { context: ActorId; priorGroupIds: string[] } | null` and initialise it to `null` in BOTH the constructor AND `model.reset()`? Show both code sites explicitly. The requirement is that cross-run state does not bleed from run N into run N+1 — a reset in only one location is insufficient. Confirm a test verifies that after `model.reset()` is called, `lastSwitched` is `null` regardless of prior `SwCommand.run` calls."
+    },
+    {
+      "question_id": "VQ-S2-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-S7-2",
+      "question": "Does `SwCommand.run` populate `lastSwitched` BEFORE issuing the switch — specifically, does it capture `priorGroupIds` (the prior identity's `groupIdA`/`groupIdB` set) before any state-wiping side effect of the switch occurs? Show the exact code sequence: (1) capture prior group IDs, (2) assign `model.lastSwitched`, (3) issue the switch. Show a test or deliberate regression confirming that capturing AFTER the switch would yield a wrong (empty) `priorGroupIds`."
+    },
+    {
+      "question_id": "VQ-S2-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-S7-3",
+      "question": "Does `assertS7` read post-switch `__notestrTestTasks` and assert that no task carries a `groupId` present in `lastSwitched.priorGroupIds`? Show (a) the production code reading `__notestrTestTasks`, (b) the loop or filter checking each task's `groupId`, and (c) a test where a task does carry a stale `groupId` and the assertion fails. Confirm the test is not a pure mock-spy proxy."
+    },
+    {
+      "question_id": "VQ-S2-004",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-S7-4",
+      "question": "When `lastSwitched` is `null` (no `Sw` command fired in the run), does `assertS7` return without asserting — no error, no false negative? Show the early-return guard code and a test that calls `assertS7` with `lastSwitched === null` and confirms it is a no-op. Confirm the test is not a pure mock-spy proxy."
+    },
+    {
+      "question_id": "VQ-S2-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-S7-5",
+      "question": "Is the stale comment in `assertS7` claiming 'this is checked in `SwCommand.run` directly' removed? Show `git diff` evidence confirming the comment is absent post-implementation. Also confirm no equivalent misleading comment was introduced elsewhere in the file."
+    },
+    {
+      "question_id": "VQ-S2-006",
+      "phase": "pre-impl",
+      "category": "GOTCHA",
+      "question": "`lastSwitched` must be reset in BOTH the constructor AND `model.reset()`. The existing `epochSequenceA`/`epochSequenceB` reset path in `model.reset()` is the reference pattern. Has the implementation followed this exact pattern and verified that neither reset site was accidentally omitted? Show that the TypeScript compiler accepts the initialisation (null assigned to a nullable union type) without casting."
+    },
+    {
+      "question_id": "VQ-S2-007",
+      "phase": "pre-impl",
+      "category": "SCOPE",
+      "question": "After implementation, does `git diff --stat` show changes ONLY to `e2e/tests/multi-user.property.spec.ts`? The story explicitly excludes `src/marmot/client.tsx`, `src/types/notestr-test-hooks.d.ts`, `e2e/fixtures/two-party.ts`, `e2e/fixtures/ndk-subscriber.ts`, and `src/store/task-reducer.ts`. Any modification to those files is a scope violation. Show the diff stat output."
+    },
+    {
+      "question_id": "VQ-S2-008",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `multi-user.property.spec.ts` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? `assertS7` reads `__notestrTestTasks` — is this already an existing declared hook wrapper in `two-party.ts`, or does S2 add a new `page.evaluate` call directly in the spec? If direct, does it flow through a declared seam contract or is it an undeclared cross-boundary call?"
+    },
+    {
+      "question_id": "VQ-S2-009",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "The story populates `lastSwitched` inside `SwCommand.run`. `SwCommand` has access to the full `ModelState` at that point. Does the implementation mutate `ModelState` only through the fields it owns (`lastSwitched`)? Does it avoid reading or mutating fields owned by other commands (e.g., `memberA`, `memberB`, `groupIdA`, `groupIdB`, `epochSequenceA`, `epochSequenceB`)?"
+    },
+    {
+      "question_id": "VQ-S2-010",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Is there a test that exercises the full path: `SwCommand.run` fires, `lastSwitched` is set, `assertS7` reads post-switch tasks and finds no stale-group tasks? Is there a complementary test or deliberate regression that plants a stale-group task and confirms `assertS7` fails? Are both tests exercising the production code path rather than mocking the model state?"
+    },
+    {
+      "question_id": "VQ-S2-011",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the new code contain any TODO/FIXME/stub markers? Is the `lastSwitched` type declared with a named interface or inline object type — either is acceptable, but an inline type that duplicates shape across multiple call sites is a code-hygiene concern. Are there any dead branches or unreachable guards introduced by this story?"
+    },
+    {
+      "question_id": "VQ-S2-012",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does the `test.describe.serial` block title at `multi-user.property.spec.ts:962` remain exactly `[S5,S6,S7,S10,A7-A12,A14,C0]` after S2's edit? Changing the title is forbidden by AC-X-DESCRIBE-TITLE-1. Show `git diff` of that line."
+    },
+    {
+      "question_id": "VQ-S2-101",
+      "phase": "post-impl",
+      "category": "DESIGN",
+      "question": "The implementation asserts at the group level (via `__notestrTestGroups()`) rather than the task level (via `task.groupId`), because `Task` does not carry a `groupId` field. Is this group-level assertion strictly equivalent to the task-level assertion AC-S7-3 describes? Specifically: is it possible for `loadedGroupIds` to exclude a prior group while tasks from that group are still rendered (e.g. from a cached/stale TaskStoreProvider mount)?"
+    },
+    {
+      "question_id": "VQ-S2-102",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "The implementation excludes `m.groupIdA` from `priorGroupIds` when `m.groupIdA === m.groupIdB` (i.e. when B was also invited to the same group). This means `assertS7` only makes a meaningful assertion when A had an exclusive group (B not invited). Is this scoping correct? Could A have a group that B is NOT a member of but whose idStr happens to equal m.groupIdB (idStr collision)? And does the empty-priorGroupIds case (B was a member) still satisfy AC-S7-3's letter ('no task carries a groupId in priorGroupIds')?"
+    }
+  ]
+}

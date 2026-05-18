@@ -113,7 +113,9 @@ This still uses the model's `memberA`/`memberB` flags as the truth side and asse
 
 #### 1.2 `assertS7` identity isolation fill
 
-The model tracks `pubkeyA`, `pubkeyB`, `groupIdA`, `groupIdB`, plus the post-`Sw` invalidation in `SwCommand.run`. Fill:
+**Note (2026-05-18, post-implementation):** The reference implementation below uses `task.groupId`, but the `Task` interface does not have a `groupId` field — tasks are scoped by which `TaskStoreProvider` is mounted (per-group), not by a field on the task object. S2 adapted to a group-level assertion using `__notestrTestGroups()` instead: after the switch, `assertS7` reads the post-switch context's loaded groups and asserts none of their `idStr` values appear in `priorGroupIds`. Groups shared between A and B (where `groupIdA === groupIdB`) are excluded from `priorGroupIds` to avoid false positives. See AC-S7-3 in `acceptance-criteria.md`.
+
+The model tracks `pubkeyA`, `pubkeyB`, `groupIdA`, `groupIdB`, plus the post-`Sw` invalidation in `SwCommand.run`. Fill (reference, pre-implementation):
 
 ```ts
 async function assertS7(m: ModelState, r: RealSystem): Promise<void> {
@@ -143,12 +145,15 @@ try {
     kinds: [445],
     "#h": [groupNostrIdHex],
   };
-  const events = await subscriber.waitForEvents(filter, 2000).catch(() => []);
-  // A14: no new kind-445 events delivered to the leaving context's relay key.
-  // The subscriber uses its own private key (defined in ndk-subscriber.ts);
-  // the leaving user's MLS leaf is gone, so kind-445 events targeting the
-  // group should not decrypt under that user's key. The subscriber is a
-  // proxy — it observes wire-level deliveries, not decryption.
+  // waitForDuration collects events for the full 2s and resolves with whatever
+  // arrived — it never rejects on timeout. Distinct from waitForEvents, which
+  // rejects when `count` events do not arrive within `timeoutMs`. The
+  // waitForDuration method is added to `e2e/fixtures/ndk-subscriber.ts` as
+  // part of this story (AC-A14-7).
+  const events = await subscriber.waitForDuration(filter, 2000);
+  // A14: no new kind-445 events arrive at the leaving context's relay
+  // connection. Wire-level interpretation, not MLS decryption — see
+  // AC-A14-8 for the precise semantics and the relay-filter assumption.
   expect(events.length).toBe(0);
 } finally {
   await subscriber.close();
@@ -182,7 +187,7 @@ declare global {
 }
 ```
 
-Install site mirrors the existing `__notestrTestPubkeyLeafIndexes` install (find via grep on `__notestrTestPubkeyLeafIndexes` and add the three new hooks alongside). Each hook resolves the group by `idStr`, calls the production helper (`getGroupMembers`, `getPubkeyLeafNodes`, or reads `g.state.groupContext.epoch`), and returns the result. All three are read-only and side-effect-free.
+Install site is `src/marmot/client.tsx:446` (the file that installs `__notestrTestPubkeyLeafIndexes`); add the three new hooks alongside. Each hook resolves the group by `idStr`, calls the production helper (`getGroupMembers`, `getPubkeyLeafNodes`, or reads `g.state.groupContext.epoch`), and returns the result. The epoch hook coerces `bigint` to `number` via `Number(g.state.groupContext.epoch)` — see AC-HOOK-3 for the rationale. All three are read-only and side-effect-free.
 
 #### 2.2 `assertC0` full settled-state equality
 
@@ -236,16 +241,16 @@ The `assertS6` body comment about the proxy being non-monotonic is removed once 
 
 ### Story Breakdown
 
-- **S1 — `assertS5` biconditional, scoped to current group.** ~20 LOC. No prerequisites. Closes AC-FS-6 strict form.
+- **S1 — `assertS5` biconditional (partial form), scoped to current group.** ~20 LOC. No prerequisites. Closes AC-S5-1 through AC-S5-4 — the partial, model-flag-based form (uses `m.memberA`/`m.memberB` as truth, asserts both directions against `leafIndexesFor`). Strengthens AC-FS-6 partially; the full hook-based biconditional lands in S5 as AC-S5-5.
 - **S2 — `assertS7` fill via `lastSwitched` model field.** ~30 LOC. Requires extending `ModelState` and `SwCommand.run` to populate the field. Closes AC-FS-8.
-- **S3 — A14 wiring in `LgCommand` and `FdCommand` via `openNdkSubscriber`.** ~50 LOC. Replaces the dead-code capture-and-discard, makes the import live. Closes AC-FS-11.
-- **S4 — Add three test hooks (epoch / members / leaf-count).** ~50 LOC across `notestr-test-hooks.d.ts` and the install site. No assertion changes. Pure infrastructure.
-- **S5 — `assertC0` full version.** ~40 LOC. Depends on S4. Closes AC-FS-5 strict form.
+- **S3 — A14 wiring in `LgCommand` and `FdCommand` via `openNdkSubscriber`.** ~65 LOC (was ~50; +15 for the `waitForDuration` addition to `e2e/fixtures/ndk-subscriber.ts`). Replaces the dead-code capture-and-discard, makes the import live, adds the `waitForDuration` fixture helper. Closes AC-A14-1 through AC-A14-8. Strengthens AC-FS-11 (with the wire-level interpretation documented in AC-A14-8).
+- **S4 — Add three test hooks (epoch / members / leaf-count).** ~50 LOC across `notestr-test-hooks.d.ts` and `src/marmot/client.tsx`. No assertion changes. Pure infrastructure. Epoch hook coerces `bigint` to `number` via `Number(...)`.
+- **S5 — `assertC0` full version + `assertS5` full biconditional via hooks.** ~50 LOC (was ~40; +10 for the `assertS5` rewrite). Depends on S4. Closes AC-FS-5 strict form. Also closes AC-S5-5 (rewrites `assertS5` from the model-flag partial form to the hook-based full biconditional, replacing the body S1 wrote).
 - **S6 — `assertS6` epoch monotonicity + `recordEpoch` swap to real epoch hook.** ~30 LOC. Depends on S4. Closes AC-FS-7 strict form.
 - **S7 — `assertS10` switch to `__notestrTestPubkeyLeafCount` and assert equality.** ~10 LOC. Depends on S4. Closes AC-FS-9 strict form.
 - **S8 — AC-VAL-1 re-run.** Manual one-shot. Flip `>=` to `>` at `src/store/task-reducer.ts:16`, run `make test-property`, capture the counterexample, revert. Document in epic completion notes.
 
-S1, S2, S3 can land in any order independently of S4. S5, S6, S7 all depend on S4. S8 should run after S1–S7 land.
+S1, S2, S3 can land in any order independently of S4. S5, S6, S7 all depend on S4. **S5 also depends on S1** because it rewrites the body S1 authored (the partial assertS5 becomes the full hook-based one). S8 should run after S1–S7 land.
 
 ## Acceptance Criteria
 
@@ -266,3 +271,21 @@ See `acceptance-criteria.md`.
 - Auto-resetting browser / bunker / IndexedDB between fc.commands runs to make `assertS5` cleanly bidirectional without scoping. The original epic explicitly rejected per-run reset for wall-clock reasons; this epic respects that decision.
 - Adding a new property test file. All changes are in the existing L3 file plus the test-hooks shim.
 - Backporting these checks to L1 / L2. The reducer-layer property tests already cover their own invariants (S1–S4, A1–A6, etc.) at higher run counts.
+
+## Amendments
+
+### 2026-05-18 — Pre-implementation validation pass
+
+`base:spec-validator` flagged five issues during Step 2 of `/base:feature`. All five were resolved before the planning phase via the following amendments:
+
+1. **Epoch type — `bigint` vs `number`.** `groupContext.epoch` is `bigint` in ts-mls; the original AC-HOOK-3 declared the hook returns `number` without specifying the coercion. AC-HOOK-3 amended to specify `Number(g.state.groupContext.epoch)`; § 2.1 of this spec updated to match. Test scenarios never approach `Number.MAX_SAFE_INTEGER`, so precision loss is acceptable.
+2. **`waitForEvents` arity / semantics — fixture rejects on timeout.** The original § 1.3 code sample called `subscriber.waitForEvents(filter, 2000)` with two arguments where the fixture requires `(filter, count, timeoutMs)`, AND the fixture rejects on timeout rather than resolving with partial results. Resolution: add a new `waitForDuration(filter, ms)` method to `e2e/fixtures/ndk-subscriber.ts` that resolves after `ms` with whatever arrived and never rejects. New AC-A14-7 specifies the method; § 1.3 code sample updated. S3 LOC estimate raised from ~50 to ~65; `e2e/fixtures/ndk-subscriber.ts` added to the AC-X-NO-PROD-CHANGE-COMP-1 allow-list.
+3. **AC-S5-1 spanning S1 and S5 incompatibly.** The original AC-S5-1 described the full biconditional, which only becomes true after S4's hooks land; but S1 was scheduled to close it pre-S4. Split: AC-S5-1 rewritten to describe S1's partial model-flag-based biconditional; new AC-S5-5 captures the full hook-based biconditional that S5 rewrites `assertS5` to. Story breakdown updated to reflect S5's new dependency on S1 (S5 rewrites the body S1 authored).
+4. **AC-X-NO-PROD-CHANGE-COMP-1 install-site ambiguity.** The original guard text said "a single file under `src/store/` or `src/marmot/`" without naming the file. Grep confirmed install site is `src/marmot/client.tsx:446`. AC-X-NO-PROD-CHANGE-COMP-1 amended to name the file explicitly so the diff check is mechanical.
+5. **A14 wire-level vs. decryption.** Parent AC-FS-11 says "decryptable" but the ndk-subscriber fixture observes wire-level deliveries, not MLS decryption. Resolution: codify the wire-level interpretation in new AC-A14-8 with the relay-filter assumption (ephemeral strfry honours `#h` tag filtering). This is the operational meaning of "decryptable" for this epic; a stronger decryption-attempt assertion is deferred to a future epic if needed.
+
+No story renumbering occurred. Acceptance-criteria edits are confined to: AC-S5-1 (rewritten), AC-S5-5 (new), AC-HOOK-3 (tightened), AC-A14-1 (uses `waitForDuration`), AC-A14-7 (new fixture helper), AC-A14-8 (new interpretation note), AC-X-NO-PROD-CHANGE-COMP-1 (install site named + fixture path added).
+
+### 2026-05-18 — S2 implementation adaptation: assertS7 operates at group level
+
+The spec's §1.2 reference implementation for `assertS7` uses `task.groupId` as the truth side. During S2 implementation it emerged that the `Task` interface has no `groupId` field — the task store is partitioned by which `TaskStoreProvider` is mounted, not by a property on the task object. The architect adapted: `assertS7` now asserts at group level by reading `__notestrTestGroups()` on the post-switch context and asserting no loaded group's `idStr` appears in `priorGroupIds`. Groups shared between A and B are excluded from `priorGroupIds` to prevent false positives when the post-switch identity legitimately loads a group it was already a member of. The §1.2 reference code is annotated accordingly. AC-S7-3 in `acceptance-criteria.md` reflects the group-level semantics. This adaptation is sound and arguably stronger than per-task checking (it catches groups loaded with no tasks).

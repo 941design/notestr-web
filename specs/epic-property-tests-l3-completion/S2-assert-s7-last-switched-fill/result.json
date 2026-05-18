@@ -1,0 +1,39 @@
+{
+  "story_id": "S2",
+  "status": "done",
+  "final_outcome": "accepted_with_caveats",
+  "completed_at": "2026-05-18T21:30:00Z",
+  "caveats": [
+    "AC-S7-3 adapted from per-task to group-level assertion because the Task interface has no groupId field (tasks are partitioned by group via TaskStoreProvider). Group-level is equivalent and arguably stronger (catches groups loaded with no tasks).",
+    "priorGroupIds excludes shared groups (where groupIdA === groupIdB) to avoid false positives when B was already a member of A's group.",
+    "Deliberate-regression behavioral verification for AC-S7 deferred to S8's AC-VAL-1 re-run (same pattern as S1's AC-S5-4).",
+    "Direct page.evaluate in assertS7 (lines 913-917) instead of a two-party.ts helper. Minor architectural divergence; acceptable for one-call usage."
+  ],
+  "remediation_rounds": 0,
+  "files_created": [
+    "specs/epic-property-tests-l3-completion/S2-assert-s7-last-switched-fill/architecture.json",
+    "specs/epic-property-tests-l3-completion/S2-assert-s7-last-switched-fill/baseline.json",
+    "specs/epic-property-tests-l3-completion/S2-assert-s7-last-switched-fill/result.json"
+  ],
+  "files_modified": [
+    "e2e/tests/multi-user.property.spec.ts",
+    "specs/epic-property-tests-l3-completion/S2-assert-s7-last-switched-fill/verification.json"
+  ],
+  "implementation_summary": "Added `lastSwitched: { context: ActorId; priorGroupIds: string[] } | null` to ModelState, initialised to null in constructor and reset() (AC-S7-1). SwCommand.run now captures A's exclusive prior group IDs before the identity switch and stores them in `m.lastSwitched` (AC-S7-2). `assertS7` now reads `__notestrTestGroups()` on the post-switch context and asserts no loaded group has an idStr in `priorGroupIds` (AC-S7-3/4). The stale comment pointing to SwCommand as the assertion location was removed (AC-S7-5). Groups shared with B (where groupIdA === groupIdB) are excluded from priorGroupIds to prevent false positives when the post-switch identity (B) legitimately loads the shared group.",
+  "test_counts": {
+    "baseline_unit": 137,
+    "final_unit": 137,
+    "e2e": "not_run"
+  },
+  "mocks_introduced": [],
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The spec's reference implementation for assertS7 uses `task.groupId`, but the `Task` interface does not have a `groupId` field — the task store is per-group and tasks are scoped by which TaskStoreProvider is mounted, not by a field on the task object. This required a design adaptation: asserting at the group level via `__notestrTestGroups()` rather than per-task. Additionally, the naive implementation of priorGroupIds (including both groupIdA and groupIdB) would produce false positives when B was already a member of A's group — since after the switch (pageA now as B), B's copy of the same group loads. The fix requires excluding shared groups from priorGroupIds, which required reasoning about when groupIdA === groupIdB.",
+    "surprised_by": "The spec's `priorGroupIds` was described as capturing 'the prior identity's groupIdA/groupIdB set' — but including groupIdB in priorGroupIds would cause assertS7 to fire as a false positive on every property run where B was invited, since B's group (same idStr as A's) is legitimately loaded after the switch to B's identity.",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  }
+}
