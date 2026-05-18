@@ -1,0 +1,127 @@
+{
+  "story_id": "S6",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "id": "Q-SPEC-1",
+      "category": "SPEC",
+      "ac_ref": "AC-E2E-1",
+      "question": "Does `e2e/tests/forget-device-self.spec.ts` exist and contain a `describe.serial` block with a `Date.now()` group name at the top (e.g. `` `ForgetSelf ${Date.now()}` ``) to guarantee isolation across runs?",
+      "expected_evidence": "e2e/tests/forget-device-self.spec.ts: file exists; top-level `describe.serial(\\`ForgetSelf ${Date.now()}\\`, ...)` call is the outermost block; the `Date.now()` expression is evaluated at describe-time (not inside a test).",
+      "rationale": "AC-E2E-1 requires the Date.now() group name for run isolation; a static group name would cause cross-run group name collisions that make group-member assertions ambiguous."
+    },
+    {
+      "id": "Q-SPEC-2",
+      "category": "SPEC",
+      "ac_ref": "AC-E2E-3",
+      "question": "Does the self-forget spec call `authenticate(page, bunkerUrl, slot)` with explicit slot strings (e.g. `'self'` for device A and `'B'` for device B) — not omitting the slot argument or generating it dynamically inside the test?",
+      "expected_evidence": "e2e/tests/forget-device-self.spec.ts: `authenticate(pageA, bunkerUrlA, 'self')` and `authenticate(pageB, bunkerUrlB, 'B')` (or equivalent); no `authenticate(page, bunkerUrl)` calls without a slot argument.",
+      "rationale": "AC-E2E-3 mandates explicit slots for relay-state-independence; auto-generated slots make the test non-repeatable and prevent the `clearAppState()` mechanism from cleaning the correct IDB namespace."
+    },
+    {
+      "id": "Q-SPEC-3",
+      "category": "SPEC",
+      "ac_ref": "AC-E2E-4",
+      "question": "Does the self-forget spec propagate `skipMobile` via `beforeAll` following the `SKIP_MOBILE_REASON` pattern from the existing multi-device spec?",
+      "expected_evidence": "e2e/tests/forget-device-self.spec.ts: `beforeAll` block contains `skipMobile(...)` call using the same `SKIP_MOBILE_REASON` constant and pattern as `multi-device-cross-npub.spec.ts`.",
+      "rationale": "AC-E2E-4 ensures mobile viewports are correctly skipped; without `skipMobile`, the multi-context test would attempt to run on mobile page dimensions where the Settings modal layout may differ."
+    },
+    {
+      "id": "Q-SPEC-4",
+      "category": "SPEC",
+      "ac_ref": "AC-E2E-5",
+      "question": "Does the self-forget spec contain no calls to `e2e-down`, `e2e-up`, relay reset helpers, or assertions on global relay state, achieving isolation purely via `authenticate` (which calls `clearAppState` internally) and `Date.now()` group names?",
+      "expected_evidence": "e2e/tests/forget-device-self.spec.ts: grep for `e2e-down`, `e2e-up`, `resetRelay`, `wipeRelay`, or assertions on relay event counts returns no results; the only cleanup mechanism is `authenticate` + the `Date.now()` group name.",
+      "rationale": "AC-E2E-5 enforces the relay-state-independence memory constraint; relay resets would make the test dependent on test ordering and incompatible with parallel test runs."
+    },
+    {
+      "id": "Q-SPEC-5",
+      "category": "SPEC",
+      "ac_ref": "AC-E2E-9",
+      "question": "Does the self-forget e2e test assert, after the forget flow completes, that A's leaf is absent from B's group member list (e.g. `expect(page.locator('[data-testid=\"member-item\"]')).toHaveCount(N - 1, { timeout: 30000 })`)?",
+      "expected_evidence": "e2e/tests/forget-device-self.spec.ts: after `forgetSelfDevice` completes (confirmed by page navigation or UI state change), B's page context is checked with a `toHaveCount(N - 1, { timeout: 30000 })` or equivalent assertion targeting the member list.",
+      "rationale": "AC-E2E-9 is the primary functional assertion of the self-forget flow — without confirming the leaf is gone from another device's view, the test only verifies that the UI ran, not that the MLS operation completed."
+    },
+    {
+      "id": "Q-SPEC-6",
+      "category": "SPEC",
+      "ac_ref": "AC-E2E-10",
+      "question": "Does the self-forget e2e test assert that a kind-5 deletion event with A's pubkey and an `e`-tag matching A's KP event id is published on the relay, using `openNdkSubscriber.waitForEvent({ kinds: [5], authors: [aPubkeyHex] }, timeoutMs)` or equivalent?",
+      "expected_evidence": "e2e/tests/forget-device-self.spec.ts: `openNdkSubscriber` fixture is imported and used; `waitForEvent({ kinds: [5], authors: [aPubkeyHex] }, 30000)` call asserts on a kind-5 event received after the forget flow; the `e`-tag of the received event is checked against the recorded KP event id.",
+      "rationale": "AC-E2E-10 validates the NIP-09 publish path end-to-end at the relay level; without it, AC-DELETE-1 through AC-DELETE-3 are only verified in the S3 unit test, with no relay-level confirmation."
+    },
+    {
+      "id": "Q-INVARIANT-1",
+      "category": "INVARIANT",
+      "question": "Does the spec use `authenticate(page, bunkerUrl, 'self')` with the slot argument `'self'` and `authenticate(pageB, bunkerUrlB, 'B')` with the slot argument `'B'`, following the explicit-slot convention from architecture.md's e2e constraint section?",
+      "expected_evidence": "e2e/tests/forget-device-self.spec.ts: slot strings `'self'` and `'B'` appear as the third argument to `authenticate`; no omitted slot or dynamically generated UUID.",
+      "rationale": "Architecture.md explicitly names `'self'` and `'B'` as the canonical slot strings for this spec; using different strings would cause unexpected cross-test slot collisions."
+    },
+    {
+      "id": "Q-INVARIANT-2",
+      "category": "INVARIANT",
+      "question": "Could `e2e/tests/forget-device-self.spec.ts` be deleted and rewritten without modifying any file outside `e2e/tests/` (its `scope.includes`)? If not, which cross-file dependencies exist and do they flow through declared seam contracts?",
+      "expected_evidence": "e2e/tests/forget-device-self.spec.ts imports: `authenticate`, `createGroup`, `inviteByNpub`, etc. from `e2e/fixtures/two-party` (permanent fixtures, not tracked mocks); `openNdkSubscriber` from `e2e/fixtures/ndk-subscriber` (permanent fixture); no imports from `src/` directly.",
+      "rationale": "The mandatory second ARCHITECTURE question — the e2e spec must be a pure consumer of fixtures; any modification to fixture files triggered by this spec's needs would violate the scope boundary."
+    },
+    {
+      "id": "Q-INVARIANT-3",
+      "category": "INVARIANT",
+      "question": "Does the spec use `describe.serial` (not plain `describe`) for the test block, consistent with the `project_e2e_serial_constraint.md` memory that genuinely dependent tests belong in serial blocks?",
+      "expected_evidence": "e2e/tests/forget-device-self.spec.ts: `test.describe.serial(...)` (Playwright's serial mode) wraps the entire spec; individual tests inside share setup state (authenticated sessions, created group) that must run in order.",
+      "rationale": "The self-forget flow is multi-step and genuinely dependent: A authenticates, creates group, invites B, B joins, A forgets, then assertions. These steps cannot be parallelized."
+    },
+    {
+      "id": "Q-SCOPE-1",
+      "category": "SCOPE",
+      "question": "Is this story's only file modification `e2e/tests/forget-device-self.spec.ts` (new), with no modifications to `e2e/fixtures/`, `e2e/tests/forget-device-sibling.spec.ts`, or any file under `src/`?",
+      "expected_evidence": "Git diff for the S6 implementation commit shows exactly one file path: `e2e/tests/forget-device-self.spec.ts`; no fixture files and no src/ files appear.",
+      "rationale": "S6 scope.excludes fixtures/, the sibling spec, and all src/ files; touching any of these would conflict with S5's fixture ownership or S7's spec ownership."
+    },
+    {
+      "id": "Q-ROBUSTNESS-1",
+      "category": "ROBUSTNESS",
+      "question": "Does the kind-5 relay assertion (`openNdkSubscriber.waitForEvent`) include a timeout of at least 30000ms to account for transient relay subscription delays, and does the assertion correctly inspect the `e`-tag of the received event rather than just confirming any kind-5 from A's pubkey was published?",
+      "expected_evidence": "e2e/tests/forget-device-self.spec.ts: `waitForEvent` or equivalent uses a timeout >= 30000; the received event's `tags` array is inspected for an `['e', kpEventId]` entry matching A's recorded KP event id.",
+      "rationale": "A kind-5 assertion with an insufficient timeout fails flakily under relay latency; asserting only on pubkey without checking the `e`-tag would pass even if the wrong event id was published."
+    },
+    {
+      "id": "Q-ROBUSTNESS-2",
+      "category": "ROBUSTNESS",
+      "question": "Does the test record A's KP event id before triggering the forget flow (so the kind-5 `e`-tag assertion has a known target), and does it do so via a stable mechanism (e.g. inspecting relay subscription results or `page.evaluate`) rather than a fragile DOM text extraction?",
+      "expected_evidence": "e2e/tests/forget-device-self.spec.ts: A's KP event id is captured before the forget UI interaction, using either `openNdkSubscriber` to query the relay or `page.evaluate` to read `client.keyPackages.list()`; it is stored in a variable used by the kind-5 assertion.",
+      "rationale": "The kind-5 assertion in AC-E2E-10 is only meaningful if the test knows what event id to look for; a post-hoc capture after the forget flow may race with event deletion."
+    },
+    {
+      "id": "Q-TEST_COVERAGE-1",
+      "category": "TEST_COVERAGE",
+      "question": "Does the spec include BOTH the leaf-absence assertion (AC-E2E-9: B sees N-1 members) AND the kind-5 publish assertion (AC-E2E-10: relay subscription receives kind-5 with correct e-tag), so that the test validates both the MLS side and the relay side of the self-forget flow?",
+      "expected_evidence": "e2e/tests/forget-device-self.spec.ts: one or two test blocks containing both a `toHaveCount(N - 1)` assertion on B's member list AND a `waitForEvent({ kinds: [5], ... })` assertion; neither assertion is commented out or marked `.skip`.",
+      "rationale": "Testing only the leaf-absence would leave the kind-5 publish path unvalidated end-to-end; testing only the kind-5 would leave the MLS group state unvalidated. Both are required by the AC set."
+    }
+  ],
+  "post_impl_questions": [
+    {
+      "id": "Q-POST-1",
+      "phase": "post-impl",
+      "category": "ROBUSTNESS",
+      "question": "If A's kind-30443 event is not yet on the relay at the moment `__notestrTestNetworkRequest` fires (e.g. KP publication is still in-flight), `kpEventIds` will be empty and the e-tag check is skipped. Does the spec note this fallback explicitly so a reviewer understands the conditional guard is intentional and not a coverage gap?",
+      "expected_evidence": "e2e/tests/forget-device-self.spec.ts: the `if (kpEventIds.length > 0)` guard is accompanied by an inline comment explaining the edge case; the subscriber still asserts that any kind-5 from A's pubkey was received even when `kpEventIds` is empty."
+    },
+    {
+      "id": "Q-POST-2",
+      "phase": "post-impl",
+      "category": "ROBUSTNESS",
+      "question": "The spec opens the subscriber and then immediately triggers the Settings UI interaction. If the browser is slow to process the 'Devices' tab click and 'Forget' confirm, could the kind-5 event arrive at the relay before the NDK subscriber's REQ frame is delivered? Is the `openNdkSubscriber` auto-since gate (Math.floor(Date.now()/1000) set at subscribe time, not at spec-start) sufficient to protect against this race?",
+      "expected_evidence": "e2e/tests/forget-device-self.spec.ts: `openNdkSubscriber` is called immediately before the Settings UI interactions (not after), ensuring the subscriber REQ reaches the relay before the forget action can complete; the auto-since gate in ndk-subscriber.ts:71-76 sets `since` at subscription time, which is BEFORE the kind-5 is published."
+    },
+    {
+      "id": "Q-POST-3",
+      "phase": "post-impl",
+      "category": "SCOPE",
+      "question": "Does the spec import `__notestrTestNetworkRequest` indirectly through the `window` hook rather than importing from `src/` directly, keeping the import graph clean (no src/ imports in the e2e spec file)?",
+      "expected_evidence": "e2e/tests/forget-device-self.spec.ts: no `import` statement references a path starting with `../../src/` or `@/`; the KP id capture uses `page.evaluate()` which calls `window.__notestrTestNetworkRequest` inside the browser context."
+    }
+  ]
+}

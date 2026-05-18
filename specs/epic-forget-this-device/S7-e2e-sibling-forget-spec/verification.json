@@ -1,0 +1,98 @@
+{
+  "story_id": "S7",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "id": "Q-SPEC-1",
+      "category": "SPEC",
+      "ac_ref": "AC-E2E-2",
+      "question": "Does `e2e/tests/forget-device-sibling.spec.ts` exist and contain a `describe.serial` block with a `Date.now()` group name at the top (e.g. `` `ForgetSibling ${Date.now()}` ``) to guarantee isolation across runs?",
+      "expected_evidence": "e2e/tests/forget-device-sibling.spec.ts: file exists; `test.describe.serial(\\`ForgetSibling ${Date.now()}\\`, ...)` is the outermost block; `Date.now()` is evaluated at describe-time.",
+      "rationale": "AC-E2E-2 mirrors AC-E2E-1's isolation requirement; a static name would conflict with prior runs' group state on the relay and make member-count assertions ambiguous."
+    },
+    {
+      "id": "Q-SPEC-2",
+      "category": "SPEC",
+      "ac_ref": "AC-E2E-11",
+      "question": "Does the sibling-forget e2e test assert that A2's leaf is absent from the group member list after A1 performs sibling-forget, observed from at least one page context (A1's or B's)?",
+      "expected_evidence": "e2e/tests/forget-device-sibling.spec.ts: after A1 confirms sibling-forget of A2, a `toHaveCount(N - 1, { timeout: 30000 })` or equivalent assertion is made against the member list in A1's page context OR B's page context (or both).",
+      "rationale": "AC-E2E-11 is the primary functional assertion for sibling-forget; without confirming the leaf is gone, the test only verifies that the UI ran, not that the MLS Remove commit completed."
+    },
+    {
+      "id": "Q-SPEC-3",
+      "category": "SPEC",
+      "ac_ref": "AC-E2E-12",
+      "question": "Does the sibling-forget e2e test assert that A1's `__notestrTestForgottenSlots()` hook returns an array containing A2's slot string after the forget flow completes?",
+      "expected_evidence": "e2e/tests/forget-device-sibling.spec.ts: `const slots = await page.evaluate(() => window.__notestrTestForgottenSlots())` called on A1's page after forget; `expect(slots).toContain('sibling-a2')` (or the actual slot string used for A2).",
+      "rationale": "AC-E2E-12 validates that S3's `markSlotForgotten` call at the end of `forgetSiblingDevice` actually persisted the slot, and that S5's test hook correctly reads back the IDB state."
+    },
+    {
+      "id": "Q-INVARIANT-1",
+      "category": "INVARIANT",
+      "question": "Does the spec use explicit slot strings `'sibling-a1'`, `'sibling-a2'`, and `'B'` for `authenticate(page, bunkerUrl, slot)` calls, consistent with the explicit-slot convention mandated by architecture.md?",
+      "expected_evidence": "e2e/tests/forget-device-sibling.spec.ts: `authenticate(pageA1, bunkerUrlA, 'sibling-a1')`, `authenticate(pageA2, bunkerUrlA, 'sibling-a2')`, `authenticate(pageB, bunkerUrlB, 'B')` (A1 and A2 share the same bunker key, B has a different one); no auto-generated UUIDs as slot arguments.",
+      "rationale": "Architecture.md names `'sibling-a1'`, `'sibling-a2'`, and `'B'` as the canonical slot strings; using different names would cause unexpected collisions with S6's slots or with previous test runs."
+    },
+    {
+      "id": "Q-INVARIANT-2",
+      "category": "INVARIANT",
+      "question": "Could `e2e/tests/forget-device-sibling.spec.ts` be deleted and rewritten without modifying any file outside `e2e/tests/` (its scope.includes)? If not, which cross-file dependencies exist and do they flow through declared seam contracts?",
+      "expected_evidence": "e2e/tests/forget-device-sibling.spec.ts imports: `authenticate` etc. from `e2e/fixtures/two-party` (permanent fixtures); `NotestrTestForgottenSlotsHook` type from `src/types/notestr-test-hooks.d.ts` (NotestrTestForgottenSlotsHook seam, declared in stories.json); no modifications to fixture or src/ files are triggered by this spec's implementation.",
+      "rationale": "The mandatory second ARCHITECTURE question — the sibling spec must be a pure consumer of fixtures and the `NotestrTestForgottenSlotsHook` seam; any fixture modification needed by this spec would violate S5's ownership boundary."
+    },
+    {
+      "id": "Q-INVARIANT-3",
+      "category": "INVARIANT",
+      "question": "Does the spec follow the same `describe.serial` + `skipMobile` conventions as S6 (established as the pattern-setter for both new e2e specs), and does it NOT call `e2e-down`, `e2e-up`, or any relay reset helper?",
+      "expected_evidence": "e2e/tests/forget-device-sibling.spec.ts: `test.describe.serial(...)` wraps the block; `beforeAll` contains `skipMobile(...)`; grep for `e2e-down`, `e2e-up`, `resetRelay` returns no results.",
+      "rationale": "AC-E2E-4 and AC-E2E-5 apply to both new specs; S6 is the pattern-setter but S7 must satisfy the same constraints to remain relay-state-independent."
+    },
+    {
+      "id": "Q-SCOPE-1",
+      "category": "SCOPE",
+      "question": "Is this story's only file modification `e2e/tests/forget-device-sibling.spec.ts` (new), with no modifications to `e2e/fixtures/`, `e2e/tests/forget-device-self.spec.ts`, or any file under `src/`?",
+      "expected_evidence": "Git diff for the S7 implementation commit shows exactly one file path: `e2e/tests/forget-device-sibling.spec.ts`; no fixture files and no src/ files appear.",
+      "rationale": "S7 scope.excludes the self-forget spec, all fixtures, and all src/ files; any changes there would conflict with S5's or S6's ownership."
+    },
+    {
+      "id": "Q-ROBUSTNESS-1",
+      "category": "ROBUSTNESS",
+      "question": "Does the leaf-absence assertion check A2's removal from the member list as observed from BOTH A1's view AND B's view (or at minimum from a non-A2 context), to confirm the Remove commit was applied globally rather than only in A1's local state?",
+      "expected_evidence": "e2e/tests/forget-device-sibling.spec.ts: `toHaveCount` assertions are made against the member list in A1's page context AND/OR B's page context after the forget completes; both observers must agree on the reduced member count.",
+      "rationale": "The per-story focus for S7 specifically requires the leaf removal to be observed from both A1's and B's views; checking only from A1's context could pass if the local MLS state updated but the commit was not accepted by B."
+    },
+    {
+      "id": "Q-ROBUSTNESS-2",
+      "category": "ROBUSTNESS",
+      "question": "Does the `page.evaluate(() => window.__notestrTestForgottenSlots())` call correctly await the Promise returned by the hook before asserting on the result, so there is no race between the IDB write in `markSlotForgotten` and the hook read?",
+      "expected_evidence": "e2e/tests/forget-device-sibling.spec.ts: `const slots = await page.evaluate(() => window.__notestrTestForgottenSlots())` (the outer `await` covers the entire `page.evaluate` + inner Promise); the assertion is made after the forget UI interaction and any necessary `settle()` / wait for the confirm flow to complete.",
+      "rationale": "The `page.evaluate` call returns a Promise that Playwright serializes; if the inner hook returns a Promise that is not awaited by Playwright correctly, the test would see `null` or an unresolved value rather than the actual slot array."
+    },
+    {
+      "id": "Q-TEST_COVERAGE-1",
+      "category": "TEST_COVERAGE",
+      "question": "Does the spec include BOTH the leaf-absence assertion (AC-E2E-11: member list has N-1 members) AND the forgotten-slots IDB assertion (AC-E2E-12: A1's hook returns A2's slot), validating both the MLS side and the local-state side of the sibling-forget flow?",
+      "expected_evidence": "e2e/tests/forget-device-sibling.spec.ts: one or two test blocks containing both a `toHaveCount(N - 1)` assertion on the member list AND an `expect(slots).toContain('sibling-a2')` assertion; neither is commented out or marked `.skip`.",
+      "rationale": "Testing only the leaf-absence would leave the `markSlotForgotten` call (AC-SIBLING-3 / AC-UNIT-7) unvalidated end-to-end; testing only the IDB hook would leave the MLS group state unvalidated."
+    }
+  ],
+  "post_impl_questions": [
+    {
+      "id": "Q-POSTIMPL-1",
+      "phase": "post-impl",
+      "category": "ROBUSTNESS",
+      "question": "Does the device-row locator correctly scope to A2's row when the Devices tab displays both a local row (A1) and a non-local row (A2)? Specifically, does the `[data-testid='device-row'][data-local='false']` selector combined with `.filter({ hasText: SLOT_A2 })` uniquely identify A2's row, or is a fallback to the first non-local row required?",
+      "expected_evidence": "In the live app, A2's device row carries data-local='false' and displays the slot text 'sibling-a2'. The locator chain finds it. If only one non-local row exists (common case), the fallback path also works correctly.",
+      "rationale": "The sibling-forget button selector has two paths (slot-text filter vs. first-non-local fallback). The verifier should confirm which path runs in practice and whether the fallback introduces false-positive risk if more than one sibling device is present."
+    },
+    {
+      "id": "Q-POSTIMPL-2",
+      "phase": "post-impl",
+      "category": "ROBUSTNESS",
+      "question": "Is the 8-second settle after `inviteByNpub` sufficient for the auto-invite scan to process A2's key package before `selectGroup(pageA2, GROUP_NAME)` is called, given the relay and MLS commit latency in the e2e environment?",
+      "expected_evidence": "The test passes consistently (e.g. 3 consecutive runs) without selectGroup(pageA2) timing out at 60 s. If flaky, the settle duration should be increased or an explicit poll on A2's leaf count should replace the fixed wait.",
+      "rationale": "The 8 s figure is a heuristic adopted from the multi-device-cross-npub.spec.ts pattern. The sibling-forget flow adds an extra context (3 contexts vs 2) which may shift the timing; the verifier should flag if timeouts occur in practice."
+    }
+  ]
+}

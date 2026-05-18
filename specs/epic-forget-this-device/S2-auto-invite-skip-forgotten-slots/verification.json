@@ -1,0 +1,114 @@
+{
+  "story_id": "S2",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "id": "Q-SPEC-1",
+      "category": "SPEC",
+      "ac_ref": "AC-INVITE-1",
+      "question": "Inside the `runKeyPackageSync` closure in `src/marmot/device-sync.ts`, is a `forgottenSlots` variable of type `Set<string>` initialized by calling `loadForgottenSlots()` before the sync loop runs, and is a `window.addEventListener(\"notestr:forgotten-slots-changed\", refreshForgotten)` listener registered within the same closure?",
+      "expected_evidence": "src/marmot/device-sync.ts: `let forgottenSlots = await loadForgottenSlots()` appears before the sync loop body; `window.addEventListener(\"notestr:forgotten-slots-changed\", refreshForgotten)` appears within the `runKeyPackageSync` closure scope.",
+      "rationale": "AC-INVITE-1 requires both the initialization and the listener to be hoisted inside the closure (not at module scope), ensuring each sync session starts with a fresh read and stays up to date."
+    },
+    {
+      "id": "Q-SPEC-2",
+      "category": "SPEC",
+      "ac_ref": "AC-INVITE-2",
+      "question": "In `syncKnownKeyPackages`, does the code check `if (slot && forgottenSlots.has(slot)) continue` at the insertion point after the `isLocalDevice` and pubkey guards but before the `inviteToAllGroups` call, skipping invitation of any forgotten key package?",
+      "expected_evidence": "src/marmot/device-sync.ts: the forgotten-slot guard appears within `syncKnownKeyPackages` after the existing `isLocalDevice` / pubkey guard lines (approximately line 1164) and before any `inviteToAllGroups` call; unit test in `device-sync.test.ts` asserts that a KP event with a forgotten slot is not passed to `inviteToAllGroups`.",
+      "rationale": "AC-INVITE-2 is the primary insertion point that prevents ghost KPs from being invited during the initial bulk sync pass."
+    },
+    {
+      "id": "Q-SPEC-3",
+      "category": "SPEC",
+      "ac_ref": "AC-INVITE-3",
+      "question": "In `handleKeyPackageEvent`, does the code check `if (slot && forgottenSlots.has(slot)) return` (or equivalent early exit) at the matching insertion point before the invite call, skipping live key-package events whose slot is forgotten?",
+      "expected_evidence": "src/marmot/device-sync.ts: the forgotten-slot guard appears in `handleKeyPackageEvent` before any invite logic (approximately line 1174-1176); unit test asserts `inviteToAllGroups` is NOT called when the incoming event's slot is in `forgottenSlots`.",
+      "rationale": "AC-INVITE-3 closes the live-event path — without this guard, a relay re-broadcast of a forgotten KP would trigger an invite even after `syncKnownKeyPackages` correctly skipped it."
+    },
+    {
+      "id": "Q-SPEC-4",
+      "category": "SPEC",
+      "ac_ref": "AC-INVITE-4",
+      "question": "Is `window.removeEventListener(\"notestr:forgotten-slots-changed\", refreshForgotten)` called in the `useDeviceSync` hook's unmount cleanup path, using the same `refreshForgotten` function reference that was registered in `addEventListener`?",
+      "expected_evidence": "src/marmot/device-sync.ts: the `useEffect` (or equivalent cleanup) return function contains `window.removeEventListener(\"notestr:forgotten-slots-changed\", refreshForgotten)` where `refreshForgotten` is the identical function reference captured in the same closure.",
+      "rationale": "AC-INVITE-4 requires the cleanup pairing to prevent a memory leak; a mismatched function reference would silently fail to unregister the listener."
+    },
+    {
+      "id": "Q-INVARIANT-1",
+      "category": "INVARIANT",
+      "question": "Is the `forgottenSlots` variable hoisted inside the `runKeyPackageSync` closure body (not exported or declared at module scope), ensuring each hook invocation gets its own isolated state?",
+      "expected_evidence": "src/marmot/device-sync.ts: `let forgottenSlots` declaration appears inside the `runKeyPackageSync` function body or its immediate closure, not at the top-level module scope; no `export` of `forgottenSlots`.",
+      "rationale": "Architecture exploration finding #6 requires the patch inside the hook body, not as a module export; module-scope state would be shared across React StrictMode double-invocations and would not be reset correctly."
+    },
+    {
+      "id": "Q-INVARIANT-2",
+      "category": "INVARIANT",
+      "question": "Does this story NOT modify `src/marmot/forgotten-slots.ts`, `src/marmot/forget-device.ts`, or any file under `src/components/` or `e2e/`, as specified in its `scope.excludes`?",
+      "expected_evidence": "Git diff for the S2 implementation commit shows only `src/marmot/device-sync.ts` and `src/marmot/device-sync.test.ts`; no other paths appear.",
+      "rationale": "S2's boundary is `device-sync.ts` only; touching S1's files would create circular ownership and touching S3/S4 files would front-run those stories' implementation decisions."
+    },
+    {
+      "id": "Q-INVARIANT-3",
+      "category": "INVARIANT",
+      "question": "Does `device-sync.ts` import `loadForgottenSlots` from `./forgotten-slots` (or the S1 module path), not duplicate its logic inline, so the seam contract between S1 and S2 is honored?",
+      "expected_evidence": "src/marmot/device-sync.ts: `import { loadForgottenSlots } from './forgotten-slots'` (or equivalent relative path); no inline `createKVStore('forgotten-slots')` call in `device-sync.ts`.",
+      "rationale": "Duplicating the store creation would create a second, independent IDB store instance that does not share data with the one S1 manages."
+    },
+    {
+      "id": "Q-SCOPE-1",
+      "category": "SCOPE",
+      "question": "Are all file modifications in this story confined to `src/marmot/device-sync.ts` and `src/marmot/device-sync.test.ts`, with no other files changed?",
+      "expected_evidence": "Git diff for the S2 implementation commit lists exactly two file paths matching the scope.includes list.",
+      "rationale": "S2 is a targeted patch; any additional file changes indicate scope creep that could conflict with S1, S3, or S4 ownership."
+    },
+    {
+      "id": "Q-ROBUSTNESS-1",
+      "category": "ROBUSTNESS",
+      "question": "Does the auto-invite scan complete correctly — without skipping any non-forgotten devices — when `forgottenSlots` is an empty `Set` (i.e., no slots have ever been marked forgotten)?",
+      "expected_evidence": "src/marmot/device-sync.test.ts: a test case where `loadForgottenSlots` is mocked to return an empty Set and asserts that `inviteToAllGroups` is called for every non-local KP event (same count as before S2 changes).",
+      "rationale": "An empty `forgottenSlots` Set must be a no-op; any accidental filtering would break the invite flow for all new users who have never called `markSlotForgotten`."
+    },
+    {
+      "id": "Q-ROBUSTNESS-2",
+      "category": "ROBUSTNESS",
+      "question": "Does the `refreshForgotten` listener correctly update `forgottenSlots` so that a slot marked forgotten AFTER the sync hook has mounted is skipped by subsequent `handleKeyPackageEvent` calls in the same hook lifecycle?",
+      "expected_evidence": "src/marmot/device-sync.test.ts: a test that dispatches `notestr:forgotten-slots-changed` on `window` after initial mount, then simulates a new key-package event for the newly-forgotten slot, and asserts `inviteToAllGroups` is NOT called.",
+      "rationale": "Without this test, there is no automated verification that the DOM event listener wiring actually refreshes the in-memory cache during a live session."
+    },
+    {
+      "id": "Q-TEST_COVERAGE-1",
+      "category": "TEST_COVERAGE",
+      "question": "Does `src/marmot/device-sync.test.ts` contain test cases that assert the skip behavior at BOTH insertion points — `syncKnownKeyPackages` AND `handleKeyPackageEvent` — by mocking relay events with a forgotten slot and asserting `inviteToAllGroups` is not called at either path?",
+      "expected_evidence": "src/marmot/device-sync.test.ts: one test asserting `syncKnownKeyPackages` skip when slot is in `forgottenSlots`; one test asserting `handleKeyPackageEvent` skip when slot is in `forgottenSlots`; both use `vi.spyOn` or `vi.mock` to intercept `inviteToAllGroups`.",
+      "rationale": "Testing only one insertion point leaves the other silently broken; both paths are independent code sites and must each be validated."
+    }
+  ],
+  "post_impl_questions": [
+    {
+      "id": "Q-POST-1",
+      "phase": "post-impl",
+      "category": "DESIGN",
+      "question": "Is `isSlotForgotten` (the exported predicate introduced for testability) the ONLY public API addition from S2, and does it appear in no external consumer besides device-sync.test.ts?",
+      "expected_evidence": "grep -rn 'isSlotForgotten' src/ — result contains only device-sync.ts (definition) and device-sync.test.ts (tests); no other consumer exists.",
+      "rationale": "The predicate was extracted to enable unit testing in the node vitest environment where the React hook cannot run. If a consumer outside the test file exists, it indicates unintended API surface exposure."
+    },
+    {
+      "id": "Q-POST-2",
+      "phase": "post-impl",
+      "category": "DESIGN",
+      "question": "Is `forgottenSlots` declared in the useEffect callback body (not inside `runKeyPackageSync` as the spec originally suggested), making it visible to both `runKeyPackageSync` (for initialization) and the effect cleanup (for `removeEventListener` deregistration)?",
+      "expected_evidence": "src/marmot/device-sync.ts: `let forgottenSlots` appears between the `useEffect(() => {` line (~446) and the `const runKeyPackageSync = async () => {` declaration (~1035), not inside runKeyPackageSync's body.",
+      "rationale": "The spec said 'inside runKeyPackageSync closure' but that would prevent the effect cleanup from accessing refreshForgotten for removeEventListener. The implementation hoists both forgottenSlots and refreshForgotten to the effect body scope — the correct place to satisfy both AC-INVITE-1 (init before sync loop) and AC-INVITE-4 (removeEventListener in hook cleanup)."
+    },
+    {
+      "id": "Q-POST-3",
+      "phase": "post-impl",
+      "category": "ROBUSTNESS",
+      "question": "Is there a risk of a stale-cache window between when the effect mounts and when `runKeyPackageSync` initializes `forgottenSlots` via `loadForgottenSlots()`?",
+      "expected_evidence": "src/marmot/device-sync.ts: `forgottenSlots` is initialized to `new Set<string>()` (empty) at declaration (line ~1029), then reassigned to `await loadForgottenSlots()` at the start of `runKeyPackageSync` (line ~1039) before the KP subscription opens. The subscription opens only after `await syncKnownKeyPackages()` completes (line ~1210), so no live events can arrive during the empty-set window.",
+      "rationale": "If the subscription opened before forgottenSlots was populated, a forgotten device's KP event arriving in that window would pass through. The implementation avoids this by initializing forgottenSlots before creating the network subscription."
+    }
+  ]
+}

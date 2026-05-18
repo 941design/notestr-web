@@ -1,0 +1,11 @@
+{
+  "captured_at": "2026-05-18T00:00:00Z",
+  "note": "Baseline is a count-only snapshot. e2e suite was not executed (lead runs the suite at Step 6). Count derived by grepping test() calls across all *.spec.ts files in e2e/tests/ EXCLUDING the new forget-device-sibling.spec.ts file that is being introduced in this story.",
+  "e2e_test_count": {
+    "spec_files_before_s7": 27,
+    "test_call_count": 116,
+    "method": "grep -rE '^\\s*test\\(' e2e/tests/*.spec.ts | wc -l (excluding forget-device-sibling.spec.ts)"
+  },
+  "new_tests_added_by_s7": 2,
+  "expected_final_count": 118
+}

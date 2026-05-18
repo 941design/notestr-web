@@ -1,0 +1,8 @@
+{
+  "tool": "vitest",
+  "command": "npx vitest run",
+  "test_files": 15,
+  "tests_passed": 137,
+  "tests_failed": 0,
+  "captured_at": "2026-05-18T18:45:52Z"
+}

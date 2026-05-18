@@ -556,6 +556,14 @@ export function MarmotProvider({
     // The pubkey guard ensures the hook only invites same-identity siblings
     // (mirrors the device-sync auto-invite pubkey check). The hook is
     // gated by `isTestRuntime()` so it is unreachable in production.
+    // S5: expose the forgotten-slots IDB store to e2e tests so sibling-forget
+    // specs can assert a slot was written without reading IDB directly.
+    window.__notestrTestForgottenSlots = async () => {
+      const { loadForgottenSlots } = await import("./forgotten-slots");
+      const slots = await loadForgottenSlots();
+      return Array.from(slots);
+    };
+
     window.__notestrTestArmAutoInvite = async (siblingKpEvent) => {
       if (!state.client) return;
       // Only proceed if the synthetic event is authored by the current
@@ -586,6 +594,7 @@ export function MarmotProvider({
       delete window.__notestrTestResetSentRumors;
       delete window.__notestrTestForgetLeaf;
       delete window.__notestrTestPubkeyLeafIndexes;
+      delete window.__notestrTestForgottenSlots;
     };
   }, [pubkey, relays, state.client, state.groups]);
 

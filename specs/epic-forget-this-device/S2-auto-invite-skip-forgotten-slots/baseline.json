@@ -1,0 +1,9 @@
+{
+  "command": "npx vitest run src/marmot/",
+  "ran_at": "2026-05-18T18:01:41Z",
+  "tests_total": 45,
+  "tests_passed": 45,
+  "tests_failed": 0,
+  "tests_skipped": 0,
+  "notes": "7 test files in src/marmot/ scope. device-sync.test.ts has 12 tests (groupHasKeyPackageLeaf, joinFromWelcomeInvite, publish-task bridge x5, AC-B-6 x3)."
+}

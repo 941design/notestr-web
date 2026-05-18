@@ -1,0 +1,45 @@
+{
+  "module_name": "e2e-test-infrastructure",
+  "purpose": "Expose the notestr-forgotten-slots IDB store to e2e tests via three targeted additions: add the store name to the cleanup KNOWN_IDB_NAMES array, declare the window hook type, and implement the hook inside the existing E2E test-hooks block in client.tsx.",
+  "public_api": [
+    {
+      "name": "__notestrTestForgottenSlots",
+      "signature": "() => Promise<string[]>",
+      "description": "Window hook registered inside the NEXT_PUBLIC_E2E === '1' block in client.tsx. Returns the current keys of the notestr-forgotten-slots IDB store as a string[]. Returns an empty array (not null/undefined) when the store is empty."
+    }
+  ],
+  "private_files": [],
+  "owned_data": [],
+  "dependencies_allowed": [
+    "src/marmot/forgotten-slots.ts (loadForgottenSlots — consumed via dynamic import inside hook)"
+  ],
+  "dependencies_forbidden": [
+    "e2e/tests/ (S6 and S7 own all test-spec files)",
+    "src/components/ (S4 owns)",
+    "src/marmot/forgotten-slots.ts writes (S1 owns)"
+  ],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "Exercised by S6's clearAppState() call (KNOWN_IDB_NAMES addition)",
+    "Exercised by S7's page.evaluate(() => window.__notestrTestForgottenSlots()) call (hook + type declaration)"
+  ],
+  "insertion_points": [
+    {
+      "file": "e2e/fixtures/cleanup.ts",
+      "ac": "AC-E2E-6",
+      "description": "Append 'notestr-forgotten-slots' to the KNOWN_IDB_NAMES array (after 'notestr-joined-groups'). Array is not strictly alphabetized so append with a comment noting the source story S5."
+    },
+    {
+      "file": "src/types/notestr-test-hooks.d.ts",
+      "ac": "AC-E2E-7",
+      "description": "Add __notestrTestForgottenSlots?: () => Promise<string[]> to the Window interface, alongside existing __notestrTest* declarations. Optional ? per existing convention — hook only exists when NEXT_PUBLIC_E2E === '1'."
+    },
+    {
+      "file": "src/marmot/client.tsx",
+      "ac": "AC-E2E-8",
+      "description": "Inside the existing useEffect guarded by isTestRuntime() (line ~415), after the __notestrTestArmAutoInvite assignment and before the cleanup return function, add: window.__notestrTestForgottenSlots = async () => { const { loadForgottenSlots } = await import('./forgotten-slots'); const slots = await loadForgottenSlots(); return Array.from(slots); }; Also add 'delete window.__notestrTestForgottenSlots' to the cleanup return. Uses lazy import to avoid loading forgotten-slots into the non-E2E bundle."
+    }
+  ]
+}

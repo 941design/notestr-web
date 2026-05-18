@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@internet-privacy/marmot-ts", () => ({
   getKeyPackage: vi.fn((event: any) => event.keyPackage),
+  getKeyPackageIdentifier: vi.fn((event: any) => event._slot as string | undefined),
 }));
 
 vi.mock("ts-mls", () => ({
@@ -35,6 +36,7 @@ import {
   endDispatchPublishWindow,
   enqueueExpectedPublish,
   groupHasKeyPackageLeaf,
+  isSlotForgotten,
   joinFromWelcomeInvite,
   MAX_RETRIES_PER_EPOCH,
   removeExpectedPublishByRumorId,
@@ -341,5 +343,70 @@ describe("AC-B-6 — drain-on-ingest retry budget (selectAndIncrementRetries)", 
     const bAttempts = retryAttempts.get(groupB)!;
     selectAndIncrementRetries(bAttempts, parked, MAX_RETRIES_PER_EPOCH);
     expect(bAttempts.get(eventId)).toBe(2);
+  });
+});
+
+/**
+ * AC-INVITE-2 / AC-INVITE-3 — isSlotForgotten predicate
+ *
+ * isSlotForgotten(event, forgottenSlots) is the shared guard used by both
+ * syncKnownKeyPackages (continue guard, AC-INVITE-2) and handleKeyPackageEvent
+ * (early-return guard, AC-INVITE-3). Testing the predicate exercises both
+ * insertion points' logic without needing the React hook to run.
+ *
+ * getKeyPackageIdentifier is mocked at the top of this file to return
+ * event._slot, so we can set the slot on test events directly.
+ */
+describe("AC-INVITE-* — isSlotForgotten (forgotten-slot skip predicate)", () => {
+  function makeKpEvent(slot: string | undefined): { _slot: string | undefined; id: string; kind: number } {
+    return { _slot: slot, id: `kp-${slot ?? "no-slot"}`, kind: 30443 };
+  }
+
+  it("returns true when the event slot is in the forgotten set (AC-INVITE-2/3 skip path)", () => {
+    const forgottenSlots = new Set(["slot-abc"]);
+    const event = makeKpEvent("slot-abc");
+    expect(isSlotForgotten(event as any, forgottenSlots)).toBe(true);
+  });
+
+  it("returns false when the event slot is NOT in the forgotten set (invite proceeds)", () => {
+    const forgottenSlots = new Set(["slot-abc"]);
+    const event = makeKpEvent("slot-xyz");
+    expect(isSlotForgotten(event as any, forgottenSlots)).toBe(false);
+  });
+
+  it("returns false when forgottenSlots is empty (new-user no-op path, Q-ROBUSTNESS-1)", () => {
+    const forgottenSlots = new Set<string>();
+    const event = makeKpEvent("slot-abc");
+    expect(isSlotForgotten(event as any, forgottenSlots)).toBe(false);
+  });
+
+  it("returns false when getKeyPackageIdentifier returns undefined (legacy kind-443 no-slot events)", () => {
+    const forgottenSlots = new Set(["does-not-matter"]);
+    const event = makeKpEvent(undefined);
+    // getKeyPackageIdentifier returns undefined → predicate must return false
+    // so legacy KPs are not silently suppressed by a set that cannot match them.
+    expect(isSlotForgotten(event as any, forgottenSlots)).toBe(false);
+  });
+
+  it("handles multiple forgotten slots — skips each independently (Q-TEST_COVERAGE-1)", () => {
+    const forgottenSlots = new Set(["slot-a", "slot-b", "slot-c"]);
+    expect(isSlotForgotten(makeKpEvent("slot-a") as any, forgottenSlots)).toBe(true);
+    expect(isSlotForgotten(makeKpEvent("slot-b") as any, forgottenSlots)).toBe(true);
+    expect(isSlotForgotten(makeKpEvent("slot-d") as any, forgottenSlots)).toBe(false);
+  });
+
+  it("correctly reflects Set mutation — simulates refreshForgotten updating the cache (Q-ROBUSTNESS-2)", () => {
+    // Start with empty set (like the initial state before loadForgottenSlots resolves).
+    let forgottenSlots = new Set<string>();
+    const event = makeKpEvent("slot-newly-forgotten");
+
+    // Before the DOM event fires and refreshForgotten is called: not skipped.
+    expect(isSlotForgotten(event as any, forgottenSlots)).toBe(false);
+
+    // Simulate refreshForgotten: reassign the Set reference as the live code does.
+    forgottenSlots = new Set(["slot-newly-forgotten"]);
+
+    // After refresh: correctly skipped.
+    expect(isSlotForgotten(event as any, forgottenSlots)).toBe(true);
   });
 });

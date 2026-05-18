@@ -1,0 +1,92 @@
+{
+  "module_name": "src/components/SettingsModal.tsx",
+  "purpose": "Add a tabbed structure to the Settings modal and render the Devices tab that fetches own key packages (local IDB union relay-fetched kind-30443) and provides forget-self / forget-sibling flows via the ForgetDeviceAPI seam.",
+  "public_api": [
+    {
+      "name": "SettingsModal",
+      "signature": "function SettingsModal({ isOpen, onClose, pubkey, authMethod, onSignOut }: SettingsModalProps): JSX.Element",
+      "description": "Dialog with two tabs: 'Connection' (existing npub QR + copy) and 'Devices' (new DevicesTab). Accepts onSignOut as a new required prop wired from app/page.tsx."
+    },
+    {
+      "name": "DevicesTab",
+      "signature": "function DevicesTab({ onSignOut }: DevicesTabProps): JSX.Element",
+      "description": "Internal component (separate file src/components/DevicesTab.tsx). Calls useMarmot() to get client, signer, relays, clientId, pubkey. Fetches own KP events from client.keyPackages.list() and client.network.request(relays, keyPackageFilters([pubkey])). Renders per-device rows with Forget buttons and confirmation dialogs."
+    }
+  ],
+  "private_files": [
+    "src/components/DevicesTab.tsx"
+  ],
+  "owned_data": [
+    "React state for devices list (DeviceEntry[])",
+    "React state for in-flight progress (isInProgress, progressMsg)",
+    "React state for error string",
+    "React state for confirmation dialog open/close per slot"
+  ],
+  "dependencies_allowed": [
+    "src/components/ui/tabs.tsx",
+    "src/components/ui/alert-dialog.tsx",
+    "src/components/ui/button.tsx",
+    "src/components/ui/badge.tsx",
+    "src/components/ui/dialog.tsx",
+    "src/marmot/client.tsx (useMarmot hook only)",
+    "src/marmot/forget-device.ts (ForgetDeviceAPI seam: forgetSelfDevice, forgetSiblingDevice)",
+    "@internet-privacy/marmot-ts (keyPackageFilters, getKeyPackageIdentifier)"
+  ],
+  "dependencies_forbidden": [
+    "src/components/DeviceList.tsx",
+    "src/marmot/internal/*",
+    "idb-keyval (direct)",
+    "NDK (direct import)",
+    "useGroup (not used for device enumeration)"
+  ],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "AC-UI-1 through AC-UI-6 (structural + testid coverage verified by S6 e2e)",
+    "AC-SELF-5 through AC-SELF-7",
+    "AC-SIBLING-4 through AC-SIBLING-5"
+  ],
+  "architect_decisions": [
+    {
+      "decision": "tab_primitive",
+      "choice": "<Tabs>, <TabsList>, <TabsTrigger>, <TabsContent> from src/components/ui/tabs.tsx",
+      "rationale": "The primitive already existed in the codebase (first consumer in SettingsModal); no new dependency introduced."
+    },
+    {
+      "decision": "data_source",
+      "choice": "Union of client.keyPackages.list() (local IDB) and client.network.request(relays, keyPackageFilters([pubkey])) (relay kind-30443 events), deduped by slot identifier",
+      "rationale": "The ratchet tree only exposes admitted leaves; the relay fetch captures all KPs the user has ever published, including pre-invite ones — matches AC-UI-2 exactly."
+    },
+    {
+      "decision": "confirmation_dialog",
+      "choice": "AlertDialog from src/components/ui/alert-dialog.tsx — two separate instances: SelfForgetDialog and SiblingForgetDialog",
+      "rationale": "AlertDialog has built-in accessible blocking semantics; splitting self/sibling into separate inner components keeps each dialog's text and testids distinct."
+    },
+    {
+      "decision": "progress_indicator",
+      "choice": "Generic boolean inFlight state drives a single spinner row ('Removing from groups…') and disables all Forget buttons while any operation is in progress",
+      "rationale": "Per-group granularity would require an onProgress callback in the S3 forgetSelfDevice/forgetSiblingDevice API, which is out of S4 scope; v1 accepts the generic spinner per the spawn brief."
+    },
+    {
+      "decision": "onSignOut_wiring",
+      "choice": "Prop-drilled: app/page.tsx passes onSignOut={handleDisconnect} → SettingsModal → DevicesTab → forgetSelfDevice(client, signer, relays, onSignOut)",
+      "rationale": "DevicesTab calls useMarmot() directly for client/signer/relays/clientId/pubkey; SettingsModal does not duplicate that hook call. onSignOut is the only prop threading required."
+    },
+    {
+      "decision": "DevicesTab_placement",
+      "choice": "Separate file src/components/DevicesTab.tsx (pre-authored by prior architect spawn); SettingsModal imports it",
+      "rationale": "Separation avoids one 200+ line component becoming 500+ lines and keeps the two concerns (tab shell vs device list logic) independently readable."
+    }
+  ],
+  "design_decisions": {
+    "tab_primitive": "Reuse src/components/ui/tabs.tsx — <Tabs>, <TabsList>, <TabsTrigger>, <TabsContent>. First consumer of this primitive.",
+    "devices_tab_placement": "Separate file src/components/DevicesTab.tsx (not inlined) for readability; SettingsModal imports it.",
+    "data_source": "client.keyPackages.list() (local IDB, ListedKeyPackage[]) merged with client.network.request(relays, keyPackageFilters([pubkey])) (relay kind-30443 events). Union deduped by slot identifier. The local clientId row is always included even if no published events exist.",
+    "marmot_access": "DevicesTab calls useMarmot() directly (not prop-drilled from SettingsModal) for client, signer, relays, clientId, pubkey. SettingsModal only adds onSignOut as a new prop.",
+    "confirmation_dialog": "AlertDialog from src/components/ui/alert-dialog.tsx — separate instances for self-forget and sibling-forget flows.",
+    "progress_indicator": "Generic spinner + 'Removing from groups...' message via isInProgress boolean state. Per-group granularity omitted (v1) because forgetSelfDevice/forgetSiblingDevice expose no onProgress callback, and changing the S3 contract is out of scope.",
+    "on_sign_out_wiring": "app/page.tsx passes onSignOut={handleDisconnect} to <SettingsModal> as prop; SettingsModal threads it to <DevicesTab onSignOut={onSignOut}>; DevicesTab passes it to forgetSelfDevice(..., onSignOut).",
+    "test_coverage_handoff": "AC-UI-1..6 dialog behavior and data-testid selectors covered by S6/S7 e2e tests. No vitest component tests added (mocking useMarmot and network in a JSDOM environment is low-value for these integration-heavy flows)."
+  }
+}

@@ -1,0 +1,265 @@
+{
+  "explored_at": "2026-05-18T15:14:00Z",
+  "focuses": ["similar-features", "architecture", "testing-and-conventions"],
+
+  "existing_primitives": {
+    "per_leaf_remove": {
+      "path": "src/marmot/per-leaf-remove.ts:4",
+      "signature": "removeLeafByIndex(group: MarmotGroup, leafIndex: number): Promise<void>",
+      "behavior": "Calls group.commit({ extraProposals: [{ proposalType: defaultProposalTypes.remove, remove: { removed: leafIndex } }] }) — propose+commit in one call. Commit publishes automatically via marmot-ts. Does NOT handle epoch races; throws if epoch advances mid-call.",
+      "call_sites": [
+        "src/marmot/client.tsx:444 (test hook __notestrTestForgetLeaf)",
+        "src/components/DeviceList.tsx:192 (existing single-group sibling-forget)"
+      ]
+    },
+    "kind5_delete_pattern": {
+      "path": "src/marmot/client.tsx:322-335",
+      "note": "Inlined; uses NDK directly (signer.signEvent + NDKEvent.publish), not NdkNetworkAdapter.publish. Targets legacy kind-443 KPs whose private keys are no longer in local IDB. No reusable publishKind5Deletion helper exists — architect can either extract one or replicate inline.",
+      "usable_via_network_adapter": "Yes: unsigned event → signer.signEvent() → client.network.publish(relays, signedEvent). Matches every other marmot-ts publish path."
+    },
+    "clear_nip46_session": {
+      "path": "src/lib/nostr.ts:142-148",
+      "function": "clearNip46Session()",
+      "behavior": "Clears 'notestr-nip46-payload', 'notestr-nip46-local-key', and 'notestr-auth-method' (only if 'nip46') atomically.",
+      "spec_correction": "Spec says `localStorage.removeItem('notestr-nip46-payload')` — use clearNip46Session() instead, it handles all three keys."
+    },
+    "kv_store_factory": {
+      "path": "src/marmot/storage.ts:24-50",
+      "factory": "createKVStore<T>(name: string): KeyValueStoreBackend<T>",
+      "interface_methods": ["getItem", "setItem", "removeItem", "clear", "keys"],
+      "spec_correction": "Spec uses forgottenStore.getAllKeys?.() — that method does not exist. Use forgottenStore.keys()."
+    },
+    "auto_invite_loop": {
+      "path": "src/marmot/device-sync.ts:1025 (runKeyPackageSync closure inside useDeviceSync)",
+      "iteration_sites": [
+        "syncKnownKeyPackages at line 1154-1167 (insert forgotten-slot check at line 1164 after isLocalDevice + pubkey guards, before inviteToAllGroups)",
+        "handleKeyPackageEvent at line 1170-1177 (insert at line 1174-1176)"
+      ],
+      "note": "runKeyPackageSync is closure-private, NOT exported. The forgottenSlots variable must be hoisted into the closure body (line ~1026). DOM event listener notestr:forgotten-slots-changed wires the refresh."
+    },
+    "is_admin": {
+      "import": "import { isAdmin } from '@internet-privacy/marmot-ts'",
+      "usage": "isAdmin(group.groupData, pubkey) — group.groupData may be null; guard with `if (!gd || !isAdmin(gd, pubkey)) continue`",
+      "call_sites": ["src/marmot/device-sync.ts:1113", "src/marmot/client.tsx:566"]
+    },
+    "key_package_identifier": {
+      "import": "import { getKeyPackageIdentifier } from '@internet-privacy/marmot-ts'",
+      "operates_on": "NostrEvent (kind 30443/443 relay event), NOT MLS leaf node",
+      "slot_to_leafIndex_path": "Iterate leaves via getPubkeyLeafNodes; for each leaf find matching relay event via defaultKeyPackageEqualityConfig.compareKeyPackageToLeafNode(getKeyPackage(event), leaf); then getKeyPackageIdentifier(event). Example: src/components/DeviceList.tsx:119-130.",
+      "local_workaround": "src/marmot/device-sync.ts:354-364 — keyPackageSlot(kp) reads kp.identifier then falls back to kp.d. marmot-ts v0.5 type/runtime mismatch."
+    }
+  },
+
+  "client_surface": {
+    "groups_loaded": "client.groups.loaded — synchronous array of MarmotGroup (live snapshot). Distinct from client.groups.loadAll() (async hydration).",
+    "key_packages_list": "client.keyPackages.list(): Promise<ListedKeyPackage[]> — each entry has .published (NostrEvent[]), .used (bool), .keyPackageRef (Uint8Array), .publicPackage, and .identifier/.d (slot, with v0.5 mismatch).",
+    "client_id": "client.keyPackages.clientId — accessor; surfaced through MarmotContext as `clientId` via useMarmot()."
+  },
+
+  "settings_modal": {
+    "path": "src/components/SettingsModal.tsx",
+    "current_shape": "Flat DialogContent with no tabs; renders npub QR + copy. Does NOT call useMarmot().",
+    "rendered_from": "app/page.tsx:569-574 (controlled by settingsOpen state at page.tsx:72)",
+    "tabs_primitive": "src/components/ui/tabs.tsx exists but is unused; this would be its first consumer.",
+    "convention_introduced": "Adding tabs to the modal, requiring useMarmot() inside the modal."
+  },
+
+  "signout_path": {
+    "function": "handleDisconnect at app/page.tsx:222-234",
+    "behavior": "Calls clearNip46Session() (for nip46) or setSavedAuthMethod(null) (for nip07); then sets signer/pubkey/authMethod to null; SPA re-renders into sign-in view via `if (!pubkey)` guard. No router.push or window.location.",
+    "reachability": "Lives in page.tsx, not reachable from MarmotProvider. Pass a callback prop from page.tsx into SettingsModal into the self-forget confirm handler.",
+    "spec_correction": "Spec says 'Reload to /' / 'Redirect to the sign-in page' — actual pattern is to call the parent's handleDisconnect."
+  },
+
+  "idb_stores": {
+    "identity": {
+      "internal_name": "identityStore (file-private)",
+      "idb_db": "notestr-identity",
+      "path": "src/marmot/storage.ts:68",
+      "spec_gap": "Not exported. Need a new export from storage.ts (e.g. clearIdentityStore() or expose the store) so forgetSelfDevice can clear it."
+    },
+    "key_packages": {
+      "internal_name": "keyPackageStore (local var in client.tsx:163)",
+      "idb_db": "notestr-key-packages",
+      "spec_gap": "Local variable inside MarmotProvider.init(), passed to MarmotClient constructor — no exported handle. forgetSelfDevice cannot clear directly. Either lift to module scope or add a MarmotClient method (verify with marmot-researcher)."
+    },
+    "group_state": {
+      "internal_name": "groupStateStore (local var in client.tsx:162)",
+      "idb_db": "notestr-group-state",
+      "spec_gap": "Same as key_packages."
+    },
+    "invite_store": {
+      "internal_name": "inviteStore (local var in client.tsx:164, via createInviteKVStore)",
+      "idb_db": "notestr-invite-store",
+      "spec_gap": "Same as key_packages."
+    },
+    "invited_keys": {
+      "internal_name": "invitedKeysStore (exported from storage.ts:70)",
+      "idb_db": "notestr-invited-keys",
+      "reachable": true
+    },
+    "joined_groups": {
+      "internal_name": "joinedGroupsStore (exported from storage.ts:71)",
+      "idb_db": "notestr-joined-groups",
+      "reachable": true
+    },
+    "nip46_localStorage": {
+      "keys": ["notestr-nip46-payload", "notestr-nip46-local-key", "notestr-auth-method"],
+      "clear_via": "clearNip46Session() at src/lib/nostr.ts:142"
+    }
+  },
+
+  "device_list_existing": {
+    "path": "src/components/DeviceList.tsx",
+    "scope": "Per-group, per-pubkey leaf list rendered inside GroupManager (GroupManager.tsx:435). Sibling-only — no self-forget path.",
+    "calls_remove_leaf_by_index": "Line 192 directly. No KP deletion, no forgotten-slots persistence.",
+    "spec_relationship": "Settings 'Devices' tab is NOT a thin wrapper around DeviceList. DeviceList sources from group's ratchet tree leaves (lines 88-89). The Devices tab sources from union of (a) local clientId, (b) relay-fetched kind-30443 events by local pubkey — a different data flow."
+  },
+
+  "dom_event_pattern": {
+    "existing_precedent": "notestr:taskPublishFailed dispatched from src/store/task-store.tsx:258, consumed only by e2e tests (e2e/tests/task-publish-contract.spec.ts:157). The ONLY existing custom DOM event in the codebase.",
+    "new_introduction": "Spec proposes notestr:forgotten-slots-changed as the second. New intra-app communication pattern — first window.addEventListener used as a cache-invalidation bus between marmot-internal modules."
+  },
+
+  "test_framework": {
+    "e2e": {
+      "runner": "Playwright (@playwright/test)",
+      "config": "playwright.config.ts (testDir ./e2e/tests, workers 1, fullyParallel false, retries 1)",
+      "projects": ["Desktop Chrome", "Mobile Chrome (Pixel 5)", "Mobile Safari (iPhone 12)"],
+      "run_command": "make e2e (→ make e2e-up && npx playwright test)",
+      "bunkers": "Three NIP-46 bunkers (A, B, C) launched in global-setup.ts with deterministic hardcoded private keys. NOT rotated per-test; rotation is manual and infrequent (last 2026-04-30)."
+    },
+    "unit": {
+      "runner": "Vitest 4.x",
+      "config": "vitest.config.ts (includes src/**/*.test.ts, src/**/*.test.tsx, e2e/fixtures/**/*.test.ts)",
+      "run_command": "make test (→ npm test)",
+      "marmot_mock_example": "src/marmot/client.test.ts and src/marmot/device-sync.test.ts use vi.mock('@internet-privacy/marmot-ts', ...) — copy this pattern for forget-device.test.ts."
+    }
+  },
+
+  "relay_state_independence": {
+    "constraint": "Tests must pass against ANY relay state via within-test isolation. Memory feedback_e2e_relay_independence.md and 2026-05-18 BACKLOG.archive entry rejecting epic-e2e-relay-state-isolation.",
+    "primitives": {
+      "pinClientSlot": "e2e/fixtures/two-party.ts:36-46 — sets window.__notestrTestClientId via addInitScript. Called inside authenticate().",
+      "authenticate_with_slot": "authenticate(page, bunkerUrl, slot) at two-party.ts:61-87 — slot is third arg, e.g. 'A1', 'A2'.",
+      "clearAppState": "e2e/fixtures/cleanup.ts:33-66 — clears localStorage + all notestr-* IDB databases. Called inside authenticate().",
+      "KNOWN_IDB_NAMES": "e2e/fixtures/cleanup.ts:16-25 — MUST be extended to include 'notestr-forgotten-slots' or clearAppState will silently miss it.",
+      "Date_now_group_names": "Use `const GROUP_NAME = \\`ForgetSelf ${Date.now()}\\`` at top of each describe.serial block — pattern from multi-device-cross-npub.spec.ts:42.",
+      "skipMobile": "Multi-context tests skip mobile projects with SKIP_MOBILE_REASON in beforeAll — pattern from forget-device.spec.ts:53-56."
+    },
+    "spec_test_targets": {
+      "forget_device_self": "e2e/tests/forget-device-self.spec.ts (new) — A authenticates with slot 'self', creates group, invites B, B joins, A self-forgets; assert A's leaf gone from B's view + kind-5 deletion published.",
+      "forget_device_sibling": "e2e/tests/forget-device-sibling.spec.ts (new) — A1+A2+B in group, A1 sibling-forgets A2; assert A2 leaf gone, A1's forgotten-slots IDB contains A2's slot."
+    }
+  },
+
+  "existing_helpers_for_tests": {
+    "authenticate": "e2e/fixtures/two-party.ts:61-87",
+    "createGroup": "e2e/fixtures/two-party.ts:94-103",
+    "inviteByNpub": "e2e/fixtures/two-party.ts:109-115",
+    "selectGroup": "e2e/fixtures/two-party.ts:121-128 (60s timeout — ghost-KP exhaustion was the TP-80 incident)",
+    "clearAppState": "e2e/fixtures/cleanup.ts:33-66",
+    "leafIndexesFor": "e2e/fixtures/two-party.ts:399-414 (wraps __notestrTestPubkeyLeafIndexes)",
+    "forgetLeafByIndex": "e2e/fixtures/two-party.ts:379-396 (wraps __notestrTestForgetLeaf — currently used by TP-51 cross-npub test)",
+    "openNdkSubscriber": "e2e/fixtures/ndk-subscriber.ts:26-144 — relay subscription with waitForEvent({ kinds, authors, ... }, timeoutMs). Use for kind-5 assertion in self-forget test.",
+    "settle": "e2e/fixtures/two-party.ts:274-276 — explicit pause for KP publication propagation",
+    "data_testid_member_item": "GroupManager.tsx:403 — pattern `expect(locator('[data-testid=\"member-item\"]')).toHaveCount(N, { timeout: 30000 })`",
+    "data_testid_device_row": "DeviceList uses data-testid='device-row' with data-local='false' — pattern from multi-device-sync.spec.ts:129-131"
+  },
+
+  "helpers_to_add": [
+    "__notestrTestForgottenSlots window hook (read forgotten-slots IDB store) — needed by sibling-forget test to assert slot was marked forgotten",
+    "Update src/types/notestr-test-hooks.d.ts with new hook signature",
+    "Add 'notestr-forgotten-slots' to e2e/fixtures/cleanup.ts:KNOWN_IDB_NAMES",
+    "Add data-testid='device-forget-self-btn' (and sibling variant) to Settings 'Devices' tab + confirmation dialog confirm button",
+    "Optional: extract publishKind5Deletion(network, signer, eventIds) helper — currently inlined in client.tsx:322-335"
+  ],
+
+  "spec_gaps_surfaced_by_exploration": [
+    {
+      "topic": "createKVStore has keys() not getAllKeys",
+      "spec_line": "specs/epic-forget-this-device/spec.md:79-82 (forgotten-slots.ts code sketch)",
+      "fix": "Replace `forgottenStore.getAllKeys?.() ?? []` with `await forgottenStore.keys()`"
+    },
+    {
+      "topic": "identityStore not exported",
+      "spec_line": "specs/epic-forget-this-device/spec.md:111 (self-forget IDB cleanup)",
+      "fix": "Export from storage.ts or add a helper. Architect picks the export shape (consistent with existing exported stores)."
+    },
+    {
+      "topic": "keyPackageStore / groupStateStore / inviteStore are local vars in client.tsx, not exported",
+      "spec_line": "specs/epic-forget-this-device/spec.md:111 (self-forget IDB cleanup mentions 'key-packages clear')",
+      "fix": "Architect decides: lift to module scope and export, OR add MarmotClient.clearLocalState() method, OR delete the IDB databases by name from forgetSelfDevice. Cross-check with marmot-researcher whether marmot-ts MarmotClient exposes a reset/clear API. Once chosen, encode as Story S2 or S6 work."
+    },
+    {
+      "topic": "Sign-out reachability — handleDisconnect lives in page.tsx, not MarmotProvider",
+      "spec_line": "specs/epic-forget-this-device/spec.md:112 (Redirect to /)",
+      "fix": "Pass onSignOut callback from page.tsx into SettingsModal, then into the self-forget confirm handler. forgetSelfDevice can accept this callback as a parameter."
+    },
+    {
+      "topic": "Spec says removeItem('notestr-nip46-payload') — should be clearNip46Session()",
+      "spec_line": "specs/epic-forget-this-device/spec.md:111",
+      "fix": "Use clearNip46Session() — it clears all three NIP-46 keys atomically."
+    },
+    {
+      "topic": "Settings modal has no tabs yet",
+      "spec_line": "specs/epic-forget-this-device/spec.md:122-138",
+      "fix": "Architect adds <Tabs> structure (ui/tabs.tsx primitive exists). Existing flat content becomes 'Connection' tab; 'Devices' tab is new."
+    },
+    {
+      "topic": "Devices tab data source is union of local clientId + relay-fetched kind-30443 events by local pubkey — DIFFERENT from existing DeviceList.tsx",
+      "spec_line": "specs/epic-forget-this-device/spec.md:33-34",
+      "fix": "Architect designs a new data flow. Cannot reuse DeviceList component verbatim (it sources from per-group ratchet tree leaves)."
+    },
+    {
+      "topic": "runKeyPackageSync is a closure inside useDeviceSync, not exported",
+      "spec_line": "specs/epic-forget-this-device/spec.md:87-93",
+      "fix": "Patch happens inside the hook body. Architect knows; not user-facing."
+    }
+  ],
+
+  "open_questions_status": [
+    {
+      "spec_q1": "NIP-09 enforcement on common relays (strfry honors kind-5 by same pubkey against own KP events)",
+      "status": "EMPIRICAL — implementation will publish and observe whether the event sticks. The architect should add a unit test that asserts the publish call shape; e2e test asserts the event lands."
+    },
+    {
+      "spec_q2": "MLS init keypair vs Nostr identity key for KP signing",
+      "status": "RESOLVED by spec text itself: kind 443/30443 are Nostr events signed by the user's identity key (not MLS init keys). The same identity key can sign a kind-5 for any of the user's KP events. Marmot-researcher engagement still useful to confirm; architect can proceed."
+    },
+    {
+      "spec_q3": "Slot → leafIndex mapping in marmot-ts",
+      "status": "RESOLVED by existing code at src/components/DeviceList.tsx:119-130 using defaultKeyPackageEqualityConfig.compareKeyPackageToLeafNode. Architect follows that pattern."
+    },
+    {
+      "spec_q4": "Concurrent epoch advances during multi-group leaf removal",
+      "status": "OPEN. removeLeafByIndex throws on stale epoch. Spec mentions implicit refresh vs retry-on-stale-epoch helper. Architect picks one and documents in story."
+    }
+  ],
+
+  "constraints_to_honor": [
+    "E2E tests must be relay-state-independent (memory feedback_e2e_relay_independence.md, BACKLOG archive 2026-05-18). Use pinClientSlot + clearAppState + Date.now() group names. NO fixture-level relay resets.",
+    "forget-device is per-leaf, NOT remove-member (memory project_user_action_vocabulary.md). A member only leaves when their last leaf is gone. The spec's design (iterate matching leaves per group) already aligns.",
+    "Mobile multi-context tests skip with SKIP_MOBILE_REASON in beforeAll (forget-device.spec.ts:53-56 pattern).",
+    "Existing kind-5 deletion in client.tsx:322-335 uses NDK directly. Either replicate or extract a helper through NdkNetworkAdapter — architect picks consistent path."
+  ],
+
+  "retrospectives": [
+    {
+      "focus": "similar-features",
+      "skipped": true
+    },
+    {
+      "focus": "architecture",
+      "skipped": false,
+      "flag": "The three per-client IDB stores (keyPackageStore, groupStateStore, inviteStore) are constructed as local variables inside the init() closure in client.tsx:162-164 and are never exported — forgetSelfDevice therefore cannot reach them to call .clear(), which the spec requires; neither the spec nor any existing seam resolves this, and it will force either exporting these stores to module scope or adding a clearLocalState() method to MarmotClient.",
+      "scope": "project_specific"
+    },
+    {
+      "focus": "testing-and-conventions",
+      "skipped": false,
+      "flag": "The forgotten-slots IDB store in cleanup.ts:KNOWN_IDB_NAMES is missing by construction (the store does not exist yet), but both the spec and the cleanup helper are in a state where the new feature's IDB store will be silently skipped on the first post-implementation test run unless the implementor knows to add it — a cross-file coupling that will not produce a compile or lint error.",
+      "scope": "project_specific"
+    }
+  ]
+}

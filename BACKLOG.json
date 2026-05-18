@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-05-18T14:31:11Z",
+  "updated_at": "2026-05-18T17:35:17Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -19,8 +19,8 @@
     },
     {
       "path": "specs/epic-forget-this-device/",
-      "status": "PLANNED",
-      "next_action": "seeded by /base:backlog init 2026-05-12"
+      "status": "DONE",
+      "next_action": "completed 2026-05-18"
     },
     {
       "path": "specs/epic-group-member-list/",
@@ -112,6 +112,58 @@
         ]
       },
       "text": "Add schema-parity regression test for mls-trace TraceEvent union (src/marmot/mls-trace.ts vs e2e/fixtures/mls-trace-classify.ts copy). Filter field drift already present (Filter vs unknown) but harmless today; no test catches future divergence.",
+      "created_at": "2026-05-18"
+    },
+    {
+      "slug": "board-data-column-dual-render",
+      "scope": "any",
+      "anchor": {
+        "path": "src/components/Board.tsx",
+        "range": [
+          264,
+          305
+        ]
+      },
+      "text": "Board.tsx renders data-column={status} in both the mobile panel (line 264) and the desktop grid (line 305), so every e2e [data-column=\"...\"] selector matches two elements. Specs work around this with .first() across ~13 files; the workaround relies on (a) mobile-first DOM ordering and (b) Playwright toContainText reading hidden DOM. Triage 2026-04-30 treated each match-failure as a separate test bug rather than fixing the structural duplication. Consider scoping the column marker to a viewport-stable attribute or hoisting the assertion onto a single Board-level element.",
+      "created_at": "2026-05-18"
+    },
+    {
+      "slug": "devicestab-relay-fetch-failure-degrades-silently",
+      "scope": "any",
+      "anchor": {
+        "path": "src/components/DevicesTab.tsx",
+        "line": 173
+      },
+      "text": "DevicesTab relay-fetch failure degrades silently to local-only device list without user warning — the catch block at DevicesTab.tsx:173-174 swallows relay errors with no visible feedback",
+      "created_at": "2026-05-18"
+    },
+    {
+      "slug": "forgetsiblingdevice-swallows-per-group-network",
+      "scope": "any",
+      "anchor": {
+        "path": "src/marmot/forget-device.ts"
+      },
+      "text": "forgetSiblingDevice swallows per-group network failures and unconditionally calls markSlotForgotten — v2 should add a durable resume path so partial failures are retryable from where they left off",
+      "created_at": "2026-05-18"
+    },
+    {
+      "slug": "marmotprovider-idb-stores-keypackagestore",
+      "scope": "any",
+      "anchor": {
+        "path": "src/marmot/client.tsx",
+        "line": 162
+      },
+      "text": "MarmotProvider IDB stores keyPackageStore, groupStateStore, inviteStore are local vars inside init() closure at client.tsx:162-164 and not exported — forced S3 to use indexedDB.deleteDatabase by stable string name as a workaround; a MarmotClient.clearLocalState() upstream PR or lifted exports would remove the implicit name-coupling",
+      "created_at": "2026-05-18"
+    },
+    {
+      "slug": "forget-device-test-ts-has-2",
+      "scope": "any",
+      "anchor": {
+        "path": "src/marmot/forget-device.test.ts",
+        "line": 388
+      },
+      "text": "forget-device.test.ts has 2 pre-existing TypeScript errors (line 388: publish mock type mismatch; line 552: isAdmin mock type mismatch) that vitest ignores but tsc --noEmit surfaces — easy cleanup to fix the mock narrowness",
       "created_at": "2026-05-18"
     }
   ],

@@ -1,0 +1,9 @@
+{
+  "command": "npx vitest run src/marmot/",
+  "ran_at": "2026-05-18T17:50:23Z",
+  "tests_total": 38,
+  "tests_passed": 38,
+  "tests_failed": 0,
+  "tests_skipped": 0,
+  "notes": "Scoped to src/marmot/ to keep runtime fast. 6 test files. All passing before S1 implementation begins."
+}

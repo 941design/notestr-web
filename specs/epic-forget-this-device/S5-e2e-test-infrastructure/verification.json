@@ -1,0 +1,73 @@
+{
+  "story_id": "S5",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "id": "Q-SPEC-1",
+      "category": "SPEC",
+      "ac_ref": "AC-E2E-6",
+      "question": "Does `e2e/fixtures/cleanup.ts` include the string `\"notestr-forgotten-slots\"` in the `KNOWN_IDB_NAMES` array (at lines 16-25) so `clearAppState()` deletes this store on every test run?",
+      "expected_evidence": "e2e/fixtures/cleanup.ts: `'notestr-forgotten-slots'` appears in the `KNOWN_IDB_NAMES` array; the array is the one consumed by `clearAppState()`.",
+      "rationale": "AC-E2E-6 is load-bearing for relay-state-independence (memory `feedback_e2e_relay_independence.md`); without this entry, forgotten-slots IDB persists across test runs and causes false-positive slot-skipping in subsequent test runs."
+    },
+    {
+      "id": "Q-SPEC-2",
+      "category": "SPEC",
+      "ac_ref": "AC-E2E-7",
+      "question": "Is `window.__notestrTestForgottenSlots` implemented in `src/marmot/client.tsx` inside the existing `if (process.env.NEXT_PUBLIC_E2E === '1')` test-hooks block, returning a `Promise<string[]>` of the current keys of the `notestr-forgotten-slots` IDB store?",
+      "expected_evidence": "src/marmot/client.tsx: within the `if (process.env.NEXT_PUBLIC_E2E === '1')` block, `window.__notestrTestForgottenSlots = async () => { return loadForgottenSlots().then(s => [...s]); }` (or equivalent); the block is NOT at module top level.",
+      "rationale": "AC-E2E-7 requires the hook to be gated behind the E2E env var; an unconditionally-registered hook would expose internal IDB state in production builds."
+    },
+    {
+      "id": "Q-SPEC-3",
+      "category": "SPEC",
+      "ac_ref": "AC-E2E-8",
+      "question": "Is the `__notestrTestForgottenSlots()` hook signature declared in `src/types/notestr-test-hooks.d.ts` alongside the existing hook declarations, typed as `() => Promise<string[]>`?",
+      "expected_evidence": "src/types/notestr-test-hooks.d.ts: `__notestrTestForgottenSlots(): Promise<string[]>` declaration on the `Window` interface; TypeScript compiler resolves the type without errors when `forget-device-sibling.spec.ts` calls `page.evaluate(() => window.__notestrTestForgottenSlots())`.",
+      "rationale": "AC-E2E-8 ensures the hook is properly typed so S7's Playwright test can call it via `page.evaluate` without a TypeScript type error or runtime undefined."
+    },
+    {
+      "id": "Q-INVARIANT-1",
+      "category": "INVARIANT",
+      "question": "Does the IDB store name `'notestr-forgotten-slots'` in `cleanup.ts:KNOWN_IDB_NAMES` match exactly the store name used by `createKVStore<true>('forgotten-slots')` in `src/marmot/forgotten-slots.ts` (i.e., the cleanup name is `'notestr-forgotten-slots'`, the factory parameter is `'forgotten-slots'`, and `createKVStore` prepends `'notestr-'`)?",
+      "expected_evidence": "e2e/fixtures/cleanup.ts: `'notestr-forgotten-slots'`; src/marmot/forgotten-slots.ts: `createKVStore<true>('forgotten-slots')`; src/marmot/storage.ts: `createKVStore` implementation prefixes `'notestr-'` to the argument (verify by reading storage.ts).",
+      "rationale": "A name mismatch here is a silent failure — `clearAppState()` would attempt to delete a non-existent IDB name while the real `notestr-forgotten-slots` database persists across test runs."
+    },
+    {
+      "id": "Q-INVARIANT-2",
+      "category": "INVARIANT",
+      "question": "Is the `__notestrTestForgottenSlots` hook registered inside the existing `NEXT_PUBLIC_E2E === '1'` block in `client.tsx` — NOT at module scope or in a separate `useEffect` — consistent with the existing test-hook pattern?",
+      "expected_evidence": "src/marmot/client.tsx: the hook assignment is nested within the `if (process.env.NEXT_PUBLIC_E2E === '1')` conditional; it follows the same structural pattern as the existing `__notestrTestForgetLeaf` hook (check the surrounding block before inserting).",
+      "rationale": "The E2E gating ensures the hook does not appear in production builds; registering it outside the gate would make `window.__notestrTestForgottenSlots` available to any production user."
+    },
+    {
+      "id": "Q-INVARIANT-3",
+      "category": "INVARIANT",
+      "question": "Does this story NOT modify `e2e/tests/` files, `src/components/`, or `src/marmot/forgotten-slots.ts` (read-only; S1 owns), touching only the three files specified in `scope.includes`?",
+      "expected_evidence": "Git diff for the S5 implementation commit shows only `e2e/fixtures/cleanup.ts`, `src/types/notestr-test-hooks.d.ts`, and `src/marmot/client.tsx`; no other paths appear.",
+      "rationale": "S5 is enabling infrastructure only; any changes to test specs or the forgotten-slots store itself would step on S1's or S6/S7's ownership."
+    },
+    {
+      "id": "Q-SCOPE-1",
+      "category": "SCOPE",
+      "question": "Are all file modifications in this story confined to `e2e/fixtures/cleanup.ts`, `src/types/notestr-test-hooks.d.ts`, and `src/marmot/client.tsx`, with no modifications to `e2e/tests/`, `src/components/`, or `src/marmot/forgotten-slots.ts`?",
+      "expected_evidence": "Git diff for the S5 implementation commit lists exactly three file paths matching scope.includes; scope.excludes files do not appear.",
+      "rationale": "S5's narrow scope is what makes it independently deliverable from S6/S7; any test-spec touches here would couple delivery of the infrastructure to a specific test design decision."
+    },
+    {
+      "id": "Q-ROBUSTNESS-1",
+      "category": "ROBUSTNESS",
+      "question": "Does `window.__notestrTestForgottenSlots()` return an empty `string[]` (not `null`, `undefined`, or a rejected Promise) when the `notestr-forgotten-slots` IDB store is empty?",
+      "expected_evidence": "src/marmot/client.tsx: the hook implementation calls `loadForgottenSlots().then(s => [...s])`; `loadForgottenSlots()` (from S1) returns an empty Set when the store is empty; spreading an empty Set produces `[]`; the hook therefore returns `Promise<[]>` rather than rejecting.",
+      "rationale": "S7's test calls this hook before any slot has been forgotten during setup; if it rejects or returns null, the assertion logic crashes before reaching the actual forget step."
+    },
+    {
+      "id": "Q-TEST_COVERAGE-1",
+      "category": "TEST_COVERAGE",
+      "question": "Are the three changes in this story (cleanup.ts addition, notestr-test-hooks.d.ts declaration, client.tsx hook implementation) fully exercised by S6's and S7's e2e specs, confirming that no dedicated unit test is needed for this story itself?",
+      "expected_evidence": "S6 e2e spec calls `clearAppState()` (exercising the KNOWN_IDB_NAMES addition); S7 e2e spec calls `page.evaluate(() => window.__notestrTestForgottenSlots())` (exercising the hook and its type declaration). The story's own `verification.json` documents this test-handoff explicitly.",
+      "rationale": "S5 introduces no logic of its own — it is pure wiring; the correct coverage venue is the consuming e2e specs in S6 and S7, not a standalone unit test for three-line additions."
+    }
+  ]
+}

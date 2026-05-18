@@ -1,0 +1,48 @@
+{
+  "story_id": "S5",
+  "status": "done",
+  "remediation_rounds": 0,
+  "files_created": [
+    "specs/epic-forget-this-device/S5-e2e-test-infrastructure/architecture.json",
+    "specs/epic-forget-this-device/S5-e2e-test-infrastructure/baseline.json",
+    "specs/epic-forget-this-device/S5-e2e-test-infrastructure/result.json"
+  ],
+  "files_modified": [
+    "e2e/fixtures/cleanup.ts",
+    "src/types/notestr-test-hooks.d.ts",
+    "src/marmot/client.tsx"
+  ],
+  "implementation_summary": "Three targeted additions: (1) 'notestr-forgotten-slots' appended to KNOWN_IDB_NAMES in cleanup.ts so clearAppState() deletes the store between test runs. (2) __notestrTestForgottenSlots?: () => Promise<string[]> added to the Window interface in notestr-test-hooks.d.ts. (3) Hook implemented in client.tsx inside the existing isTestRuntime() useEffect block using a dynamic import of forgotten-slots.ts to avoid loading it in non-E2E builds; cleanup return also deletes the hook property.",
+  "architect_decisions": [
+    {
+      "topic": "Dynamic import vs static import for forgotten-slots in client.tsx",
+      "decision": "Used dynamic import (`await import('./forgotten-slots')`) inside the hook body so the forgotten-slots module is not bundled into the main chunk for non-E2E builds. Static import would have been simpler but adds the module unconditionally.",
+      "ac": "AC-E2E-8"
+    },
+    {
+      "topic": "Hook cleanup on unmount",
+      "decision": "Added `delete window.__notestrTestForgottenSlots` to the useEffect return alongside the other hook deletions. This matches the existing cleanup pattern for all other hooks in the block.",
+      "ac": "AC-E2E-8"
+    }
+  ],
+  "mocks_introduced": [],
+  "tests": {
+    "baseline_count": 137,
+    "final_count": 137,
+    "new_tests": 0,
+    "rationale": "S5 introduces no logic of its own. Coverage is delegated to S6 (clearAppState exercising KNOWN_IDB_NAMES) and S7 (page.evaluate calling __notestrTestForgottenSlots)."
+  },
+  "type_check": {
+    "new_errors": 0,
+    "pre_existing_errors": [
+      "src/marmot/forget-device.test.ts(388): mock type narrowness (S3 known issue)",
+      "src/marmot/forget-device.test.ts(552): isAdmin mock type mismatch (S3 known issue)"
+    ]
+  },
+  "retrospective": {
+    "skipped": true,
+    "reason": "clean_run"
+  },
+  "final_outcome": "accepted",
+  "completed_at": "2026-05-18T16:35:00Z"
+}

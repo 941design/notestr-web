@@ -571,6 +571,7 @@ export default function Page() {
           onClose={() => setSettingsOpen(false)}
           pubkey={pubkey}
           authMethod={authMethod}
+          onSignOut={handleDisconnect}
         />
       </div>
     </MarmotProvider>

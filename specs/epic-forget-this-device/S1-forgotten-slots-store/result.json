@@ -1,0 +1,51 @@
+{
+  "story_id": "S1",
+  "status": "done",
+  "architect_skipped": false,
+  "files_created": [
+    "src/marmot/forgotten-slots.ts",
+    "src/marmot/forgotten-slots.test.ts",
+    "specs/epic-forget-this-device/S1-forgotten-slots-store/architecture.json",
+    "specs/epic-forget-this-device/S1-forgotten-slots-store/baseline.json",
+    "specs/epic-forget-this-device/S1-forgotten-slots-store/result.json"
+  ],
+  "files_modified": [
+    "src/marmot/forgotten-slots.ts",
+    "src/marmot/forgotten-slots.test.ts",
+    "src/marmot/storage.ts",
+    "specs/epic-forget-this-device/S1-forgotten-slots-store/architecture.json",
+    "specs/epic-forget-this-device/S1-forgotten-slots-store/baseline.json",
+    "specs/epic-forget-this-device/S1-forgotten-slots-store/result.json",
+    "specs/epic-forget-this-device/S1-forgotten-slots-store/verification.json"
+  ],
+  "pre_existing_files_touched": [],
+  "tests_added": {
+    "unit": 7
+  },
+  "test_counts": {
+    "baseline": 38,
+    "final": 45
+  },
+  "tests_run": {
+    "command": "npx vitest run src/marmot/",
+    "tests_total": 45,
+    "tests_passed": 45,
+    "tests_failed": 0,
+    "test_files": 7
+  },
+  "mocks": [],
+  "remediation_rounds": 0,
+  "architect_decisions": "Chose export-clear-helper shape for identityStore: added `export async function clearIdentityStore(): Promise<void>` to storage.ts which calls `identityStore.clear()`. This keeps identityStore encapsulated — only getOrCreateClientId and clearIdentityStore can access it — and prevents accidental reads or writes from S3's forgetSelfDevice. Pattern is consistent with getOrCreateClientId() which already wraps all identityStore access. Full clear() (not removeItem) is used so any future keys added to identityStore are automatically covered.",
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The vitest node environment plus module-level store initialisation in forgotten-slots.ts created a three-attempt debugging loop on the mock approach. vi.mock factory hoisting fires before any top-level declarations (let, const, plain objects) in the test file — including things one might expect to be available, like a plain object literal. The only reliable escape hatch is vi.hoisted(). Additionally, even with vi.hoisted(), swapping storeRef.current in beforeEach does not affect the store already captured by the module-under-test at load time; a delegating proxy that always reads through storeRef.current at call time was required to make per-test isolation work.",
+    "surprised_by": "The storeRef.current swap pattern (which works in many DI-friendly architectures) silently fails here because the module captures the store handle at import time, not at call time. This is a consequence of the module being designed for production (eager init), not for testability. The proxy fix is clean but non-obvious — future maintainers of forgotten-slots.test.ts may not understand why the proxy exists without reading the comment.",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  },
+  "final_outcome": "accepted",
+  "completed_at": "2026-05-18T15:35:00Z"
+}

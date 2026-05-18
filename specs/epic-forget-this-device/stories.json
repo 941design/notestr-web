@@ -1,0 +1,393 @@
+{
+  "epic_name": "forget-this-device",
+  "created_at": "2026-05-18T00:00:00Z",
+  "total_stories": 7,
+  "story_order": [
+    "S1",
+    "S2",
+    "S3",
+    "S4",
+    "S5",
+    "S6",
+    "S7"
+  ],
+  "dependency_notes": "S1 is the foundation — it creates the forgotten-slots IDB store and the two exported functions that all other stories consume. S2 depends on S1 for `loadForgottenSlots` and the DOM event name. S3 depends on S1 for `markSlotForgotten`. S4 depends on S3 for the imperative forget actions. S5 depends on S1 (for the IDB store name) and S4 (for client.tsx test-hooks block context). S6 and S7 each depend on S4 (UI is exercised) and S5 (test infrastructure). S6 and S7 are independent of each other and can run in parallel if desired.",
+  "mock_resolution_plan": "No temporary mocks are introduced. S3's unit tests (`forget-device.test.ts`) use `vi.mock` vitest mocks for MarmotClient — these are permanent test fixtures, not tracked mocks.",
+  "seams": [
+    {
+      "data": "forgotten-slots store public API",
+      "contract": {
+        "type_name": "ForgottenSlotsAPI",
+        "fields": [
+          {
+            "name": "markSlotForgotten",
+            "type": "(slot: string) => Promise<void>"
+          },
+          {
+            "name": "loadForgottenSlots",
+            "type": "() => Promise<Set<string>>"
+          }
+        ],
+        "invariants": [
+          "markSlotForgotten writes the slot to IDB key `slot` with value `true` in the `notestr-forgotten-slots` store",
+          "markSlotForgotten dispatches `new CustomEvent('notestr:forgotten-slots-changed')` on `window` after writing",
+          "loadForgottenSlots returns a Set containing every key currently stored in `notestr-forgotten-slots`",
+          "The store is created via `createKVStore<true>('forgotten-slots')` — never raw idb-keyval"
+        ]
+      },
+      "source": {
+        "story": "S1",
+        "artifact": "src/marmot/forgotten-slots.ts"
+      },
+      "destination": {
+        "story": "S2",
+        "artifact": "src/marmot/device-sync.ts"
+      }
+    },
+    {
+      "data": "forget-device imperative API",
+      "contract": {
+        "type_name": "ForgetDeviceAPI",
+        "fields": [
+          {
+            "name": "forgetSelfDevice",
+            "type": "(client: MarmotClient, signer: Signer, relays: string[], onSignOut: () => void) => Promise<void>"
+          },
+          {
+            "name": "forgetSiblingDevice",
+            "type": "(client: MarmotClient, pubkey: string, slot: string) => Promise<void>"
+          }
+        ],
+        "invariants": [
+          "forgetSelfDevice iterates client.groups.loaded sequentially (for...of, not Promise.all)",
+          "forgetSelfDevice calls removeLeafByIndex for each matching leaf, then publishes kind-5 per published KP event id, then clears IDB, then calls onSignOut",
+          "forgetSelfDevice calls clearNip46Session() — not any raw localStorage call",
+          "forgetSiblingDevice only processes groups where isAdmin(group.groupData, pubkey) is true",
+          "forgetSiblingDevice calls markSlotForgotten(slot) after all leaf removals complete"
+        ]
+      },
+      "source": {
+        "story": "S3",
+        "artifact": "src/marmot/forget-device.ts"
+      },
+      "destination": {
+        "story": "S4",
+        "artifact": "src/components/SettingsModal.tsx"
+      }
+    },
+    {
+      "data": "e2e test hook: __notestrTestForgottenSlots",
+      "contract": {
+        "type_name": "NotestrTestForgottenSlotsHook",
+        "fields": [
+          {
+            "name": "__notestrTestForgottenSlots",
+            "type": "() => Promise<string[]>"
+          }
+        ],
+        "invariants": [
+          "__notestrTestForgottenSlots is declared on Window in src/types/notestr-test-hooks.d.ts",
+          "__notestrTestForgottenSlots is implemented in src/marmot/client.tsx inside the `if (process.env.NEXT_PUBLIC_E2E === '1')` block",
+          "__notestrTestForgottenSlots returns the current keys of the notestr-forgotten-slots IDB store as a string[]"
+        ]
+      },
+      "source": {
+        "story": "S5",
+        "artifact": "src/marmot/client.tsx"
+      },
+      "destination": {
+        "story": "S7",
+        "artifact": "e2e/tests/forget-device-sibling.spec.ts"
+      }
+    }
+  ],
+  "stories": [
+    {
+      "id": "S1",
+      "name": "forgotten-slots-store",
+      "title": "forgotten-slots IDB store + storage.ts identity export",
+      "description": "Create `src/marmot/forgotten-slots.ts` (new file) implementing the `notestr-forgotten-slots` IDB store via `createKVStore<true>('forgotten-slots')`. Export `markSlotForgotten(slot: string): Promise<void>` (writes to IDB, then dispatches `new CustomEvent('notestr:forgotten-slots-changed')` on `window`) and `loadForgottenSlots(): Promise<Set<string>>` (calls `forgottenStore.keys()` — not `getAllKeys`). Also update `src/marmot/storage.ts` to export a mechanism for clearing the file-private `identityStore` — either a new `clearIdentityStore()` helper or by exporting the store handle directly — so `forgetSelfDevice` (S3) can wipe the local clientId. Write a vitest unit test (`src/marmot/forgotten-slots.test.ts`) covering round-trip store/retrieve and the DOM event dispatch. No UI, no e2e dependency.",
+      "acceptance_criteria": [
+        "AC-STORE-1",
+        "AC-STORE-2",
+        "AC-STORE-3",
+        "AC-STORE-4"
+      ],
+      "scope": {
+        "includes": [
+          "src/marmot/forgotten-slots.ts (new file)",
+          "src/marmot/storage.ts (add clearIdentityStore export or export identityStore handle)",
+          "src/marmot/forgotten-slots.test.ts (new file)"
+        ],
+        "excludes": [
+          "src/marmot/device-sync.ts",
+          "src/marmot/forget-device.ts",
+          "src/components/SettingsModal.tsx",
+          "app/page.tsx",
+          "e2e/"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "status": "done",
+      "owning_module": "src/marmot/forgotten-slots.ts",
+      "creates_seam": true,
+      "lighter_path": false,
+      "consumes_seams": [],
+      "notes": "The storage.ts export shape is an open architectural decision (see architecture.md exploration finding #2): the architect may export the store handle directly or wrap it in a clearIdentityStore() helper. Record the chosen shape in the story's architecture.json. The IDB store name 'forgotten-slots' is load-bearing for e2e cleanup (AC-E2E-6) and the test hook (AC-E2E-7) — do not change it."
+    },
+    {
+      "id": "S2",
+      "name": "auto-invite-skip-forgotten-slots",
+      "title": "Auto-invite scan skips forgotten slots",
+      "description": "Modify `src/marmot/device-sync.ts` to load and maintain an in-memory `forgottenSlots: Set<string>` cache inside the `runKeyPackageSync` closure. Initialize by calling `loadForgottenSlots()` before the sync loop. Register a `window.addEventListener('notestr:forgotten-slots-changed', refreshForgotten)` listener in the same closure and its matching `window.removeEventListener` in the `useDeviceSync` unmount cleanup. In `syncKnownKeyPackages`, insert `if (slot && forgottenSlots.has(slot)) continue` after the `isLocalDevice` + pubkey guards and before the `inviteToAllGroups` call. In `handleKeyPackageEvent`, insert an equivalent early-return guard at the matching insertion point. Update `src/marmot/device-sync.test.ts` to assert that a key package event whose slot is in `forgottenSlots` is skipped.",
+      "acceptance_criteria": [
+        "AC-INVITE-1",
+        "AC-INVITE-2",
+        "AC-INVITE-3",
+        "AC-INVITE-4"
+      ],
+      "scope": {
+        "includes": [
+          "src/marmot/device-sync.ts",
+          "src/marmot/device-sync.test.ts"
+        ],
+        "excludes": [
+          "src/marmot/forgotten-slots.ts",
+          "src/marmot/storage.ts",
+          "src/marmot/forget-device.ts",
+          "src/components/",
+          "e2e/"
+        ]
+      },
+      "complexity": "medium",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "status": "done",
+      "owning_module": "src/marmot/device-sync.ts",
+      "creates_seam": false,
+      "lighter_path": false,
+      "consumes_seams": [
+        "ForgottenSlotsAPI"
+      ],
+      "notes": "The patch happens inside the `runKeyPackageSync` closure (architecture.md exploration finding #6 — not as a module export). `removeEventListener` cleanup must be registered in the existing `useDeviceSync` hook unmount path, not just the inner closure teardown."
+    },
+    {
+      "id": "S3",
+      "name": "forget-device-core",
+      "title": "forget-device.ts imperative actions + unit tests",
+      "description": "Create `src/marmot/forget-device.ts` (new file) with two top-level async functions. `forgetSelfDevice(client, signer, relays, onSignOut)`: (1) iterate `client.groups.loaded` in a `for...of` loop, calling `removeLeafByIndex` sequentially for every leaf whose KP matches the local clientId; (2) enumerate `client.keyPackages.list()` entries where `.published.length > 0` and publish one NIP-09 kind-5 deletion event per entry id via `signer.signEvent` + `client.network.publish(relays, ...)` — sign with the user identity key, include an `e`-tag referencing the KP event id; (3) clear IDB: call the `clearIdentityStore()` export (or handle) from S1's storage.ts update, call `.clear()` on `invitedKeysStore` and `joinedGroupsStore` (exported from storage.ts:70-71), and clear the key-packages / group-state / invite-store databases via the architect's chosen mechanism (lift-to-scope, `MarmotClient.clearLocalState()`, or `indexedDB.deleteDatabase` — record choice in architecture.json); (4) call `clearNip46Session()` from `src/lib/nostr.ts`; (5) invoke `onSignOut()`. `forgetSiblingDevice(client, slot)`: (1) iterate groups where `isAdmin(group.groupData, pubkey)` is true, skipping null `groupData`; (2) for each qualifying group, call `removeLeafByIndex` sequentially for every leaf matching `slot`; (3) call `markSlotForgotten(slot)` from forgotten-slots.ts. Create `src/marmot/forget-device.test.ts` (new file) using `vi.mock('@internet-privacy/marmot-ts', ...)` following the pattern in client.test.ts, with a 2-group mock MarmotClient.",
+      "acceptance_criteria": [
+        "AC-SELF-1",
+        "AC-SELF-2",
+        "AC-SELF-3",
+        "AC-SELF-4",
+        "AC-SIBLING-1",
+        "AC-SIBLING-2",
+        "AC-SIBLING-3",
+        "AC-DELETE-1",
+        "AC-DELETE-2",
+        "AC-DELETE-3",
+        "AC-CLEANUP-1",
+        "AC-CLEANUP-2",
+        "AC-CLEANUP-3",
+        "AC-CLEANUP-4",
+        "AC-SIGNOUT-1",
+        "AC-SIGNOUT-2",
+        "AC-UNIT-1",
+        "AC-UNIT-2",
+        "AC-UNIT-3",
+        "AC-UNIT-4",
+        "AC-UNIT-5",
+        "AC-UNIT-6",
+        "AC-UNIT-7"
+      ],
+      "scope": {
+        "includes": [
+          "src/marmot/forget-device.ts (new file)",
+          "src/marmot/forget-device.test.ts (new file)",
+          "src/marmot/client.tsx (only if architect picks lift-to-module-scope for IDB stores — scope is conditional on architecture decision)"
+        ],
+        "excludes": [
+          "src/marmot/device-sync.ts",
+          "src/components/",
+          "app/page.tsx",
+          "e2e/",
+          "src/marmot/storage.ts (read-only — S1 owns writes)"
+        ]
+      },
+      "complexity": "high",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [
+        {
+          "fixture_id": "FIXTURE-03-001",
+          "description": "vi.mock MarmotClient double: 2-group client with configurable leaf sets, spy on removeLeafByIndex, spy on client.network.publish, spy on client.keyPackages.list",
+          "interface": "MarmotClient",
+          "reason": "External MLS library — not usable in vitest without a real relay; permanent test double following existing pattern in client.test.ts and device-sync.test.ts",
+          "permanent": true
+        }
+      ],
+      "status": "done",
+      "owning_module": "src/marmot/forget-device.ts",
+      "creates_seam": true,
+      "lighter_path": false,
+      "consumes_seams": [
+        "ForgottenSlotsAPI"
+      ],
+      "notes": "AC-CLEANUP-2 references an open architectural decision (three valid IDB cleanup paths). The architect MUST record the chosen mechanism in this story's architecture.json before implementation begins. The unit tests in forget-device.test.ts exercise the chosen mechanism via spy — the test setup must match the chosen path. AC-SIGNOUT-1 spans this story (forgetSelfDevice accepts and invokes onSignOut) and S4 (app/page.tsx passes handleDisconnect). Slot-to-leafIndex mapping uses the pattern at DeviceList.tsx:119-130 via `defaultKeyPackageEqualityConfig.compareKeyPackageToLeafNode` (architecture.md Q3 resolved)."
+    },
+    {
+      "id": "S4",
+      "name": "settings-modal-devices-tab",
+      "title": "Settings modal Devices tab UI",
+      "description": "Modify `src/components/SettingsModal.tsx` to adopt the `<Tabs>` primitive from `src/components/ui/tabs.tsx`. The existing connection content becomes a named 'Connection' tab; add a new 'Devices' tab. Add `onSignOut: () => void` as a new required prop on SettingsModal. Inside the Devices tab, call `useMarmot()` to obtain `client`, `signer`, `relays`, and `clientId`. Render a device row for each entry in the union of (a) the local `clientId` and (b) relay-fetched kind-30443 events authored by the local pubkey — sourced from `client.keyPackages.list()`, NOT from DeviceList.tsx's ratchet-tree-leaves flow. Each row shows: user-friendly name (`device-<slot[8..14]>`), slot identifier, KP `created_at` timestamp, and a 'this device' badge when `d.slot === clientId`. Each row has a destructive 'Forget' button that opens a confirmation dialog before any action. Self-forget dialog: explains removal from all groups and sign-out; calls `forgetSelfDevice(client, signer, relays, onSignOut)` on confirm. Sibling-forget dialog: explains partial nature (ghost KP expires ~28 days); calls `forgetSiblingDevice(client, slot)` on confirm. Both flows: show per-group progress indicator, disable the Forget button while in progress. Attach `data-testid='device-forget-self-btn'` to the self-forget row button and `data-testid='device-forget-self-confirm-btn'` to the confirmation dialog's confirm button. Update `app/page.tsx` to pass `onSignOut={handleDisconnect}` into `<SettingsModal>`.",
+      "acceptance_criteria": [
+        "AC-UI-1",
+        "AC-UI-2",
+        "AC-UI-3",
+        "AC-UI-4",
+        "AC-UI-5",
+        "AC-UI-6",
+        "AC-SELF-5",
+        "AC-SELF-6",
+        "AC-SELF-7",
+        "AC-SIBLING-4",
+        "AC-SIBLING-5"
+      ],
+      "scope": {
+        "includes": [
+          "src/components/SettingsModal.tsx",
+          "src/components/DevicesTab.tsx (new component file, may be inlined into SettingsModal.tsx at architect's discretion)",
+          "app/page.tsx"
+        ],
+        "excludes": [
+          "src/components/DeviceList.tsx (unchanged per architecture.md and AC notes)",
+          "src/marmot/",
+          "e2e/"
+        ]
+      },
+      "complexity": "high",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "status": "done",
+      "owning_module": "src/components/SettingsModal.tsx",
+      "creates_seam": false,
+      "lighter_path": false,
+      "consumes_seams": [
+        "ForgetDeviceAPI"
+      ],
+      "notes": "The Devices tab data source is relay-fetched kind-30443 events ∪ local clientId — explicitly NOT DeviceList.tsx's ratchet-tree leaf enumeration (architecture.md exploration finding #7). The DevicesTab may be a separate file or inlined; the architect decides and records in architecture.json. AC-SELF-5 / AC-SIGNOUT-2 mandate that forgetSelfDevice must not contain navigation — onSignOut is the only mechanism. The `data-testid` values in AC-UI-6 are load-bearing for e2e tests in S6."
+    },
+    {
+      "id": "S5",
+      "name": "e2e-test-infrastructure",
+      "title": "E2E test infrastructure additions (cleanup + test hook)",
+      "description": "Three targeted additions to support S6 and S7's e2e specs. (1) In `e2e/fixtures/cleanup.ts`, add the string `'notestr-forgotten-slots'` to the `KNOWN_IDB_NAMES` array (lines 16-25) so `clearAppState()` deletes the new IDB store on every test run. (2) In `src/types/notestr-test-hooks.d.ts`, declare `__notestrTestForgottenSlots(): Promise<string[]>` on the `Window` interface alongside the existing hook declarations. (3) In `src/marmot/client.tsx`, inside the existing `if (process.env.NEXT_PUBLIC_E2E === '1')` test-hooks block, implement `window.__notestrTestForgottenSlots = async () => { return loadForgottenSlots().then(s => [...s]); }` (or equivalent that returns a Promise<string[]> of the current store keys).",
+      "acceptance_criteria": [
+        "AC-E2E-6",
+        "AC-E2E-7",
+        "AC-E2E-8"
+      ],
+      "scope": {
+        "includes": [
+          "e2e/fixtures/cleanup.ts",
+          "src/types/notestr-test-hooks.d.ts",
+          "src/marmot/client.tsx"
+        ],
+        "excludes": [
+          "e2e/tests/",
+          "src/components/",
+          "src/marmot/forgotten-slots.ts (read-only — S1 owns)",
+          "src/marmot/forget-device.ts"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "status": "done",
+      "owning_module": "src/marmot/client.tsx",
+      "creates_seam": true,
+      "lighter_path": false,
+      "consumes_seams": [
+        "ForgottenSlotsAPI"
+      ],
+      "notes": "This story introduces no new tests itself — it is purely enabling infrastructure for S6 and S7. The `KNOWN_IDB_NAMES` addition in cleanup.ts is load-bearing for relay-state-independence (feedback_e2e_relay_independence.md): without it, the forgotten-slots IDB persists across test runs and causes false positives. The test hook in client.tsx follows the existing `__notestrTestForgetLeaf` pattern; check the exact block structure before inserting."
+    },
+    {
+      "id": "S6",
+      "name": "e2e-self-forget-spec",
+      "title": "E2E spec: self-forget flow",
+      "description": "Create `e2e/tests/forget-device-self.spec.ts` (new file). Structure: a single `describe.serial` block with a `Date.now()` group name at the top (e.g. `` `ForgetSelf ${Date.now()}` ``). Use explicit slot strings: authenticate device A as `'self'`, device B as `'B'`. In `beforeAll`, propagate `skipMobile` following the pattern in multi-device-cross-npub.spec.ts. Test flow: A authenticates, A creates a group, A invites B (by npub), B joins, record A's KP event id. A clicks Settings → Devices tab, clicks the 'Forget' button on the local device row (`data-testid='device-forget-self-btn'`), confirms the dialog (`data-testid='device-forget-self-confirm-btn'`). Assertions: (1) after the flow completes, A's leaf is absent from B's group member list (`expect(page.locator('[data-testid=\"member-item\"]')).toHaveCount(N - 1, { timeout: 30000 })`); (2) a kind-5 deletion event with A's pubkey and an `e`-tag matching A's KP event id is published on the relay (`openNdkSubscriber.waitForEvent({ kinds: [5], authors: [aPubkeyHex] }, timeoutMs)`). Must not call relay reset helpers or assert on global relay state.",
+      "acceptance_criteria": [
+        "AC-E2E-1",
+        "AC-E2E-3",
+        "AC-E2E-4",
+        "AC-E2E-5",
+        "AC-E2E-9",
+        "AC-E2E-10"
+      ],
+      "scope": {
+        "includes": [
+          "e2e/tests/forget-device-self.spec.ts (new file)"
+        ],
+        "excludes": [
+          "e2e/tests/forget-device-sibling.spec.ts",
+          "e2e/fixtures/",
+          "src/"
+        ]
+      },
+      "complexity": "medium",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "status": "done",
+      "owning_module": "e2e/tests/forget-device-self.spec.ts",
+      "creates_seam": false,
+      "lighter_path": false,
+      "consumes_seams": [
+        "NotestrTestForgottenSlotsHook"
+      ],
+      "notes": "AC-E2E-3, AC-E2E-4, AC-E2E-5 apply to 'both new e2e specs' — they are assigned here (S6, the first spec file) as the pattern-setter. S7 satisfies them by design (same conventions), but each AC ID appears in exactly one story's acceptance_criteria array. The `openNdkSubscriber` fixture from e2e/fixtures/ndk-subscriber.ts is used for the kind-5 relay assertion (AC-E2E-10) and is a permanent external-service double — not a temporary mock."
+    },
+    {
+      "id": "S7",
+      "name": "e2e-sibling-forget-spec",
+      "title": "E2E spec: sibling-forget flow",
+      "description": "Create `e2e/tests/forget-device-sibling.spec.ts` (new file). Structure: a single `describe.serial` block with a `Date.now()` group name at the top (e.g. `` `ForgetSibling ${Date.now()}` ``). Use explicit slot strings: authenticate A1 as `'sibling-a1'`, A2 as `'sibling-a2'`, B as `'B'`. In `beforeAll`, propagate `skipMobile`. Test flow: A1, A2, and B authenticate (same bunker key for A1+A2, different for B). A1 creates a group, invites A2 and B; all join. A1 opens Settings → Devices tab, clicks 'Forget' on A2's device row, confirms. Assertions: (1) A2's leaf is absent from the group member list after the forget completes (`toHaveCount(N - 1, { timeout: 30000 })` in B's or A1's page context); (2) A1's `__notestrTestForgottenSlots()` test hook returns an array containing A2's slot string. Must not call relay reset helpers or assert on global relay state.",
+      "acceptance_criteria": [
+        "AC-E2E-2",
+        "AC-E2E-11",
+        "AC-E2E-12"
+      ],
+      "scope": {
+        "includes": [
+          "e2e/tests/forget-device-sibling.spec.ts (new file)"
+        ],
+        "excludes": [
+          "e2e/tests/forget-device-self.spec.ts",
+          "e2e/fixtures/",
+          "src/"
+        ]
+      },
+      "complexity": "medium",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "status": "done",
+      "owning_module": "e2e/tests/forget-device-sibling.spec.ts",
+      "creates_seam": false,
+      "lighter_path": false,
+      "consumes_seams": [
+        "NotestrTestForgottenSlotsHook"
+      ],
+      "notes": "AC-E2E-3..5 conventions (explicit slots, skipMobile, no relay reset) are pattern-assigned to S6 as the canonical setter; this story satisfies them by following the same conventions without re-asserting the AC IDs. The `__notestrTestForgottenSlots` hook (S5, NotestrTestForgottenSlotsHook seam) is the primary assertion mechanism for AC-E2E-12."
+    }
+  ],
+  "updated_at": "2026-05-18T16:55:00Z"
+}

@@ -22,6 +22,9 @@ const KNOWN_IDB_NAMES = [
   'notestr-invited-keys',
   'notestr-group-sync',
   'notestr-joined-groups',
+  // S5: forgotten-slots store — must be cleared between runs so prior test
+  // runs do not leave slots marked forgotten for subsequent test runs.
+  'notestr-forgotten-slots',
 ];
 
 /**

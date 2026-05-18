@@ -9,14 +9,17 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { DevicesTab } from "@/components/DevicesTab";
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   pubkey: string;
   authMethod: "nip07" | "nip46" | null;
+  onSignOut: () => void;
 }
 
 export function SettingsModal({
@@ -24,6 +27,7 @@ export function SettingsModal({
   onClose,
   pubkey,
   authMethod,
+  onSignOut,
 }: SettingsModalProps) {
   const [copied, setCopied] = useState(false);
   const npub = hexToNpub(pubkey);
@@ -46,49 +50,68 @@ export function SettingsModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-muted-foreground">Connection:</span>
-            <Badge
-              variant="secondary"
-              className="text-xs uppercase tracking-wide"
-            >
-              {label}
-            </Badge>
-          </div>
+        <Tabs defaultValue="connection">
+          <TabsList className="w-full">
+            <TabsTrigger value="connection" className="flex-1">
+              Connection
+            </TabsTrigger>
+            <TabsTrigger value="devices" className="flex-1">
+              Devices
+            </TabsTrigger>
+          </TabsList>
 
-          <div className="space-y-2">
-            <div className="text-sm font-medium">Share your npub</div>
-            <div className="flex items-center justify-center rounded-lg border bg-white p-4">
-              <QRCodeSVG
-                value={npub}
-                size={200}
-                level="M"
-                data-testid="settings-npub-qr"
-              />
+          <TabsContent value="connection">
+            <div className="space-y-4 pt-2">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">Connection:</span>
+                <Badge
+                  variant="secondary"
+                  className="text-xs uppercase tracking-wide"
+                >
+                  {label}
+                </Badge>
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Share your npub</div>
+                <div className="flex items-center justify-center rounded-lg border bg-white p-4">
+                  <QRCodeSVG
+                    value={npub}
+                    size={200}
+                    level="M"
+                    data-testid="settings-npub-qr"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <code
+                    className="flex-1 break-all rounded-md bg-muted p-2 text-xs"
+                    data-testid="settings-npub-value"
+                  >
+                    {npub}
+                  </code>
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    onClick={handleCopy}
+                    aria-label="Copy npub"
+                  >
+                    {copied ? (
+                      <Check className="size-3.5" />
+                    ) : (
+                      <Copy className="size-3.5" />
+                    )}
+                  </Button>
+                </div>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <code
-                className="flex-1 break-all rounded-md bg-muted p-2 text-xs"
-                data-testid="settings-npub-value"
-              >
-                {npub}
-              </code>
-              <Button
-                variant="outline"
-                size="icon-sm"
-                onClick={handleCopy}
-                aria-label="Copy npub"
-              >
-                {copied ? (
-                  <Check className="size-3.5" />
-                ) : (
-                  <Copy className="size-3.5" />
-                )}
-              </Button>
+          </TabsContent>
+
+          <TabsContent value="devices">
+            <div className="pt-2">
+              <DevicesTab onSignOut={onSignOut} />
             </div>
-          </div>
-        </div>
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   );

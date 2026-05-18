@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-05-18T00:00:00Z",
+  "tests_run": {
+    "suite": "e2e (Playwright)",
+    "count": 117,
+    "note": "Count derived by summing test() invocations across all *.spec.ts files in e2e/tests/ using grep -c 'test(' — e2e suite was NOT actually executed at baseline capture time. Playwright runs are slow and flaky in CI without the running app + relay; execution is deferred to Step 6 (lead verification). S6 contributes the new spec as the proof, not the runner.",
+    "method": "grep -c 'test(' e2e/tests/*.spec.ts | awk -F: '{sum+=$2} END{print sum}'",
+    "status": "NOT_RUN"
+  },
+  "unit_tests": {
+    "suite": "vitest",
+    "count": 137,
+    "source": "S5 result.json#tests.final_count",
+    "status": "NOT_RUN_AT_S6_BASELINE"
+  }
+}

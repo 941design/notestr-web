@@ -1,0 +1,160 @@
+{
+  "story_id": "S4",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "id": "Q-SPEC-1",
+      "category": "SPEC",
+      "ac_ref": "AC-UI-1",
+      "question": "Does `src/components/SettingsModal.tsx` use the `<Tabs>` primitive from `src/components/ui/tabs.tsx`, with the existing connection content in a named 'Connection' tab and a new 'Devices' tab added alongside it?",
+      "expected_evidence": "src/components/SettingsModal.tsx: `import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'`; JSX contains `<Tabs>` with at least two `<TabsTrigger>` elements ('Connection' and 'Devices') and two `<TabsContent>` panels.",
+      "rationale": "AC-UI-1 defines the structural requirement; without the Tabs primitive the two flows (connection settings and device management) cannot coexist in the same modal."
+    },
+    {
+      "id": "Q-SPEC-2",
+      "category": "SPEC",
+      "ac_ref": "AC-UI-2",
+      "question": "Does the Devices tab render a device row for each entry in the union of (a) the local `clientId` and (b) relay-fetched kind-30443 events authored by the local pubkey, and does it NOT source its data from `DeviceList.tsx`'s ratchet-tree-leaves data flow?",
+      "expected_evidence": "src/components/SettingsModal.tsx or DevicesTab.tsx: data is derived from `client.keyPackages.list()` (own KPs in IDB) ∪ relay query filtered by `pubkey`; no import or usage of `DeviceList`, `useGroup`, or leaf-iteration APIs; the device list is built without consulting the MLS ratchet tree.",
+      "rationale": "AC-UI-2 and architecture exploration finding #7 explicitly prohibit using DeviceList's data flow; the ratchet tree only contains admitted leaves, not the full set of KPs visible on the relay."
+    },
+    {
+      "id": "Q-SPEC-3",
+      "category": "SPEC",
+      "ac_ref": "AC-UI-3",
+      "question": "Does each device row display a user-friendly name (default `device-<slot[8..14]>`), the slot identifier, the KP's `created_at` timestamp, and a 'this device' badge when `d.slot === localClientId`?",
+      "expected_evidence": "src/components/SettingsModal.tsx or DevicesTab.tsx: JSX includes text rendering `device-${slot.slice(8, 14)}` (or equivalent), the raw slot string, the `created_at` value, and a conditional badge element when `slot === clientId`.",
+      "rationale": "AC-UI-3 specifies the information density of each row; missing any field (especially the 'this device' badge) would prevent users from identifying which device is their current one before clicking Forget."
+    },
+    {
+      "id": "Q-SPEC-4",
+      "category": "SPEC",
+      "ac_ref": "AC-UI-4",
+      "question": "Does each device row include a destructive 'Forget' button that opens the appropriate confirmation dialog (self-forget or sibling-forget based on `d.slot === localClientId`) before any operation begins?",
+      "expected_evidence": "src/components/SettingsModal.tsx or DevicesTab.tsx: Forget button is styled with a destructive variant (e.g. `variant='destructive'` or equivalent red/warning styling); clicking it sets dialog-open state without calling `forgetSelfDevice` or `forgetSiblingDevice` directly; the dialog confirm button triggers the actual action.",
+      "rationale": "AC-UI-4 and spec design decision #5 require destructive styling and a confirmation gate; an immediate-action button without a dialog is an irreversible UX failure."
+    },
+    {
+      "id": "Q-SPEC-5",
+      "category": "SPEC",
+      "ac_ref": "AC-UI-5",
+      "question": "Does `SettingsModal` call `useMarmot()` to obtain `client`, `signer`, `relays`, and `clientId`, and does it accept a new `onSignOut: () => void` prop from `app/page.tsx`?",
+      "expected_evidence": "src/components/SettingsModal.tsx: `const { client, signer, relays, clientId } = useMarmot()` call; TypeScript prop interface includes `onSignOut: () => void`; the prop is used in the self-forget confirmation flow.",
+      "rationale": "AC-UI-5 wires the architectural seam from `page.tsx` into the modal; without `useMarmot()` the Devices tab cannot call the forget actions, and without `onSignOut` self-forget cannot trigger the sign-out callback."
+    },
+    {
+      "id": "Q-SPEC-6",
+      "category": "SPEC",
+      "ac_ref": "AC-UI-6",
+      "question": "Does the self-forget device row button carry `data-testid=\"device-forget-self-btn\"` and does the confirmation dialog's confirm button carry `data-testid=\"device-forget-self-confirm-btn\"`?",
+      "expected_evidence": "src/components/SettingsModal.tsx or DevicesTab.tsx: the Forget button on the local device row has `data-testid='device-forget-self-btn'`; the confirmation dialog's primary action button has `data-testid='device-forget-self-confirm-btn'`; both appear exactly once in the component tree.",
+      "rationale": "AC-UI-6 defines the Playwright selectors used by S6's e2e spec; a mismatch in test-id strings will cause the e2e test to fail regardless of functional correctness."
+    },
+    {
+      "id": "Q-SPEC-7",
+      "category": "SPEC",
+      "ac_ref": "AC-SELF-5",
+      "question": "After local cleanup, does the self-forget flow invoke the `onSignOut` callback received as a prop (via `forgetSelfDevice`'s parameter) and contain no direct navigation call (`router.push`, `location.assign`, etc.) in the SettingsModal component?",
+      "expected_evidence": "src/components/SettingsModal.tsx: the self-forget confirm handler calls `await forgetSelfDevice(client, signer, relays, onSignOut)` with the modal's `onSignOut` prop; grep confirms no `useRouter`, `router.push`, or `location.*` in SettingsModal.tsx.",
+      "rationale": "AC-SELF-5 (assigned to S3 but UI-verified here) requires navigation delegation to `onSignOut`; the SettingsModal must not attempt navigation itself."
+    },
+    {
+      "id": "Q-SPEC-8",
+      "category": "SPEC",
+      "ac_ref": "AC-SELF-6",
+      "question": "Is a confirmation dialog shown before self-forget executes that explains removing the device from all groups and signing the user out, with the confirm button (`data-testid='device-forget-self-confirm-btn'`) being the only trigger for `forgetSelfDevice`?",
+      "expected_evidence": "src/components/SettingsModal.tsx or DevicesTab.tsx: dialog text includes language about 'all groups' and 'sign out'; `forgetSelfDevice` is called only in the confirm handler, not on the initial Forget button click.",
+      "rationale": "AC-SELF-6 requires the dialog to be the gating mechanism; without it, a mis-click on the Forget button would immediately and irreversibly sign the user out of all groups."
+    },
+    {
+      "id": "Q-SPEC-9",
+      "category": "SPEC",
+      "ac_ref": "AC-SELF-7",
+      "question": "During multi-group leaf removal in self-forget, does the UI display a per-group progress indicator and disable the Forget button while the operation is in progress?",
+      "expected_evidence": "src/components/SettingsModal.tsx or DevicesTab.tsx: `isInProgress` (or equivalent) state drives `disabled={isInProgress}` on the Forget button; a progress element (e.g. list of groups with a spinner) is rendered while `isInProgress === true`.",
+      "rationale": "AC-SELF-7 and spec design decision #6 require a progress indicator because each group's leaf removal is a slow MLS commit; without it, users see a frozen UI and may retry, causing double-removal."
+    },
+    {
+      "id": "Q-SPEC-10",
+      "category": "SPEC",
+      "ac_ref": "AC-SIBLING-4",
+      "question": "Does the sibling-forget confirmation dialog state the partial nature of the operation — specifically that the device's key package on the relay will expire on its own in approximately 28 days?",
+      "expected_evidence": "src/components/SettingsModal.tsx or DevicesTab.tsx: sibling-forget dialog text includes language about '28 days' or 'expires on its own' or 'key package will remain on the relay'; the self-forget dialog does NOT include this language (the two dialogs are distinct).",
+      "rationale": "AC-SIBLING-4 ensures informed consent for a partial action; users who expect immediate KP deletion after sibling-forget will otherwise be confused when they see the ghost KP reappear on relay queries."
+    },
+    {
+      "id": "Q-SPEC-11",
+      "category": "SPEC",
+      "ac_ref": "AC-SIBLING-5",
+      "question": "During sibling-forget multi-group leaf removal, does the UI display a per-group progress indicator and disable the Forget button while in progress?",
+      "expected_evidence": "src/components/SettingsModal.tsx or DevicesTab.tsx: same `isInProgress` / disabled + progress-indicator pattern as self-forget (AC-SELF-7), but applied to the sibling-forget confirmation flow.",
+      "rationale": "AC-SIBLING-5 mirrors AC-SELF-7 for the sibling path; omitting progress for one path but not the other creates an inconsistent UX for multi-group operations."
+    },
+    {
+      "id": "Q-INVARIANT-1",
+      "category": "INVARIANT",
+      "question": "Does `src/components/DeviceList.tsx` remain unmodified by this story, with no additions, deletions, or changes to its source?",
+      "expected_evidence": "Git diff for the S4 implementation commit shows `src/components/DeviceList.tsx` does not appear; `git show HEAD -- src/components/DeviceList.tsx` returns no diff.",
+      "rationale": "Architecture.md and AC notes explicitly state DeviceList.tsx is unchanged; it owns the per-group single-leaf admin flow which is a different surface and must not be disrupted."
+    },
+    {
+      "id": "Q-INVARIANT-2",
+      "category": "INVARIANT",
+      "question": "Could `src/components/SettingsModal.tsx` (and any DevicesTab component it owns) be deleted and rewritten without modifying any file outside `src/components/` and `app/page.tsx`? If not, which cross-module dependencies exist and do they flow through declared seam contracts?",
+      "expected_evidence": "SettingsModal.tsx imports: `useMarmot` from `src/marmot/` (via context, ForgetDeviceAPI seam), `forgetSelfDevice` and `forgetSiblingDevice` from `src/marmot/forget-device` (declared seam), `Tabs` from `src/components/ui/tabs` (same module boundary). Any import from `src/marmot/internal/*` or raw IDB would be a boundary violation.",
+      "rationale": "The mandatory second ARCHITECTURE question — SettingsModal must not reach into marmot internals or IDB directly; all state access flows through `useMarmot()` and the declared `ForgetDeviceAPI` seam."
+    },
+    {
+      "id": "Q-INVARIANT-3",
+      "category": "INVARIANT",
+      "question": "Does the Devices tab data source use `client.keyPackages.list()` (own KPs in IDB) ∪ relay-fetched kind-30443 events by local pubkey, and explicitly NOT the per-group ratchet tree (i.e., no `useGroup()` calls for the purpose of device enumeration)?",
+      "expected_evidence": "src/components/SettingsModal.tsx or DevicesTab.tsx: device list is built from `client.keyPackages.list()` or a relay query; no `useGroup()` call whose result feeds the device list; no import of group-leaf enumeration utilities for device listing.",
+      "rationale": "Architecture exploration finding #7 mandates this data source; using the ratchet tree would only show admitted leaves, missing KPs that are on the relay but not yet in any group."
+    },
+    {
+      "id": "Q-SCOPE-1",
+      "category": "SCOPE",
+      "question": "Are all file modifications in this story confined to `src/components/SettingsModal.tsx`, optionally `src/components/DevicesTab.tsx` (new), and `app/page.tsx`, with no modifications to `src/marmot/`, `e2e/`, or `src/components/DeviceList.tsx`?",
+      "expected_evidence": "Git diff for the S4 implementation commit shows only the expected three file paths (or two if DevicesTab is inlined); `DeviceList.tsx`, `device-sync.ts`, and `e2e/` do not appear.",
+      "rationale": "S4 scope.excludes explicitly prohibits DeviceList.tsx and src/marmot/ touches; any changes there indicate scope creep that would conflict with S1–S3 ownership."
+    },
+    {
+      "id": "Q-ROBUSTNESS-1",
+      "category": "ROBUSTNESS",
+      "question": "Are the Forget buttons disabled while their respective forget operations are in flight, preventing double-submission if a user clicks multiple times during a slow multi-group leaf removal?",
+      "expected_evidence": "src/components/SettingsModal.tsx or DevicesTab.tsx: `disabled={isInProgress}` on both self-forget and sibling-forget buttons; state is set to `true` before `await forgetSelfDevice(...)` and reset to `false` in a `finally` block (or equivalent).",
+      "rationale": "Without button disabling, a user who clicks Forget twice during a slow operation would invoke the forget function twice, potentially causing double-removal of leaves and double kind-5 publishing."
+    },
+    {
+      "id": "Q-ROBUSTNESS-2",
+      "category": "ROBUSTNESS",
+      "question": "If `forgetSiblingDevice` rejects (e.g. a network error mid-loop), does the Devices tab display an error state and re-enable the Forget button, allowing the user to retry?",
+      "expected_evidence": "src/components/SettingsModal.tsx or DevicesTab.tsx: the sibling-forget confirm handler wraps `await forgetSiblingDevice(...)` in try/catch; on rejection, an error message is rendered and `isInProgress` is reset to `false`.",
+      "rationale": "Spec design decision acknowledges v1 has no durable resume; the UI must at minimum surface the error and allow a retry rather than freezing in a permanent loading state."
+    },
+    {
+      "id": "Q-TEST_COVERAGE-1",
+      "category": "TEST_COVERAGE",
+      "question": "Is there at minimum a vitest component test (or a commitment to e2e coverage in S6/S7) that verifies the Devices tab renders device rows, that clicking Forget opens the appropriate dialog, and that the confirm button in the dialog calls the correct action function?",
+      "expected_evidence": "Either: a `SettingsModal.test.tsx` or `DevicesTab.test.tsx` with mock `useMarmot` and assertions on dialog open/close + action function call; OR a documented test-handoff note in the story's `architecture.json` stating that AC-UI-1 through AC-UI-6 are covered by S6's e2e spec (forget-device-self.spec.ts) via Playwright.",
+      "rationale": "Without either unit or e2e coverage for the UI component, the data-testid values in AC-UI-6 and the dialog behavior in AC-UI-4 are unverified assembly points that could silently regress."
+    },
+    {
+      "id": "Q-POST-1",
+      "phase": "post-impl",
+      "category": "SCOPE",
+      "question": "Does SettingsModal.tsx only call useMarmot() indirectly (via DevicesTab, not from SettingsModal itself), keeping the modal shell free of marmot state?",
+      "expected_evidence": "SettingsModal.tsx has no `useMarmot` import or call; only DevicesTab.tsx imports and calls useMarmot(). This matches the architecture decision that onSignOut is the only marmot-related prop drilled through the modal boundary.",
+      "rationale": "If SettingsModal accidentally duplicated the useMarmot call, it would create a second hook subscriber that could desync or cause context ordering issues."
+    },
+    {
+      "id": "Q-POST-2",
+      "phase": "post-impl",
+      "category": "ROBUSTNESS",
+      "question": "When the Dialog closes while a device-load fetch is in-flight, does DevicesTab clean up the async operation (via the `cancelled` flag) rather than calling setState on an unmounted component?",
+      "expected_evidence": "DevicesTab.tsx useEffect returns a cleanup function setting `cancelled = true`; the load function checks `if (cancelled) return` before every setState call after any await.",
+      "rationale": "React 18 will still log 'Can't perform a state update on an unmounted component' in strict mode if the guard is missing; the prior architect used a cancelled flag — this question verifies it covers all setState sites."
+    }
+  ]
+}

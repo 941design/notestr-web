@@ -1,0 +1,59 @@
+{
+  "story_id": "S2",
+  "status": "done",
+  "architect_skipped": false,
+  "files_created": [
+    "specs/epic-forget-this-device/S2-auto-invite-skip-forgotten-slots/architecture.json",
+    "specs/epic-forget-this-device/S2-auto-invite-skip-forgotten-slots/baseline.json",
+    "specs/epic-forget-this-device/S2-auto-invite-skip-forgotten-slots/result.json"
+  ],
+  "files_modified": [
+    "src/marmot/device-sync.ts",
+    "src/marmot/device-sync.test.ts",
+    "specs/epic-forget-this-device/S2-auto-invite-skip-forgotten-slots/verification.json"
+  ],
+  "remediation_rounds": 0,
+  "tests_run": {
+    "baseline_total": 45,
+    "final_total": 51,
+    "tests_added": 6,
+    "tests_failed": 0,
+    "command": "npx vitest run src/marmot/",
+    "full_suite_total": 118,
+    "full_suite_failed": 0
+  },
+  "implementation_summary": "Added forgotten-slot skip logic to the auto-invite KP scan in src/marmot/device-sync.ts. A `forgottenSlots: Set<string>` variable and `refreshForgotten` async function are declared in the useEffect body scope (outside runKeyPackageSync but inside the effect callback). `window.addEventListener('notestr:forgotten-slots-changed', refreshForgotten)` is registered there, and the matching `removeEventListener` is called in the effect cleanup return function. `runKeyPackageSync` initializes `forgottenSlots` via `await loadForgottenSlots()` before the sync loop. Both `syncKnownKeyPackages` and `handleKeyPackageEvent` use the exported `isSlotForgotten(event, forgottenSlots)` predicate to skip forgotten devices before calling `inviteToAllGroups`. Six new unit tests cover the predicate: skip when slot matches, pass-through when slot does not match, empty-set no-op, undefined-slot legacy events, multi-slot independence, and Set-mutation-reflects-refresh behavior.",
+  "architect_decisions": [
+    {
+      "decision": "forgottenSlots and refreshForgotten hoisted to useEffect body scope (not inside runKeyPackageSync)",
+      "rationale": "The spec said 'inside runKeyPackageSync closure' but the effect cleanup return function needs access to refreshForgotten for removeEventListener. Placing both at effect-body scope gives runKeyPackageSync access (via closure) AND lets the cleanup deregister correctly — satisfying both AC-INVITE-1 and AC-INVITE-4."
+    },
+    {
+      "decision": "Exported isSlotForgotten(event, forgottenSlots) predicate for testability",
+      "rationale": "The vitest environment is 'node' with no jsdom and no React Testing Library. The useDeviceSync hook cannot run in tests. Extracting the guard as a pure exported function allows the 6 unit tests to cover both insertion points' logic without requiring a React mount. The predicate is tiny (2 lines) and has no side effects."
+    },
+    {
+      "decision": "Test file: appended to existing src/marmot/device-sync.test.ts",
+      "rationale": "The existing test file already mocks @internet-privacy/marmot-ts and ts-mls. Reusing those mock setups avoids a second file with duplicate mock hoisting, and keeps forgotten-slot tests alongside other device-sync unit tests."
+    },
+    {
+      "decision": "Added getKeyPackageIdentifier to the @internet-privacy/marmot-ts vi.mock",
+      "rationale": "The existing mock only covered getKeyPackage. The new isSlotForgotten predicate calls getKeyPackageIdentifier; it needed to be mocked to return event._slot for tests to control the slot value on synthetic events."
+    }
+  ],
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The spec and verification questions were written assuming syncKnownKeyPackages and handleKeyPackageEvent could be tested directly (e.g. by calling them and observing inviteToAllGroups). Both functions are closure-private inside useDeviceSync and the test environment is node (no jsdom, no React Testing Library), so the hook cannot run in tests. This forced an architectural decision: extract isSlotForgotten as a testable pure export. The decision is sound but it was a gap between spec assumptions and the actual test infrastructure — a note in the verification or spec would have saved the analysis step.",
+    "surprised_by": "",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  },
+  "final_outcome": "accepted",
+  "completed_at": "2026-05-18T15:45:00Z",
+  "caveats": [
+    "Q-SPEC-1 returned PARTIAL severity 2: AC-INVITE-1 wording said \"inside the runKeyPackageSync closure\" but architect correctly placed forgottenSlots in parent useEffect body scope so cleanup can reach refreshForgotten. Spirit preserved; AC wording could be amended in Step 6 curator pass."
+  ]
+}

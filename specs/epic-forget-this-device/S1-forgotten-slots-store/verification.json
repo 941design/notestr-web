@@ -1,0 +1,106 @@
+{
+  "story_id": "S1",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "id": "Q-SPEC-1",
+      "category": "SPEC",
+      "ac_ref": "AC-STORE-1",
+      "question": "Does the `notestr-forgotten-slots` IDB store exist and is it created exclusively via `createKVStore<true>(\"forgotten-slots\")` from `src/marmot/storage.ts`, with no direct idb-keyval import in `forgotten-slots.ts`?",
+      "expected_evidence": "src/marmot/forgotten-slots.ts: import of `createKVStore` from `./storage`; no import from `idb-keyval`; store initialisation line `createKVStore<true>(\"forgotten-slots\")`.",
+      "rationale": "AC-STORE-1 mandates the exact factory call; using raw idb-keyval would violate boundary rule 3 and break the test-cleanup chain in S5."
+    },
+    {
+      "id": "Q-SPEC-2",
+      "category": "SPEC",
+      "ac_ref": "AC-STORE-2",
+      "question": "Does `loadForgottenSlots()` enumerate stored slots by calling `forgottenStore.keys()` and never call `forgottenStore.getAllKeys?.()` or any non-existent method variant?",
+      "expected_evidence": "src/marmot/forgotten-slots.ts: `forgottenStore.keys()` call in `loadForgottenSlots`; grep confirms `getAllKeys` does not appear in this file.",
+      "rationale": "AC-STORE-2 explicitly forbids `getAllKeys` because it does not exist on `KeyValueStoreBackend`; calling it would silently return `undefined` at runtime."
+    },
+    {
+      "id": "Q-SPEC-3",
+      "category": "SPEC",
+      "ac_ref": "AC-STORE-3",
+      "question": "Does `markSlotForgotten(slot)` dispatch `new CustomEvent(\"notestr:forgotten-slots-changed\")` on `window` after — not before — writing the slot to IDB, so any in-memory cache consuming this event sees the new value?",
+      "expected_evidence": "src/marmot/forgotten-slots.ts: `await forgottenStore.setItem(slot, true)` precedes `window.dispatchEvent(new CustomEvent(\"notestr:forgotten-slots-changed\"))`; unit test in `forgotten-slots.test.ts` spies on both and asserts ordering.",
+      "rationale": "AC-STORE-3 requires the event to fire after the write; firing before means consumers who call `loadForgottenSlots` on the event would still read stale IDB."
+    },
+    {
+      "id": "Q-SPEC-4",
+      "category": "SPEC",
+      "ac_ref": "AC-STORE-4",
+      "question": "Does the module export exactly `markSlotForgotten(slot: string): Promise<void>` and `loadForgottenSlots(): Promise<Set<string>>` as named exports, consumable by S2 and S3 without any type errors?",
+      "expected_evidence": "src/marmot/forgotten-slots.ts: two `export async function` declarations with the exact signatures; TypeScript compiler emits no errors in `tsc --noEmit`.",
+      "rationale": "AC-STORE-4 defines the public seam surface that S2 and S3 depend on; a signature mismatch would break both downstream consumers at compile time."
+    },
+    {
+      "id": "Q-INVARIANT-1",
+      "category": "INVARIANT",
+      "question": "Does `src/marmot/forgotten-slots.ts` use `forgottenStore.keys()` (the `KeyValueStoreBackend` interface method) rather than any idb-keyval global API or `IDBObjectStore` method directly, consistent with boundary rule 3?",
+      "expected_evidence": "src/marmot/forgotten-slots.ts: no direct import from `idb-keyval`; all store access goes through the `forgottenStore` handle returned by `createKVStore`.",
+      "rationale": "Boundary rule 3 prohibits raw idb-keyval outside `storage.ts` and `store/persistence.ts`; violating it would make the store inaccessible in the test environment's stubbed storage layer."
+    },
+    {
+      "id": "Q-INVARIANT-2",
+      "category": "INVARIANT",
+      "question": "Does `storage.ts` now export a mechanism — either `clearIdentityStore()` or the `identityStore` handle — that allows `forgetSelfDevice` (S3) to wipe the local `clientId` entry without accessing the file-private variable directly from outside the module?",
+      "expected_evidence": "src/marmot/storage.ts: new `export function clearIdentityStore()` or `export const identityStore = ...`; the chosen shape is consistent with other exported stores (e.g. `invitedKeysStore`, `joinedGroupsStore` at lines 70-71).",
+      "rationale": "The `identityStore` is file-private (exploration finding #2); without a deliberate export, S3 cannot clear it without a boundary violation."
+    },
+    {
+      "id": "Q-INVARIANT-3",
+      "category": "INVARIANT",
+      "question": "Does the custom DOM event name used in `markSlotForgotten` match exactly `\"notestr:forgotten-slots-changed\"` — the same literal string that S2 registers with `window.addEventListener` — with no typos or casing differences?",
+      "expected_evidence": "src/marmot/forgotten-slots.ts: `new CustomEvent(\"notestr:forgotten-slots-changed\")`; src/marmot/device-sync.ts (S2): `window.addEventListener(\"notestr:forgotten-slots-changed\", ...)`. Both literals match byte-for-byte.",
+      "rationale": "A mismatch in the event name means S2's listener never fires and the in-memory `forgottenSlots` cache is never refreshed after a `markSlotForgotten` call."
+    },
+    {
+      "id": "Q-SCOPE-1",
+      "category": "SCOPE",
+      "question": "Are all file modifications in this story confined to `src/marmot/forgotten-slots.ts` (new), `src/marmot/storage.ts` (export addition), and `src/marmot/forgotten-slots.test.ts` (new), with no modifications to `device-sync.ts`, `forget-device.ts`, `SettingsModal.tsx`, `app/page.tsx`, or any `e2e/` file?",
+      "expected_evidence": "Git diff for the S1 implementation commit shows exactly three file paths; `device-sync.ts`, `forget-device.ts`, and `e2e/` do not appear in the diff.",
+      "rationale": "S1's scope is deliberately narrow so downstream stories can mock the seam cleanly; accidental touches to S2/S3 files invalidate the independence guarantee."
+    },
+    {
+      "id": "Q-ROBUSTNESS-1",
+      "category": "ROBUSTNESS",
+      "question": "Does `loadForgottenSlots()` return an empty `Set<string>` (not `null`, `undefined`, or a rejected promise) when the `notestr-forgotten-slots` IDB store has never been written to?",
+      "expected_evidence": "src/marmot/forgotten-slots.test.ts: a test case that calls `loadForgottenSlots()` on a fresh (cleared) store and asserts `result` is a `Set` with `size === 0`.",
+      "rationale": "S2 calls `loadForgottenSlots()` on hook mount before any slot is ever written; if it throws or returns null, the auto-invite scan crashes on first load."
+    },
+    {
+      "id": "Q-ROBUSTNESS-2",
+      "category": "ROBUSTNESS",
+      "question": "Is `markSlotForgotten` idempotent — calling it twice with the same slot string results in the store containing exactly one entry for that slot and dispatches the event each time without error?",
+      "expected_evidence": "src/marmot/forgotten-slots.test.ts: a test case that calls `markSlotForgotten('abc')` twice and asserts `loadForgottenSlots()` returns a Set of size 1 and the event was dispatched twice.",
+      "rationale": "S3's `forgetSiblingDevice` may call `markSlotForgotten` more than once if retried; idempotency prevents store corruption and listener explosions."
+    },
+    {
+      "id": "Q-TEST_COVERAGE-1",
+      "category": "TEST_COVERAGE",
+      "question": "Does `src/marmot/forgotten-slots.test.ts` exist, run under vitest without skips or pending marks, and assert both the round-trip store/retrieve behavior (write a slot, read it back via `loadForgottenSlots`) and the DOM event dispatch (a `window` event listener receives the `notestr:forgotten-slots-changed` event after `markSlotForgotten`)?",
+      "expected_evidence": "src/marmot/forgotten-slots.test.ts: `it('round-trip', ...)` calling `markSlotForgotten` then `loadForgottenSlots` and asserting the slot is present; `it('dispatches event', ...)` using `window.addEventListener` spy or `dispatchEvent` mock to confirm the event fires.",
+      "rationale": "Without automated coverage of both behaviors, the seam contract for S2 and S3 is unverified and a regression in the event name or keys() call would go undetected."
+    }
+  ],
+  "post_impl_questions": [
+    {
+      "id": "Q-POST-1",
+      "phase": "post-impl",
+      "category": "ROBUSTNESS",
+      "question": "Does the proxy-based mock in forgotten-slots.test.ts correctly isolate each test case — specifically, does swapping storeRef.current in beforeEach produce a clean store for every test, with no key bleed-through from previous tests?",
+      "expected_evidence": "All 7 tests pass in sequence with no size-assertion failures; the 'stores multiple distinct slots independently' test asserts size === 2 (not 3+), confirming the proxy delegates to the new instance after each swap.",
+      "rationale": "The proxy pattern was chosen after two failed approaches (captured let and const with TDZ); if the proxy delegation is ever broken by a vitest or module caching change, tests will silently accumulate state across runs."
+    },
+    {
+      "id": "Q-POST-2",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "Does clearIdentityStore() in storage.ts correctly call identityStore.clear() (clearing all keys from notestr-identity IDB), not just removeItem('clientId'), so that any future keys added to identityStore are also cleared on self-forget?",
+      "expected_evidence": "src/marmot/storage.ts: clearIdentityStore() body calls `await identityStore.clear()`; this is a full clear, not a targeted removeItem. This is the correct behavior because forgetSelfDevice intends to wipe the entire local identity.",
+      "rationale": "If a future change adds a second key to identityStore, clear() covers it automatically whereas removeItem('clientId') would leave residual data. Verifying the implementation uses clear() not removeItem guards against a regression in that assumption."
+    }
+  ]
+}

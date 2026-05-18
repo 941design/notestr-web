@@ -1,0 +1,247 @@
+{
+  "story_id": "S3",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "id": "Q-SPEC-1",
+      "category": "SPEC",
+      "ac_ref": "AC-SELF-1",
+      "question": "Does `forgetSelfDevice` iterate every group in `client.groups.loaded` via a `for...of` loop and, for each group, call `removeLeafByIndex` for every leaf whose key package matches the local `clientId`?",
+      "expected_evidence": "src/marmot/forget-device.ts: `for (const group of client.groups.loaded)` outer loop; inner loop or predicate selects leaves matching `clientId`; `await removeLeafByIndex(group, idx)` called per matching leaf; `forget-device.test.ts` asserts `removeLeafByIndex` spy call count equals the number of matching leaves across both mock groups.",
+      "rationale": "AC-SELF-1 is the core behavior of self-forget; iterating only some groups or using the wrong leaf filter would silently leave ghost leaves in skipped groups."
+    },
+    {
+      "id": "Q-SPEC-2",
+      "category": "SPEC",
+      "ac_ref": "AC-SELF-2",
+      "question": "Does `forgetSelfDevice` await each `removeLeafByIndex` call sequentially (never using `Promise.all`) at every call site, both within a single group and across groups?",
+      "expected_evidence": "src/marmot/forget-device.ts: no `Promise.all`, `Promise.allSettled`, or `Promise.race` wrapping `removeLeafByIndex`; only `await removeLeafByIndex(...)` inside `for...of` bodies; grep of the file confirms absence of `Promise.all`.",
+      "rationale": "AC-SELF-2 explicitly prohibits `Promise.all` to prevent epoch-race conflicts; parallel MLS commit proposals within a group will conflict and cause permanent epoch errors."
+    },
+    {
+      "id": "Q-SPEC-3",
+      "category": "SPEC",
+      "ac_ref": "AC-SELF-3",
+      "question": "After all leaf removals complete, does `forgetSelfDevice` enumerate `client.keyPackages.list()` and publish a NIP-09 kind-5 deletion event for every entry whose `.published` array is non-empty, referencing each published event id?",
+      "expected_evidence": "src/marmot/forget-device.ts: `for` loop over `client.keyPackages.list()` filtering `.published.length > 0`; a kind-5 event is built and published per entry; `forget-device.test.ts` spy on `client.network.publish` asserts it was called once per mock published KP entry.",
+      "rationale": "AC-SELF-3 defines the NIP-09 cleanup path; not publishing kind-5 events leaves ghost KPs on the relay indefinitely, perpetuating the original problem the epic solves."
+    },
+    {
+      "id": "Q-SPEC-4",
+      "category": "SPEC",
+      "ac_ref": "AC-SELF-4",
+      "question": "Does `forgetSelfDevice` call `clearNip46Session()` from `src/lib/nostr.ts` and never call `localStorage.removeItem('notestr-nip46-payload')` directly or any other raw `localStorage` key-by-key removal for NIP-46 keys?",
+      "expected_evidence": "src/marmot/forget-device.ts: `import { clearNip46Session } from '../lib/nostr'`; `await clearNip46Session()` (or sync call if it is synchronous); grep confirms no `localStorage.removeItem` call in `forget-device.ts`; `forget-device.test.ts` asserts `clearNip46Session` spy was called exactly once.",
+      "rationale": "AC-SELF-4 aligns with boundary rule 2 (no raw localStorage outside `src/lib/nostr.ts`); `clearNip46Session()` atomically clears all three NIP-46 keys whereas a manual `removeItem` would miss `notestr-nip46-local-key` and `notestr-auth-method`."
+    },
+    {
+      "id": "Q-SPEC-5",
+      "category": "SPEC",
+      "ac_ref": "AC-SIBLING-1",
+      "question": "Does `forgetSiblingDevice` skip groups where `isAdmin(group.groupData, pubkey)` returns `false` AND groups where `group.groupData` is null, processing only the qualifying subset?",
+      "expected_evidence": "src/marmot/forget-device.ts: `for (const group of client.groups.loaded)` with `if (!group.groupData || !isAdmin(group.groupData, pubkey)) continue`; `forget-device.test.ts` mock with one admin group and one non-admin group asserts `removeLeafByIndex` is called only in the admin group.",
+      "rationale": "AC-SIBLING-1 is the safety guard that prevents an unprivileged device from removing leaves in groups where it lacks admin rights."
+    },
+    {
+      "id": "Q-SPEC-6",
+      "category": "SPEC",
+      "ac_ref": "AC-SIBLING-2",
+      "question": "Does `forgetSiblingDevice` call `removeLeafByIndex` for every leaf in each qualifying group whose key package matches the target `slot`, using a `for...of` loop (not `Promise.all`)?",
+      "expected_evidence": "src/marmot/forget-device.ts: sequential `await removeLeafByIndex(group, idx)` calls inside a `for...of` over qualifying leaves; no `Promise.all`; `forget-device.test.ts` asserts `removeLeafByIndex` call count equals the number of matching leaves in admin groups.",
+      "rationale": "AC-SIBLING-2 requires sequential leaf removal for the same epoch-race reason as AC-SELF-2; the constraint applies to both forget flows."
+    },
+    {
+      "id": "Q-SPEC-7",
+      "category": "SPEC",
+      "ac_ref": "AC-SIBLING-3",
+      "question": "After all leaf removals complete, does `forgetSiblingDevice` call `markSlotForgotten(slot)` to persist the slot in the `notestr-forgotten-slots` IDB store?",
+      "expected_evidence": "src/marmot/forget-device.ts: `await markSlotForgotten(slot)` is the last statement in `forgetSiblingDevice` after the group loop; `forget-device.test.ts` asserts `markSlotForgotten` spy was called once with the target slot string.",
+      "rationale": "AC-SIBLING-3 is what prevents the auto-invite scan from re-inviting the forgotten sibling; without it, S2's guard never gets populated and the ghost KP continues to be invited."
+    },
+    {
+      "id": "Q-SPEC-8",
+      "category": "SPEC",
+      "ac_ref": "AC-DELETE-1",
+      "question": "Is the kind-5 deletion event signed by the user's identity key via `signer.signEvent(...)` and published via `client.network.publish(relays, signedEvent)`, matching the existing publish pattern in `src/marmot/`?",
+      "expected_evidence": "src/marmot/forget-device.ts: `await signer.signEvent(unsignedKind5Event)` followed by `await client.network.publish(relays, signedEvent)`; `forget-device.test.ts` spy on `client.network.publish` confirms the signed event was published.",
+      "rationale": "AC-DELETE-1 requires use of the established publish path; using NDK directly would violate boundary rule 4 and bypass the existing network abstraction."
+    },
+    {
+      "id": "Q-SPEC-9",
+      "category": "SPEC",
+      "ac_ref": "AC-DELETE-2",
+      "question": "Does each published kind-5 event contain an `e`-tag referencing the id of the target KP event, and does the event's `pubkey` match the user's identity pubkey that originally signed the kind-30443 KP event being deleted?",
+      "expected_evidence": "src/marmot/forget-device.ts: kind-5 event construction includes `tags: [['e', kpEventId]]`; event `pubkey` is derived from `signer`; `forget-device.test.ts` inspects the argument passed to `client.network.publish` spy and asserts the `e`-tag and `pubkey` fields.",
+      "rationale": "AC-DELETE-2 defines the NIP-09 event shape; a wrong tag structure means relays cannot match the deletion to the target event."
+    },
+    {
+      "id": "Q-SPEC-10",
+      "category": "SPEC",
+      "ac_ref": "AC-DELETE-3",
+      "question": "Is exactly one kind-5 event published per published KP event id (not one aggregated event for all ids), and are KP entries where `.published.length === 0` excluded from this loop?",
+      "expected_evidence": "src/marmot/forget-device.ts: the kind-5 publish loop iterates entries filtered by `.published.length > 0` and calls `client.network.publish` once per entry (not once with all ids in a single event); `forget-device.test.ts` with a 2-entry mock (one published, one not) asserts `client.network.publish` was called exactly once.",
+      "rationale": "AC-DELETE-3 specifies per-event granularity; a single aggregated kind-5 with multiple `e`-tags may not be honored uniformly by all relays, and including unpublished KPs would reference non-existent event ids."
+    },
+    {
+      "id": "Q-SPEC-11",
+      "category": "SPEC",
+      "ac_ref": "AC-CLEANUP-1",
+      "question": "Does `forgetSelfDevice` clear the identity IDB store — using either the new `clearIdentityStore()` export or the exported store handle from `src/marmot/storage.ts` — so the local `clientId` is no longer recoverable after sign-out?",
+      "expected_evidence": "src/marmot/forget-device.ts: calls `clearIdentityStore()` or `identityStore.clear()` (whichever shape S1's storage.ts export provides); `forget-device.test.ts` asserts the chosen store-clear path was invoked.",
+      "rationale": "AC-CLEANUP-1 is the prerequisite for AC-CLEANUP-2 through AC-CLEANUP-4; leaving the identity store intact after self-forget means the app would re-derive the same `clientId` on reload."
+    },
+    {
+      "id": "Q-SPEC-12",
+      "category": "SPEC",
+      "ac_ref": "AC-CLEANUP-2",
+      "question": "Does `forgetSelfDevice` clear or delete the `notestr-key-packages`, `notestr-group-state`, and `notestr-invite-store` IDB databases via the mechanism chosen and recorded by the architect in this story's `architecture.json`?",
+      "expected_evidence": "This story's `architecture.json` records the chosen mechanism (lift-to-scope, `MarmotClient.clearLocalState()`, or `indexedDB.deleteDatabase`); `forget-device.ts` implements exactly that mechanism; `forget-device.test.ts` asserts the mechanism was invoked via spy.",
+      "rationale": "AC-CLEANUP-2 covers the MarmotClient's own IDB stores; leaving them populated would cause the app to reload into a partially-initialized state on next mount."
+    },
+    {
+      "id": "Q-SPEC-13",
+      "category": "SPEC",
+      "ac_ref": "AC-CLEANUP-3",
+      "question": "Does `forgetSelfDevice` call `clearNip46Session()` from `src/lib/nostr.ts` to atomically clear `notestr-nip46-payload`, `notestr-nip46-local-key`, and (when applicable) `notestr-auth-method`?",
+      "expected_evidence": "src/marmot/forget-device.ts: `clearNip46Session()` call present (same call satisfies both AC-SELF-4 and AC-CLEANUP-3 — the AC texts address different facets of the same obligation); `forget-device.test.ts` asserts spy was called exactly once.",
+      "rationale": "AC-CLEANUP-3 specifically names all three NIP-46 keys that must be cleared; `clearNip46Session()` handles them atomically, which is the only correct call site."
+    },
+    {
+      "id": "Q-SPEC-14",
+      "category": "SPEC",
+      "ac_ref": "AC-CLEANUP-4",
+      "question": "Does `forgetSelfDevice` call `.clear()` on `invitedKeysStore` (exported from `src/marmot/storage.ts:70`) and `.clear()` on `joinedGroupsStore` (exported from `src/marmot/storage.ts:71`)?",
+      "expected_evidence": "src/marmot/forget-device.ts: `await invitedKeysStore.clear()` and `await joinedGroupsStore.clear()` calls; `forget-device.test.ts` asserts both `.clear()` methods were called on the respective mock stores.",
+      "rationale": "AC-CLEANUP-4 targets the two exported stores that track which devices and groups the client has been invited into; leaving them populated after self-forget would cause the re-connected app to treat stale invites as current."
+    },
+    {
+      "id": "Q-SPEC-15",
+      "category": "SPEC",
+      "ac_ref": "AC-SIGNOUT-1",
+      "question": "Does `forgetSelfDevice` accept `onSignOut: () => void` as a parameter and invoke it after local cleanup completes, and does `app/page.tsx` pass `onSignOut={handleDisconnect}` into `<SettingsModal>`?",
+      "expected_evidence": "src/marmot/forget-device.ts: `forgetSelfDevice` function signature includes `onSignOut: () => void`; `onSignOut()` is invoked after all cleanup steps; `forget-device.test.ts` asserts `onSignOut` mock was called once after cleanup. (The `app/page.tsx` wiring is verified by S4's SPEC questions; S3 owns the function signature.)",
+      "rationale": "AC-SIGNOUT-1 defines the prop-threading contract between `page.tsx`, `SettingsModal`, and `forgetSelfDevice`; a missing parameter means the sign-out callback is never wired at the call site."
+    },
+    {
+      "id": "Q-SPEC-16",
+      "category": "SPEC",
+      "ac_ref": "AC-SIGNOUT-2",
+      "question": "Does `forgetSelfDevice` contain no call to `router.push(...)`, `window.location.assign(...)`, `window.location.replace(...)`, or `window.location.href = ...` anywhere in its body?",
+      "expected_evidence": "src/marmot/forget-device.ts: grep confirms none of `router.push`, `location.assign`, `location.replace`, `location.href` appear; TypeScript import list shows no Next.js `useRouter` import.",
+      "rationale": "AC-SIGNOUT-2 enforces that navigation is fully delegated to `onSignOut`; direct navigation would bypass React's cleanup, context teardown, and any state reset in `handleDisconnect`."
+    },
+    {
+      "id": "Q-SPEC-17",
+      "category": "SPEC",
+      "ac_ref": "AC-UNIT-1",
+      "question": "Does `src/marmot/forget-device.test.ts` exist and use `vi.mock('@internet-privacy/marmot-ts', ...)` following the pattern established in `src/marmot/client.test.ts` and `src/marmot/device-sync.test.ts`?",
+      "expected_evidence": "src/marmot/forget-device.test.ts: file exists; `vi.mock('@internet-privacy/marmot-ts', ...)` call at module level; imports and mock structure follow the pattern from `client.test.ts`.",
+      "rationale": "AC-UNIT-1 requires the mock pattern consistency so the test infrastructure does not need to boot a real relay or MLS stack."
+    },
+    {
+      "id": "Q-SPEC-18",
+      "category": "SPEC",
+      "ac_ref": "AC-UNIT-2",
+      "question": "Does the unit test construct a mock `MarmotClient` representing two groups (each with at least one leaf matching the local `clientId`) and assert that `forgetSelfDevice` calls `removeLeafByIndex` exactly once per matching leaf across both groups?",
+      "expected_evidence": "src/marmot/forget-device.test.ts: mock client with `groups.loaded` containing two group objects; each group has a leaf matching the mocked `clientId`; spy on `removeLeafByIndex` asserts call count equals total matching leaf count.",
+      "rationale": "AC-UNIT-2 is the direct test of AC-SELF-1; without the two-group mock, a one-group implementation would pass a trivial test but fail in production."
+    },
+    {
+      "id": "Q-SPEC-19",
+      "category": "SPEC",
+      "ac_ref": "AC-UNIT-3",
+      "question": "Does the unit test assert that `forgetSelfDevice` calls the kind-5 publish path once per published KP event id, using a spy on `client.network.publish` or equivalent?",
+      "expected_evidence": "src/marmot/forget-device.test.ts: `client.keyPackages.list()` mock returns at least one entry with `.published.length > 0`; spy on `client.network.publish` asserts call count equals the number of published KP entries in the mock.",
+      "rationale": "AC-UNIT-3 validates AC-DELETE-3 at the unit level; without this assertion, the kind-5 publish loop is untested and could be silently skipped."
+    },
+    {
+      "id": "Q-SPEC-20",
+      "category": "SPEC",
+      "ac_ref": "AC-UNIT-4",
+      "question": "Does the unit test assert that `forgetSelfDevice` calls `clearNip46Session()` exactly once?",
+      "expected_evidence": "src/marmot/forget-device.test.ts: `vi.mock('../lib/nostr', ...)` or equivalent mock for `clearNip46Session`; `expect(clearNip46SessionMock).toHaveBeenCalledTimes(1)` assertion in the `forgetSelfDevice` test.",
+      "rationale": "AC-UNIT-4 verifies the NIP-46 cleanup obligation; calling it zero times leaves localStorage dirty."
+    },
+    {
+      "id": "Q-SPEC-21",
+      "category": "SPEC",
+      "ac_ref": "AC-UNIT-5",
+      "question": "Does the unit test assert that `forgetSelfDevice` invokes the `onSignOut` callback after all cleanup steps?",
+      "expected_evidence": "src/marmot/forget-device.test.ts: `const onSignOut = vi.fn()`; passed to `forgetSelfDevice`; `expect(onSignOut).toHaveBeenCalledTimes(1)` asserted after the full `await forgetSelfDevice(...)` call completes.",
+      "rationale": "AC-UNIT-5 verifies AC-SELF-5 at unit level; a test that only checks the spy was called but not after cleanup provides false confidence."
+    },
+    {
+      "id": "Q-SPEC-22",
+      "category": "SPEC",
+      "ac_ref": "AC-UNIT-6",
+      "question": "Does the unit test assert that `forgetSiblingDevice` skips groups where `isAdmin(group.groupData, pubkey)` returns `false` and only calls `removeLeafByIndex` in groups where the local user is admin?",
+      "expected_evidence": "src/marmot/forget-device.test.ts: mock client with one admin group and one non-admin group; spy on `removeLeafByIndex` asserts it was called only for leaves in the admin group and never for the non-admin group.",
+      "rationale": "AC-UNIT-6 directly validates AC-SIBLING-1; without this test, a bug that processes all groups regardless of admin status would go undetected."
+    },
+    {
+      "id": "Q-SPEC-23",
+      "category": "SPEC",
+      "ac_ref": "AC-UNIT-7",
+      "question": "Does the unit test assert that `forgetSiblingDevice` calls `markSlotForgotten` with the target slot string after leaf removal completes?",
+      "expected_evidence": "src/marmot/forget-device.test.ts: `vi.mock('./forgotten-slots', ...)` or spy on `markSlotForgotten`; `expect(markSlotForgottenMock).toHaveBeenCalledWith(targetSlot)` after `await forgetSiblingDevice(mockClient, targetSlot)` completes.",
+      "rationale": "AC-UNIT-7 validates AC-SIBLING-3 at unit level; without it, the IDB persistence step could be silently omitted and S2's guard would never be populated."
+    },
+    {
+      "id": "Q-INVARIANT-1",
+      "category": "INVARIANT",
+      "question": "Does `forgetSelfDevice` call `removeLeafByIndex` sequentially (per group, per leaf) with no `Promise.all` at any nesting level — verifiable by static analysis of the function body?",
+      "expected_evidence": "src/marmot/forget-device.ts: grep for `Promise.all` returns no results in the `forgetSelfDevice` function body; all async calls use `await` inside `for...of` loops.",
+      "rationale": "Boundary rule 7 (sequential `removeLeafByIndex` calls) is an implementation constraint derived from MLS epoch mechanics; a single misplaced `Promise.all` causes silent epoch conflicts."
+    },
+    {
+      "id": "Q-INVARIANT-2",
+      "category": "INVARIANT",
+      "question": "Could `src/marmot/forget-device.ts` be deleted and rewritten without modifying any file outside `src/marmot/` and `src/lib/nostr.ts`? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?",
+      "expected_evidence": "`forget-device.ts` imports: `removeLeafByIndex` from `./per-leaf-remove` (same module); `markSlotForgotten` from `./forgotten-slots` (ForgottenSlotsAPI seam); `clearNip46Session` from `../lib/nostr` (boundary rule 2 named exception); `invitedKeysStore`, `joinedGroupsStore`, `clearIdentityStore` from `./storage` (same module). Any import outside `src/marmot/` and `src/lib/nostr.ts` is a boundary violation.",
+      "rationale": "The mandatory second ARCHITECTURE question ensures the module's deletion boundary is clean; `forgetSelfDevice` must not acquire hidden dependencies on UI or app-router code."
+    },
+    {
+      "id": "Q-INVARIANT-3",
+      "category": "INVARIANT",
+      "question": "Does `forget-device.ts` use `clearNip46Session()` exclusively for NIP-46 key cleanup, with no direct `localStorage.removeItem` or `localStorage.setItem` calls anywhere in the file?",
+      "expected_evidence": "src/marmot/forget-device.ts: grep for `localStorage` returns no results; grep for `removeItem` returns no results.",
+      "rationale": "Boundary rule 2 prohibits raw `localStorage.*` outside `src/lib/nostr.ts`; a direct `removeItem` call would miss keys and violate the boundary."
+    },
+    {
+      "id": "Q-INVARIANT-4",
+      "category": "INVARIANT",
+      "question": "Is the IDB cleanup mechanism chosen by the architect recorded in this story's `architecture.json` before implementation begins, so the unit test author knows which path to mock?",
+      "expected_evidence": "specs/epic-forget-this-device/S3-forget-device-core/architecture.json exists and contains a `decisions` field documenting the chosen IDB cleanup mechanism (lifted exports, `MarmotClient.clearLocalState()`, or `indexedDB.deleteDatabase`); the implementation in `forget-device.ts` matches exactly.",
+      "rationale": "AC-CLEANUP-2's open architectural decision must be locked before coding starts; a unit test written for the wrong mechanism would pass during development and fail in production."
+    },
+    {
+      "id": "Q-SCOPE-1",
+      "category": "SCOPE",
+      "question": "Are all file modifications in this story confined to `src/marmot/forget-device.ts` (new), `src/marmot/forget-device.test.ts` (new), and optionally `src/marmot/client.tsx` only if the architect chose the lift-to-module-scope IDB cleanup mechanism?",
+      "expected_evidence": "Git diff for the S3 implementation commit shows only the expected file paths; `device-sync.ts`, `SettingsModal.tsx`, `app/page.tsx`, and `e2e/` do not appear in the diff.",
+      "rationale": "S3 scope.excludes explicitly lists device-sync.ts, components/, app/page.tsx, and e2e/; any touches there indicate scope creep that will conflict with S2 or S4 ownership."
+    },
+    {
+      "id": "Q-ROBUSTNESS-1",
+      "category": "ROBUSTNESS",
+      "question": "If `removeLeafByIndex` throws mid-loop (simulating a network failure after 1 of 3 group-leaf removals), does `forgetSelfDevice` surface a clear error to the caller rather than silently continuing to the kind-5 publish and IDB cleanup steps?",
+      "expected_evidence": "src/marmot/forget-device.ts: the `for...of` loop does not catch errors internally (or catches and re-throws); a thrown error propagates up to the call site in S4's UI handler; `forget-device.test.ts` includes a test where the mock throws on the second call and asserts `forgetSelfDevice` rejects.",
+      "rationale": "AC-CLEANUP-2's notes acknowledge partial failure is a v1 known limitation; surfacing the error (rather than swallowing it) allows the S4 UI to ask for a retry."
+    },
+    {
+      "id": "Q-ROBUSTNESS-2",
+      "category": "ROBUSTNESS",
+      "question": "Is the slot-to-leafIndex mapping implemented using the `defaultKeyPackageEqualityConfig.compareKeyPackageToLeafNode` pattern from `DeviceList.tsx:119-130`, so the same comparison logic is used consistently across the codebase?",
+      "expected_evidence": "src/marmot/forget-device.ts: the leaf-matching predicate uses `defaultKeyPackageEqualityConfig.compareKeyPackageToLeafNode` or an import of the same utility; `forget-device.test.ts` constructs mock leaf data that matches this pattern and verifies the correct leaf indexes are selected.",
+      "rationale": "Architecture.md Q3 (resolved) directs use of this pattern; a divergent comparison would cause miss or over-removal of leaves in groups with multiple KPs per slot."
+    },
+    {
+      "id": "Q-TEST_COVERAGE-1",
+      "category": "TEST_COVERAGE",
+      "question": "Does `forget-device.test.ts` cover both `forgetSelfDevice` and `forgetSiblingDevice` with at least one test each that exercises the full happy-path call sequence, with all relevant spies asserting call count and arguments?",
+      "expected_evidence": "src/marmot/forget-device.test.ts: `describe('forgetSelfDevice', ...)` block with a full happy-path test; `describe('forgetSiblingDevice', ...)` block with a full happy-path test; no `.skip` or `.todo` marks on either block.",
+      "rationale": "Without full happy-path coverage for both functions, AC-UNIT-2 through AC-UNIT-7 cannot all be satisfied simultaneously."
+    }
+  ]
+}

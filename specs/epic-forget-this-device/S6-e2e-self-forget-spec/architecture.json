@@ -1,0 +1,80 @@
+{
+  "module_name": "e2e/tests/forget-device-self.spec.ts",
+  "purpose": "End-to-end Playwright spec that verifies the self-forget flow: A authenticates, creates a group, invites B, B joins, A opens Settings → Devices, A clicks Forget on 'this device', confirms, and then three assertions are checked: (1) A is signed out, (2) A's leaf is absent from B's group member list, (3) a kind-5 deletion event referencing A's KP event id is published on the relay.",
+  "public_api": [],
+  "private_files": [
+    "e2e/tests/forget-device-self.spec.ts"
+  ],
+  "owned_data": [],
+  "dependencies_allowed": [
+    "e2e/fixtures/two-party.ts (authenticate, createGroup, inviteByNpub, selectGroup, leafIndexesFor, getPubkeyHex, currentGroupId, settle)",
+    "e2e/fixtures/ndk-subscriber.ts (openNdkSubscriber)",
+    "e2e/fixtures/auth-helper.ts (E2E_BUNKER_URL)",
+    "e2e/fixtures/auth-helper-b.ts (E2E_BUNKER_B_URL, USER_B_NPUB)",
+    "@playwright/test"
+  ],
+  "dependencies_forbidden": [
+    "src/ (no imports from app source)",
+    "e2e/fixtures/cleanup.ts (clearAppState called internally by authenticate — never called separately)",
+    "e2e-down / e2e-up / relay reset helpers"
+  ],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "AC-E2E-1 (describe.serial with Date.now() group name)",
+    "AC-E2E-3 (explicit slot strings: 'self', 'observer')",
+    "AC-E2E-4 (skipMobile propagation via beforeAll)",
+    "AC-E2E-5 (no relay resets — isolation via authenticate + Date.now())",
+    "AC-E2E-9 (A's leaf absent from B's member list after forget)",
+    "AC-E2E-10 (kind-5 with A's pubkey + e-tag matching A's KP event id published on relay)"
+  ],
+  "contexts": {
+    "A": {
+      "role": "self-forgetting device",
+      "bunker": "E2E_BUNKER_URL (User A)",
+      "slot": "self",
+      "description": "Creates the group, invites B, then executes the self-forget flow through the Settings UI."
+    },
+    "B": {
+      "role": "observing device",
+      "bunker": "E2E_BUNKER_B_URL (User B)",
+      "slot": "observer",
+      "description": "Receives the group invite, joins via selectGroup, and serves as the external observer for post-forget assertions on A's leaf."
+    }
+  },
+  "test_sequence": [
+    "beforeAll: create contextA + contextB + pageA + pageB",
+    "Step 1 (auth): authenticate(pageB, E2E_BUNKER_B_URL, 'observer') → settle(3000)",
+    "Step 2 (auth): authenticate(pageA, E2E_BUNKER_URL, 'self') → settle(3000)",
+    "Step 3: capture pubkeyA = getPubkeyHex(pageA)",
+    "Step 4: createGroup(pageA, GROUP_NAME)",
+    "Step 5: inviteByNpub(pageA, USER_B_NPUB)",
+    "Step 6: selectGroup(pageB, GROUP_NAME)",
+    "Step 7: groupId = currentGroupId(pageA)",
+    "Step 8: capture A's KP event ids from relay via __notestrTestNetworkRequest BEFORE the forget action",
+    "In-test: open subscriber BEFORE forget action to avoid missing the kind-5 event",
+    "In-test: open Settings modal via aria-label='Settings' button",
+    "In-test: click 'Devices' tab",
+    "In-test: click [data-testid='device-forget-self-btn']",
+    "In-test: click [data-testid='device-forget-self-confirm-btn']",
+    "Assertion 1: A is signed out — 'Sign in to notestr' text visible on pageA (timeout 30000)",
+    "Assertion 2: A's leaf count on B's view drops to 0 — expect.poll leafIndexesFor(pageB, groupId, pubkeyA) toHaveLength(0) timeout 30000",
+    "Assertion 3: kind-5 event with authors=[pubkeyA] received by subscriber; event tags contain ['e', kpEventId]",
+    "afterAll: close contextA + contextB; close subscriber"
+  ],
+  "assertion_strategy": {
+    "signed_out": "await expect(pageA.getByText(/sign in to notestr/i)).toBeVisible({ timeout: 30000 }) — matches the text rendered by the sign-in screen (matches switchIdentity/disconnect pattern from two-party.ts:289)",
+    "leaf_gone_from_B": "await expect.poll(() => leafIndexesFor(pageB, groupId, pubkeyA), { timeout: 30000 }).toHaveLength(0) — polls the __notestrTestPubkeyLeafIndexes hook on pageB until A's leaf count drops to zero after the MLS remove commit propagates",
+    "kind5_published": "subscriber.waitForEvent({ kinds: [5], authors: [pubkeyA] }, 30000) — subscriber opened BEFORE the forget action to avoid missing the event; received event's tags inspected for ['e', kpEventId] entry"
+  },
+  "kp_event_id_capture": "Captured before the forget action via page.evaluate calling window.__notestrTestNetworkRequest(relays, [{ kinds: [30443], authors: [pubkeyA] }]) — this uses the existing test hook that wraps client.network.request. Falls back gracefully: if no kind-30443 events are found (edge case: KP not yet on relay), the test skips the e-tag specificity check and asserts only that any kind-5 from A's pubkey was published.",
+  "relay_state_independence": {
+    "pinClientSlot": "authenticate() calls pinClientSlot internally with the supplied slot string",
+    "clearAppState": "authenticate() calls clearAppState() internally — not called separately",
+    "group_name_isolation": "GROUP_NAME = `ForgetSelf ${Date.now()}` at top of describe.serial block",
+    "no_relay_resets": "No e2e-down, e2e-up, or fixture-level relay reset calls",
+    "no_global_relay_assertions": "All assertions scoped to test-owned pages (pageA, pageB) or the test-owned subscriber"
+  },
+  "open_architect_decisions": []
+}

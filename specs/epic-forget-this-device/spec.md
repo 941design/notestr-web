@@ -150,3 +150,13 @@ Reuse the modal structure introduced in `c066632`. New tab "Devices" alongside e
 4. **Concurrent epoch advances during multi-group leaf removal.** If a self-forget loops over 5 groups and another member commits to one of them mid-loop, that group's epoch advances and our removal proposal becomes stale. Need to either (a) re-fetch state per group before each removal (already done implicitly by `removeLeafByIndex` if it operates on the live state), or (b) wrap each per-group operation in a retry-on-stale-epoch helper.
 
 The marmot-researcher agent has been engaged to capture related findings and verify items #2 and #3 against the marmot-ts source.
+
+## Amendments
+
+### 2026-05-18 — AC-E2E-11 "A2 leaf absent" clarification
+
+**AC-E2E-11** original text "A2's leaf is absent" was ambiguous in a multi-device context where A1 and A2 share the same pubkey. "Absent" means A2's individual leaf node is removed; A1's leaf for the same pubkey remains. The correct assertion is `leafIndexesFor(page, groupId, pubkeyA)` returning `toHaveLength(1)`, not `toHaveLength(0)`. The AC was amended to make this explicit. (S7 post-implementation verification question Q-POSTIMPL-1.)
+
+### 2026-05-18 — AC-INVITE-1 placement clarification
+
+**AC-INVITE-1** original text said "Inside the `runKeyPackageSync` closure" — too literal. The architect correctly placed the `forgottenSlots` variable in the parent `useDeviceSync` effect body scope (not inside the `runKeyPackageSync` sub-function), so both `runKeyPackageSync` and the cleanup function can close over it. The AC was amended to reflect this: "in the `useDeviceSync` hook body... accessible to `runKeyPackageSync` (via closure)... and to the cleanup function (via closure)". The behavior is unchanged; the wording now matches the implementation. (Examiner flag from S2 retrospective.)

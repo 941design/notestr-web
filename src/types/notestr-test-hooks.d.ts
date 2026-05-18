@@ -81,6 +81,15 @@ declare global {
      * sibling device scenario). Deleted on MarmotProvider unmount.
      */
     __notestrTestArmAutoInvite?: (siblingKpEvent: NostrEvent) => Promise<void>;
+    /**
+     * Test-only: return the current set of forgotten slot strings from the
+     * notestr-forgotten-slots IDB store as a plain string[].
+     *
+     * Installed by MarmotProvider when NEXT_PUBLIC_E2E === "1". Returns an
+     * empty array (never null/undefined) when the store is empty. Used by
+     * S7's sibling-forget e2e spec to assert a slot was marked forgotten.
+     */
+    __notestrTestForgottenSlots?: () => Promise<string[]>;
   }
 }
 

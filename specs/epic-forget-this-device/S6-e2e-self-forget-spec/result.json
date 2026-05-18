@@ -1,0 +1,69 @@
+{
+  "story_id": "S6",
+  "status": "done",
+  "remediation_rounds": 0,
+  "files_created": [
+    "e2e/tests/forget-device-self.spec.ts",
+    "specs/epic-forget-this-device/S6-e2e-self-forget-spec/architecture.json",
+    "specs/epic-forget-this-device/S6-e2e-self-forget-spec/baseline.json",
+    "specs/epic-forget-this-device/S6-e2e-self-forget-spec/result.json"
+  ],
+  "files_modified": [
+    "specs/epic-forget-this-device/S6-e2e-self-forget-spec/verification.json (post-impl questions appended)"
+  ],
+  "implementation_summary": "Single new Playwright spec file `e2e/tests/forget-device-self.spec.ts`. Uses `test.describe.serial` with a `Date.now()` group name, two browser contexts (slot 'self' for A, slot 'observer' for B), and three post-forget assertions: (1) A's sign-in screen is visible, (2) A's leaf count in B's view drops to 0 via `expect.poll(leafIndexesFor(...))`, (3) a kind-5 event from A's pubkey is received by a pre-opened NDK subscriber. A's KP event ids are captured before the forget action via `window.__notestrTestNetworkRequest` to make the e-tag assertion specific. The subscriber is opened before the UI interaction to avoid missing the kind-5 event in the race window between the subscribe REQ and the forget commit.",
+  "architect_decisions": [
+    {
+      "decision": "kp_event_id_capture_mechanism",
+      "choice": "page.evaluate calling window.__notestrTestNetworkRequest with filter { kinds: [30443], authors: [pubkeyA] } before the forget action",
+      "rationale": "No dedicated __notestrTestKeyPackages hook exists. __notestrTestNetworkRequest (added in S5 test infrastructure) wraps client.network.request and is already declared in notestr-test-hooks.d.ts — reusing it avoids adding a new hook and stays within the spec's scope constraint of touching only e2e/tests/."
+    },
+    {
+      "decision": "kp_event_id_fallback",
+      "choice": "if (kpEventIds.length > 0) guard around the e-tag specificity check",
+      "rationale": "If the relay has not yet delivered A's kind-30443 by the time the capture fires (edge case: KP still propagating), the test still asserts that a kind-5 from A's pubkey was published — satisfying AC-E2E-10 at the pubkey level. The comment in the spec makes the fallback intentional and visible to reviewers."
+    },
+    {
+      "decision": "settings_button_selector",
+      "choice": "pageA.getByRole('button', { name: /settings/i }).first()",
+      "rationale": "The Settings button in app/page.tsx uses aria-label='Settings' (line 453) with no data-testid. Role-based selector is stable and matches the pattern established in settings-modal.spec.ts."
+    },
+    {
+      "decision": "devices_tab_selector",
+      "choice": "pageA.getByRole('tab', { name: /devices/i })",
+      "rationale": "S4 added <Tabs> with a 'Devices' tab using the ui/tabs.tsx primitive; the ARIA role is 'tab', accessible name is 'Devices'. No data-testid was added to the tab itself."
+    }
+  ],
+  "mocks_introduced": [],
+  "tests": {
+    "baseline_count": 117,
+    "final_count": 119,
+    "tests_added": 2,
+    "note": "e2e suite execution deferred to Step 6 — S6 contributes the tests, doesn't run them. Count estimated as +2 (one setup test + one assertion test inside the describe.serial block). Unit test count unchanged at 137 (no src/ modifications).",
+    "run_status": "NOT_RUN"
+  },
+  "type_check": {
+    "new_errors": 0,
+    "pre_existing_errors": [
+      "src/marmot/forget-device.test.ts(388): mock type narrowness (S3 known issue, present before S6)",
+      "src/marmot/forget-device.test.ts(552): isAdmin mock type mismatch (S3 known issue, present before S6)"
+    ]
+  },
+  "verification": {
+    "pre_impl_questions": 13,
+    "post_impl_questions": 3,
+    "total_questions": 16
+  },
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The KP event id capture for the kind-5 e-tag assertion (Q-ROBUSTNESS-2) required reasoning through which existing test hooks could reach `client.network.request` without adding a new hook or importing from src/. The spec's `__notestrTestNetworkRequest` hook covers this, but it was not mentioned in the story brief's 'existing_helpers_for_tests' list — it was found by grepping client.tsx directly. A brief mention in exploration.json's `existing_helpers_for_tests` section would have saved one grep round-trip.",
+    "surprised_by": "The `openNdkSubscriber` auto-since gate (set at subscribe time, not at spec-start) is subtler than it appears: if the subscriber is opened after a slow CI browser click, the since timestamp may be set after the kind-5 event's created_at, causing the subscriber to miss it. Opening the subscriber immediately before the UI interaction (not before setup) is the load-bearing placement. This risk is documented in Q-POST-2.",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  },
+  "final_outcome": "accepted",
+  "completed_at": "2026-05-18T16:42:00Z"
+}

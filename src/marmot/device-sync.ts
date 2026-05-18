@@ -35,6 +35,7 @@ import {
   markGroupJoinedFromWelcome,
   persistInvitedKey,
 } from "./device-store";
+import { loadForgottenSlots } from "./forgotten-slots";
 import { TASK_EVENT_KIND, type TaskEvent } from "../store/task-events";
 import { appendEvent, loadEvents } from "../store/persistence";
 import { replayEvents } from "../store/task-reducer";
@@ -369,6 +370,25 @@ function mergeIds(existing: Set<string>, incoming: Iterable<string>): string[] {
   }
 
   return Array.from(existing);
+}
+
+/**
+ * Returns true if the KP event's slot identifier is in the forgotten-slots
+ * Set, meaning the auto-invite scan should skip this device.
+ *
+ * Exported for unit testing. Both `syncKnownKeyPackages` and
+ * `handleKeyPackageEvent` use this predicate before calling `inviteToAllGroups`.
+ *
+ * Returns false (do NOT skip) when `getKeyPackageIdentifier` returns undefined
+ * (legacy kind-443 events without a slot), so the existing invite behavior is
+ * preserved for events that predate the slot scheme.
+ */
+export function isSlotForgotten(
+  event: NostrEvent,
+  forgottenSlots: Set<string>,
+): boolean {
+  const slot = getKeyPackageIdentifier(event);
+  return slot !== undefined && forgottenSlots.has(slot);
 }
 
 export function groupHasKeyPackageLeaf(
@@ -1022,7 +1042,21 @@ export function useDeviceSync(
     };
 
     // ── Effect 2: Auto-invite new devices ───────────────────────────
+    // refreshForgotten is declared here (outside runKeyPackageSync) so its
+    // reference is stable and can be passed to both addEventListener and
+    // removeEventListener in the effect cleanup (AC-INVITE-4).
+    let forgottenSlots = new Set<string>();
+    const refreshForgotten = async () => {
+      forgottenSlots = await loadForgottenSlots();
+    };
+    window.addEventListener("notestr:forgotten-slots-changed", refreshForgotten);
+
     const runKeyPackageSync = async () => {
+      // Initialize the in-memory forgotten-slots cache before the sync loop
+      // runs (AC-INVITE-1). The cache is shared across syncKnownKeyPackages
+      // and handleKeyPackageEvent calls via the outer closure.
+      forgottenSlots = await loadForgottenSlots();
+
       const knownEvents = new Map<string, NostrEvent>();
       const invited = new Set(await loadInvitedKeys());
       const pendingInvites = new Set<string>();
@@ -1163,6 +1197,8 @@ export function useDeviceSync(
           if (!mountedRef.current) return;
           if (isLocalDevice(event, local)) continue;
           if (getKeyPackageNostrPubkey(event) !== pubkey) continue;
+          // AC-INVITE-2: skip KP events whose slot the user has forgotten.
+          if (isSlotForgotten(event, forgottenSlots)) continue;
           await inviteToAllGroups(event);
         }
       };
@@ -1173,6 +1209,8 @@ export function useDeviceSync(
         const local = await getLocalKnownIds();
         if (isLocalDevice(event, local)) return;
         if (getKeyPackageNostrPubkey(event) !== pubkey) return;
+        // AC-INVITE-3: skip live KP events whose slot the user has forgotten.
+        if (isSlotForgotten(event, forgottenSlots)) return;
 
         try {
           await inviteToAllGroups(event);
@@ -1227,6 +1265,9 @@ export function useDeviceSync(
 
     return () => {
       mountedRef.current = false;
+      // AC-INVITE-4: remove the forgotten-slots cache refresh listener using
+      // the same refreshForgotten reference captured in addEventListener above.
+      window.removeEventListener("notestr:forgotten-slots-changed", refreshForgotten);
       client.groups.off("updated", handleGroupsUpdated);
       for (const sub of subs) {
         sub.unsubscribe();

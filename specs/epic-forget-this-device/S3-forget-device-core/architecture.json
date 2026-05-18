@@ -1,0 +1,68 @@
+{
+  "module_name": "src/marmot/forget-device.ts",
+  "purpose": "Top-level imperative utilities for removing a device from all MLS groups. Exposes forgetSelfDevice (removes own device, publishes kind-5 deletions, clears IDB, signs out) and forgetSiblingDevice (removes another device from groups where local user is admin, marks slot forgotten). No React dependency.",
+  "public_api": [
+    {
+      "name": "forgetSelfDevice",
+      "signature": "(client: MarmotClient, signer: EventSigner, relays: string[], onSignOut: () => void) => Promise<void>",
+      "description": "Iterates client.groups.loaded sequentially, removes all leaves matching the local clientId via removeLeafByIndex, publishes one NIP-09 kind-5 per published KP event id, clears IDB (identity + key-packages + group-state + invite-store + invitedKeys + joinedGroups), calls clearNip46Session(), then calls onSignOut()."
+    },
+    {
+      "name": "forgetSiblingDevice",
+      "signature": "(client: MarmotClient, pubkey: string, slot: string) => Promise<void>",
+      "description": "Iterates client.groups.loaded, skipping groups where isAdmin(group.groupData, pubkey) is false or groupData is null. pubkey is the local user's identity pubkey, provided by the caller. In qualifying groups, fetches KP events from group relays, matches leaves by slot via compareKeyPackageToLeafNode, and calls removeLeafByIndex sequentially. Calls markSlotForgotten(slot) after all removals."
+    }
+  ],
+  "private_files": [],
+  "owned_data": [],
+  "dependencies_allowed": [
+    "src/marmot/per-leaf-remove.ts",
+    "src/marmot/forgotten-slots.ts",
+    "src/marmot/storage.ts",
+    "src/lib/nostr.ts",
+    "@internet-privacy/marmot-ts",
+    "ts-mls"
+  ],
+  "dependencies_forbidden": [
+    "app/page.tsx",
+    "src/components/",
+    "@nostr-dev-kit/ndk",
+    "react",
+    "next/navigation"
+  ],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "src/marmot/forget-device.test.ts"
+  ],
+  "architect_decisions": [
+    {
+      "id": "D1",
+      "topic": "IDB cleanup mechanism for keyPackageStore / groupStateStore / inviteStore",
+      "options": ["(a) lift to module scope + export", "(b) MarmotClient.clearLocalState() upstream", "(c) indexedDB.deleteDatabase by stable name"],
+      "decision": "c",
+      "rationale": "The three stores are local variables inside the MarmotProvider.init() closure in client.tsx:162-164 and are not exported. Option (a) would require restructuring the init() closure and weakening encapsulation. Option (b) requires changes to @internet-privacy/marmot-ts, an external package — not viable in-epic without upstream confirmation. Option (c) is self-contained: the IDB database names notestr-key-packages, notestr-group-state, and notestr-invite-store are stable string constants derived from createKVStore('key-packages'), createKVStore('group-state'), and createInviteKVStore() ('invite-store'). These names are already relied upon by the e2e cleanup fixture (KNOWN_IDB_NAMES) and are an existing stable contract. The downside (implicit coupling between forget-device.ts and storage.ts naming convention) is acceptable because the names are load-bearing in multiple places already and breaking them would break e2e cleanup, providing a natural detection mechanism."
+    },
+    {
+      "id": "D2",
+      "topic": "Kind-5 publish path",
+      "options": ["(a) replicate inlined NDK pattern (signer.signEvent + NDKEvent.publish)", "(b) route through client.network.publish(relays, signedEvent)"],
+      "decision": "b",
+      "rationale": "NdkNetworkAdapter.publish(relays, event) accepts any NostrEvent — the signature is generic (not kind-specific). Verified by reading network.ts: it creates an NDKEvent from the raw event and publishes via NDKRelaySet regardless of kind. This keeps NDK confined to network.ts and the existing client.tsx:322-335 location per boundary rule 4. The only trade-off is that NdkNetworkAdapter.publish includes the publish-task bridge (consumeExpectedPublishForKind445), which is a no-op for non-kind-445 events, so there is no behavioral impact on kind-5 events."
+    },
+    {
+      "id": "D3",
+      "topic": "Epoch race handling in removeLeafByIndex",
+      "options": ["(a) surface error to caller", "(b) retry-once-then-bubble wrapper", "(c) full retry-loop with bounded attempts"],
+      "decision": "b",
+      "rationale": "A retry-once wrapper provides meaningfully better UX at low complexity cost. During multi-group self-forget, another member may commit to a group between the leaf-index lookup and the removeLeafByIndex call; a single retry after re-fetching the leaf index resolves the vast majority of real-world epoch races (which are single-step advances). Looping N times (option c) is over-engineered for v1. Bubbling immediately (option a) forces the user to restart the entire forget flow rather than retrying just the failed group. The wrapper catches a stale-epoch error, re-looks up the leaf index (in case the leaf moved), and retries exactly once; a second failure bubbles to the caller. The error type to detect is any Error whose message contains 'epoch' (or the specific marmot-ts epoch-conflict error class if one is exported)."
+    },
+    {
+      "id": "D4",
+      "topic": "forgetSiblingDevice signature — pubkey parameter",
+      "decision": "add pubkey: string between client and slot",
+      "rationale": "isAdmin(groupData, pubkey) requires the identity pubkey; the prior architect attempted to read it from a non-existent group.pubkey property, causing a TypeScript compilation error. Adding pubkey as an explicit parameter matches the device-sync.ts pattern (line 1113) and avoids smuggling a signer dependency."
+    }
+  ]
+}

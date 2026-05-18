@@ -1,0 +1,57 @@
+{
+  "module_name": "forgotten-slots",
+  "purpose": "Owns the notestr-forgotten-slots IDB store. Exposes markSlotForgotten (write + DOM event dispatch) and loadForgottenSlots (read all keys as a Set). This module is the producer of the ForgottenSlotsAPI seam consumed by S2 (device-sync.ts) and S3 (forget-device.ts).",
+  "file_path": "src/marmot/forgotten-slots.ts",
+  "public_api": [
+    {
+      "name": "markSlotForgotten",
+      "signature": "(slot: string): Promise<void>",
+      "description": "Writes the slot string to the notestr-forgotten-slots IDB store with value true, then dispatches new CustomEvent('notestr:forgotten-slots-changed') on window. Idempotent — calling with the same slot a second time overwrites with the same value and dispatches the event again."
+    },
+    {
+      "name": "loadForgottenSlots",
+      "signature": "(): Promise<Set<string>>",
+      "description": "Returns a Set<string> of all keys currently stored in the notestr-forgotten-slots IDB store. Returns an empty Set when the store has never been written to. Uses forgottenStore.keys() — never getAllKeys."
+    }
+  ],
+  "private_files": [],
+  "owned_data": [
+    "IDB database: notestr-forgotten-slots (created via createKVStore<true>('forgotten-slots'))",
+    "Key: slot string (any non-empty string passed to markSlotForgotten). Value: always boolean true."
+  ],
+  "dependencies_allowed": [
+    "src/marmot/storage.ts (createKVStore)"
+  ],
+  "dependencies_forbidden": [
+    "idb-keyval (direct import — boundary rule 3)",
+    "src/marmot/device-sync.ts",
+    "src/marmot/forget-device.ts",
+    "src/components/",
+    "app/"
+  ],
+  "external_ports": [
+    "window.dispatchEvent (DOM CustomEvent bus — write side only)"
+  ],
+  "events_emitted": [
+    "notestr:forgotten-slots-changed (dispatched on window after every markSlotForgotten write)"
+  ],
+  "events_consumed": [],
+  "test_targets": [
+    "src/marmot/forgotten-slots.test.ts"
+  ],
+  "storage_ts_export_decision": {
+    "shape": "export-clear-helper",
+    "chosen": "clearIdentityStore()",
+    "rationale": "Export a named helper function clearIdentityStore() rather than the raw identityStore handle. This keeps the store encapsulated and prevents other modules from accidentally reading or writing the identity store. Pattern is consistent with getOrCreateClientId() which already wraps all identityStore access. S3's forgetSelfDevice calls clearIdentityStore() — one purpose, one name, no ambient authority leakage.",
+    "signature": "export async function clearIdentityStore(): Promise<void>",
+    "call_site": "src/marmot/forget-device.ts (S3)"
+  },
+  "invariants": [
+    "IDB key is the slot string; value is always boolean true.",
+    "The store is created once at module load time via createKVStore<true>('forgotten-slots') — no lazy init.",
+    "markSlotForgotten always awaits the IDB write before dispatching the DOM event.",
+    "loadForgottenSlots always returns a resolved Set (never throws on empty store).",
+    "No raw idb-keyval import appears in forgotten-slots.ts.",
+    "The DOM event name is exactly 'notestr:forgotten-slots-changed' — no variants."
+  ]
+}

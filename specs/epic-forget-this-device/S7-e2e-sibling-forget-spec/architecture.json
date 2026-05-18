@@ -1,0 +1,90 @@
+{
+  "module_name": "e2e/tests/forget-device-sibling.spec.ts",
+  "purpose": "End-to-end Playwright spec that verifies the sibling-forget flow: A1 authenticates (sibling-forgetter), A2 authenticates (target sibling, same bunker), B authenticates (observer, different bunker). A1 creates a group, invites B by npub; A2 is auto-invited via the same-npub multi-device flow. A1 opens Settings → Devices, clicks Forget on A2's device row, confirms. Assertions: (1) A2's leaf is absent from A1's view (AC-E2E-2, AC-E2E-11), (2) A2's leaf is absent from B's view (AC-E2E-11), (3) A1's __notestrTestForgottenSlots() hook returns A2's slot string (AC-E2E-12). No kind-5 relay assertion — sibling-forget cannot publish kind-5 from A1 because A2's KP secrets belong to A2.",
+  "public_api": [],
+  "private_files": [
+    "e2e/tests/forget-device-sibling.spec.ts"
+  ],
+  "owned_data": [],
+  "dependencies_allowed": [
+    "e2e/fixtures/two-party.ts (authenticate, createGroup, inviteByNpub, selectGroup, leafIndexesFor, getPubkeyHex, currentGroupId, settle)",
+    "e2e/fixtures/auth-helper.ts (E2E_BUNKER_URL)",
+    "e2e/fixtures/auth-helper-b.ts (E2E_BUNKER_B_URL, USER_B_NPUB)",
+    "@playwright/test"
+  ],
+  "dependencies_forbidden": [
+    "e2e/fixtures/ndk-subscriber.ts (no kind-5 relay assertion for sibling-forget — Design Decision #2)",
+    "src/ (no imports from app source)",
+    "e2e/fixtures/cleanup.ts (clearAppState called internally by authenticate — never called separately)",
+    "e2e-down / e2e-up / relay reset helpers"
+  ],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "AC-E2E-2 (describe.serial with Date.now() group name)",
+    "AC-E2E-11 (A2's leaf absent from A1's and B's member list after sibling-forget)",
+    "AC-E2E-12 (A1's __notestrTestForgottenSlots() returns array containing A2's slot string)"
+  ],
+  "contexts": {
+    "A1": {
+      "role": "sibling-forgetter and group admin",
+      "bunker": "E2E_BUNKER_URL (User A)",
+      "slot": "sibling-a1",
+      "description": "Authenticates last (after B and A2) so it is admin of the group it creates. Performs the sibling-forget action on A2's device row via Settings UI."
+    },
+    "A2": {
+      "role": "forgotten sibling device",
+      "bunker": "E2E_BUNKER_URL (User A — same bunker as A1)",
+      "slot": "sibling-a2",
+      "description": "Authenticates second so its key package is on the relay for auto-invite. Is the target of the sibling-forget. Its leaf must be absent from all contexts after the forget."
+    },
+    "B": {
+      "role": "observing device with distinct npub",
+      "bunker": "E2E_BUNKER_B_URL (User B)",
+      "slot": "observer",
+      "description": "Authenticates first so its key package is on the relay before A1 invites. Serves as external observer for the leaf-absence assertion (AC-E2E-11 second perspective)."
+    }
+  },
+  "test_sequence": [
+    "beforeAll: create contextA1 + contextA2 + contextB + pageA1 + pageA2 + pageB",
+    "Step 1 (auth): authenticate(pageB, E2E_BUNKER_B_URL, 'observer') → settle(3000)",
+    "Step 2 (auth): authenticate(pageA2, E2E_BUNKER_URL, 'sibling-a2') → settle(3000)",
+    "Step 3 (auth): authenticate(pageA1, E2E_BUNKER_URL, 'sibling-a1') → settle(3000)",
+    "Step 4: capture pubkeyA = getPubkeyHex(pageA1), pubkeyB = getPubkeyHex(pageB)",
+    "Step 5: createGroup(pageA1, GROUP_NAME)",
+    "Step 6: inviteByNpub(pageA1, USER_B_NPUB) — B becomes member",
+    "Step 7: settle(pageA1, 8000) — wait for auto-invite scan to pick up A2's KP (same pubkey, different slot) and invite A2",
+    "Step 8: selectGroup(pageA2, GROUP_NAME) — A2 joins via auto-invite",
+    "Step 9: selectGroup(pageB, GROUP_NAME) — B joins via Welcome",
+    "Step 10: groupId = currentGroupId(pageA1)",
+    "Step 11: sanity assert — all three contexts in group (A1 + A2 share pubkeyA = 2 leaves; B has 1 leaf; total leaf count from pubkeyA = 2)",
+    "In core test: open Settings modal on A1 via aria-label='Settings' button",
+    "In core test: click 'Devices' tab",
+    "In core test: identify A2's device row by data-local='false' (or by slot text 'sibling-a2') and click [data-testid='device-forget-sibling-btn']",
+    "In core test: click [data-testid='device-forget-sibling-confirm-btn']",
+    "Assertion 1 (AC-E2E-2 + AC-E2E-11 from A1): expect.poll(() => leafIndexesFor(pageA1, groupId, pubkeyA)).toHaveLength(1) — A1's own leaf remains; A2's leaf is gone",
+    "Assertion 2 (AC-E2E-11 from B): expect.poll(() => leafIndexesFor(pageB, groupId, pubkeyA)).toHaveLength(1) — same expectation from B's perspective",
+    "Assertion 3 (AC-E2E-12): const slots = await pageA1.evaluate(() => window.__notestrTestForgottenSlots()); expect(slots).toContain('sibling-a2')",
+    "afterAll: close contextA1 + contextA2 + contextB"
+  ],
+  "assertion_strategy": {
+    "leaf_gone_from_a1": "expect.poll(() => leafIndexesFor(pageA1, groupId, pubkeyA), { timeout: 30000 }).toHaveLength(1) — A1's own leaf (also pubkeyA) remains; toHaveLength(1) not 0",
+    "leaf_gone_from_b": "expect.poll(() => leafIndexesFor(pageB, groupId, pubkeyA), { timeout: 30000 }).toHaveLength(1) — confirms Remove commit was accepted globally, not only locally on A1",
+    "forgotten_slot_idb": "await pageA1.evaluate(() => window.__notestrTestForgottenSlots()) then expect(slots).toContain(SLOT_A2) — outer await covers Playwright serialization of the inner Promise"
+  },
+  "relay_state_independence": {
+    "pinClientSlot": "authenticate() calls pinClientSlot internally with the supplied slot string",
+    "clearAppState": "authenticate() calls clearAppState() internally — not called separately",
+    "group_name_isolation": "GROUP_NAME = `ForgetSibling ${Date.now()}` at top of describe.serial block",
+    "no_relay_resets": "No e2e-down, e2e-up, or fixture-level relay reset calls",
+    "no_global_relay_assertions": "All assertions scoped to test-owned pages (pageA1, pageA2, pageB)"
+  },
+  "design_decisions": {
+    "no_kind5_assertion": "Sibling-forget cannot publish kind-5 from A1 because A2's KP secrets belong to A2. The slot is marked locally in notestr-forgotten-slots IDB instead. This is Design Decision #2 from architecture.md.",
+    "leaf_count_is_1_not_0": "After sibling-forget, pubkeyA has 1 leaf (A1's own) not 0. The assertion is toHaveLength(1), not toHaveLength(0).",
+    "a1_authenticates_last": "A1 must authenticate after B and A2 so it is the most-recently-seen admin and the auto-invite scan runs from A1's context (the group creator is always the admin who can issue invites).",
+    "settle_before_a2_join": "An 8-second settle after inviteByNpub gives the auto-invite scan time to process A2's key package and issue the invite commit, before selectGroup(pageA2) is called."
+  },
+  "open_architect_decisions": []
+}

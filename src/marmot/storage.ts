@@ -66,6 +66,23 @@ export function createInviteKVStore(): KeyValueStoreBackend<
 }
 
 const identityStore = createKVStore<string>("identity");
+
+/**
+ * Clears the local clientId from IDB.
+ *
+ * Called by forgetSelfDevice (S3) as part of the self-forget local-cleanup
+ * sequence. Exposing a named helper (rather than the raw store handle)
+ * prevents other modules from accidentally reading or writing the identity
+ * store — pattern consistent with getOrCreateClientId() which already wraps
+ * all identityStore access.
+ *
+ * After this call, the next call to getOrCreateClientId() will generate a
+ * fresh UUID, so the device effectively loses its identity locally.
+ */
+export async function clearIdentityStore(): Promise<void> {
+  await identityStore.clear();
+}
+
 export const deviceNamesStore = createKVStore<import("./device-store").DeviceMetadata>("device-names");
 export const invitedKeysStore = createKVStore<true>("invited-keys");
 export const joinedGroupsStore = createKVStore<true>("joined-groups");

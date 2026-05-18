@@ -1,0 +1,126 @@
+{
+  "story_id": "S3",
+  "status": "done",
+  "architect_skipped": false,
+  "files_created": [
+    "src/marmot/forget-device.ts",
+    "src/marmot/forget-device.test.ts",
+    "specs/epic-forget-this-device/S3-forget-device-core/architecture.json",
+    "specs/epic-forget-this-device/S3-forget-device-core/result.json"
+  ],
+  "files_modified": [
+    "specs/epic-forget-this-device/S3-forget-device-core/verification.json"
+  ],
+  "tests_run": {
+    "command": "npx vitest run",
+    "baseline_total": 118,
+    "final_total": 137,
+    "tests_added": 19,
+    "tests_failed": 0
+  },
+  "implementation_summary": "forgetSelfDevice and forgetSiblingDevice implemented in src/marmot/forget-device.ts (323 lines, by prior architect spawn). 19 unit tests written in src/marmot/forget-device.test.ts covering: sequential leaf removal across two groups (AC-SELF-1/UNIT-2), single-group multi-leaf removal, kind-5 per-published-entry publishing with correct e-tag and pubkey shape (AC-DELETE-1/2/3/UNIT-3), clearNip46Session exactly once (AC-SELF-4/UNIT-4), onSignOut invoked last (AC-SELF-5/UNIT-5), IDB cleanup via clearIdentityStore + invitedKeysStore.clear + joinedGroupsStore.clear + indexedDB.deleteDatabase with stable names (AC-CLEANUP-1/2/4), step ordering enforcement (leaf removal before publish, cleanup after publish, onSignOut last), error propagation on non-epoch errors (Q-ROBUSTNESS-1), D3 epoch-race retry wrapper: retries once on epoch error, bubbles on double epoch failure, no retry on non-epoch error, admin-guard skip for non-admin groups (AC-SIBLING-1/UNIT-6), markSlotForgotten called with target slot (AC-SIBLING-3/UNIT-7).",
+  "architect_decisions": [
+    {
+      "id": "D1",
+      "topic": "IDB cleanup mechanism for keyPackageStore / groupStateStore / inviteStore",
+      "options": [
+        "(a) lift to module scope + export",
+        "(b) MarmotClient.clearLocalState() upstream",
+        "(c) indexedDB.deleteDatabase by stable name"
+      ],
+      "decision": "c",
+      "rationale": "The three stores are local variables inside the MarmotProvider.init() closure in client.tsx:162-164 and are not exported. Option (a) would require restructuring the init() closure and weakening encapsulation. Option (b) requires changes to @internet-privacy/marmot-ts, an external package — not viable in-epic without upstream confirmation. Option (c) is self-contained: the IDB database names notestr-key-packages, notestr-group-state, and notestr-invite-store are stable string constants derived from createKVStore('key-packages'), createKVStore('group-state'), and createInviteKVStore() ('invite-store'). These names are already relied upon by the e2e cleanup fixture (KNOWN_IDB_NAMES) and are an existing stable contract. The downside (implicit coupling between forget-device.ts and storage.ts naming convention) is acceptable because the names are load-bearing in multiple places already and breaking them would break e2e cleanup, providing a natural detection mechanism."
+    },
+    {
+      "id": "D2",
+      "topic": "Kind-5 publish path",
+      "options": [
+        "(a) replicate inlined NDK pattern (signer.signEvent + NDKEvent.publish)",
+        "(b) route through client.network.publish(relays, signedEvent)"
+      ],
+      "decision": "b",
+      "rationale": "NdkNetworkAdapter.publish(relays, event) accepts any NostrEvent — the signature is generic (not kind-specific). Verified by reading network.ts: it creates an NDKEvent from the raw event and publishes via NDKRelaySet regardless of kind. This keeps NDK confined to network.ts and the existing client.tsx:322-335 location per boundary rule 4. The only trade-off is that NdkNetworkAdapter.publish includes the publish-task bridge (consumeExpectedPublishForKind445), which is a no-op for non-kind-445 events, so there is no behavioral impact on kind-5 events."
+    },
+    {
+      "id": "D3",
+      "topic": "Epoch race handling in removeLeafByIndex",
+      "options": [
+        "(a) surface error to caller",
+        "(b) retry-once-then-bubble wrapper",
+        "(c) full retry-loop with bounded attempts"
+      ],
+      "decision": "b",
+      "rationale": "A retry-once wrapper provides meaningfully better UX at low complexity cost. During multi-group self-forget, another member may commit to a group between the leaf-index lookup and the removeLeafByIndex call; a single retry after re-fetching the leaf index resolves the vast majority of real-world epoch races (which are single-step advances). Looping N times (option c) is over-engineered for v1. Bubbling immediately (option a) forces the user to restart the entire forget flow rather than retrying just the failed group. The wrapper catches a stale-epoch error, re-looks up the leaf index (in case the leaf moved), and retries exactly once; a second failure bubbles to the caller. The error type to detect is any Error whose message contains 'epoch' (or the specific marmot-ts epoch-conflict error class if one is exported)."
+    },
+    {
+      "id": "TEST-D1",
+      "topic": "mockRejectedValue vs mockRejectedValueOnce in Q-ROBUSTNESS-1 test",
+      "decision": "Used mockRejectedValueOnce",
+      "rationale": "vi.clearAllMocks() in beforeEach clears call history but not mock implementations. Using mockRejectedValue (not Once) in Q-ROBUSTNESS-1 left removeLeafByIndex in a permanently-rejected state for subsequent tests. Switching to mockRejectedValueOnce ensures the mock resets to the default resolved behavior after one use, so the forgetSiblingDevice tests that follow are not poisoned."
+    },
+    {
+      "id": "D4",
+      "topic": "forgetSiblingDevice signature — pubkey parameter",
+      "decision": "add pubkey: string between client and slot",
+      "rationale": "isAdmin(groupData, pubkey) requires the identity pubkey; the prior architect attempted to read it from a non-existent group.pubkey property, causing a TypeScript compilation error. Adding pubkey as an explicit parameter matches the device-sync.ts pattern (line 1113) and avoids smuggling a signer dependency."
+    }
+  ],
+  "mocks": [
+    {
+      "name": "@internet-privacy/marmot-ts",
+      "reason": "isAdmin, getGroupMembers, getKeyPackage, getKeyPackageIdentifier, keyPackageFilters mocked to avoid real MLS stack in unit tests"
+    },
+    {
+      "name": "ts-mls",
+      "reason": "defaultKeyPackageEqualityConfig.compareKeyPackageToLeafNode and nodeTypes mocked for leaf-matching logic tests"
+    },
+    {
+      "name": "./per-leaf-remove",
+      "reason": "removeLeafByIndex mocked to spy on call count/args and control epoch-error scenarios"
+    },
+    {
+      "name": "./forgotten-slots",
+      "reason": "markSlotForgotten mocked to assert it is called with the correct slot after sibling leaf removal"
+    },
+    {
+      "name": "./storage",
+      "reason": "clearIdentityStore, invitedKeysStore.clear, joinedGroupsStore.clear mocked to assert cleanup calls without real IDB"
+    },
+    {
+      "name": "../lib/nostr",
+      "reason": "clearNip46Session mocked to assert it is called exactly once without touching real localStorage"
+    },
+    {
+      "name": "globalThis.indexedDB",
+      "reason": "vi.stubGlobal used to mock indexedDB.deleteDatabase for the AC-CLEANUP-2 / D1 assertion; unstubbed after that test"
+    }
+  ],
+  "remediation_rounds": 1,
+  "remediation_history": [
+    {
+      "round": 1,
+      "description": "Fixed TS compilation error at line 278 — added pubkey parameter to forgetSiblingDevice. The prior architect attempted to read pubkey from group.pubkey, a property that does not exist on MarmotGroup<any,any>. Solution (a): add pubkey: string as explicit second parameter between client and slot. Updated forgetSiblingDevice signature in forget-device.ts, forget-device.test.ts (6 call sites, removed synthetic pubkey field from mock groups), stories.json seam contract, architecture.md seam table, and architecture.json public_api + architect_decisions (D4). Tests: 19/19 passing. tsc --noEmit: no errors in forget-device.ts."
+    }
+  ],
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The prior architect spawn socket-failed after writing the implementation (forget-device.ts, architecture.json, baseline.json) but before writing the test file or result.json. This completion architect wrote forget-device.test.ts and result.json from scratch. The main friction was diagnosing why three forgetSiblingDevice tests failed on first run: the makeSiblingGroup helper gave groups empty relays ([]) and getGroupMembers returned [] by default, so the implementation legitimately skipped the network.request branch and found no sibling events to match. Fixing both (non-empty relays and one returned member) resolved all failures. A second issue — mockRejectedValue persisting across beforeEach vi.clearAllMocks() — required switching to mockRejectedValueOnce in Q-ROBUSTNESS-1. Round 1 remediation: the prior architect read pubkey from group.pubkey (non-existent on MarmotGroup), caught only by tsc not vitest. Test fixtures had compensated with a synthetic pubkey field; both the bug and the workaround were removed together.",
+    "surprised_by": "The schema's story_id pattern (^[0-9]{2}$) does not match the actual values in sibling result.json files (S2, S3). The schema constraint is not enforced at write time; existing files use the S-prefixed format.",
+    "scope": "project_specific",
+    "outcome": "planning_only",
+    "commits_made": [],
+    "absorbed_from": [
+      {
+        "agent": "S3-original-architect",
+        "note": "Socket failure after writing implementation; architecture.json decisions D1/D2/D3 preserved verbatim as prior architect's locked decisions"
+      }
+    ],
+    "lead_clarifications": []
+  },
+  "final_outcome": "accepted",
+  "completed_at": "2026-05-18T16:10:00Z",
+  "caveats": [
+    "Round 1 remediation: TS compilation error at forget-device.ts:278 (group.pubkey on MarmotGroup) — fixed by adding pubkey parameter to forgetSiblingDevice signature. Decision D4 recorded. All 31 verification questions YES after re-exam. 137/137 unit tests pass; tsc --noEmit clean for forget-device.ts.",
+    "Vitest does NOT strict-type-check by default — tests passed despite TS error. Examiner D caught it via build/tsc inspection. Worth surfacing in retro: future stories should include a tsc --noEmit check in baseline + final."
+  ]
+}

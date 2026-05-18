@@ -1,0 +1,38 @@
+{
+  "story_id": "S7",
+  "status": "done",
+  "remediation_rounds": 0,
+  "files_created": [
+    "e2e/tests/forget-device-sibling.spec.ts",
+    "specs/epic-forget-this-device/S7-e2e-sibling-forget-spec/architecture.json",
+    "specs/epic-forget-this-device/S7-e2e-sibling-forget-spec/baseline.json",
+    "specs/epic-forget-this-device/S7-e2e-sibling-forget-spec/result.json"
+  ],
+  "files_modified": [
+    "specs/epic-forget-this-device/S7-e2e-sibling-forget-spec/verification.json (appended 2 post-impl questions)"
+  ],
+  "implementation_summary": "Created e2e/tests/forget-device-sibling.spec.ts following S6's structural pattern. The spec uses a describe.serial block with a Date.now() group name (AC-E2E-2). Three contexts: A1 (sibling-forgetter, slot 'sibling-a1'), A2 (target, slot 'sibling-a2', same bunker as A1), B (observer, slot 'observer', distinct bunker). Authentication order: B first, A2 second, A1 last (so A1 is group admin). A1 creates the group, invites B by npub, waits 8s for auto-invite to pull in A2's KP (same-npub multi-device flow), then A2 and B join. Core test: A1 opens Settings → Devices, locates A2's non-local row via data-testid='device-row'[data-local='false'] filtered by slot text (with a fallback to first non-local row), clicks the sibling-forget button and confirm button. Assertions: (1) leafIndexesFor(pageA1, groupId, pubkeyA) drops to 1 (A1's own leaf remains); (2) same from pageB perspective confirming global commit propagation; (3) pageA1.__notestrTestForgottenSlots() contains 'sibling-a2'. No kind-5 relay assertion per Design Decision #2. TypeScript compiles cleanly for the new file (npx tsc --noEmit produces no errors in forget-device-sibling.spec.ts; two pre-existing errors in S3's forget-device.test.ts are not introduced by this story).",
+  "test_counts": {
+    "baseline_e2e": 116,
+    "final_e2e": 118,
+    "new_tests_added": 2,
+    "test_types": {
+      "playwright_e2e": 2
+    }
+  },
+  "mocks_introduced": [],
+  "verification": {
+    "pre_impl_questions": 10,
+    "post_impl_questions": 2,
+    "total_questions": 12
+  },
+  "retrospective": {
+    "skipped": true,
+    "reason": "clean_run"
+  },
+  "final_outcome": "accepted",
+  "completed_at": "2026-05-18T16:55:00Z",
+  "caveats": [
+    "Q-POSTIMPL-2 PARTIAL sev 3, confidence 0.5: 8s settle after inviteByNpub is a heuristic mirroring the shipped multi-device-cross-npub.spec.ts pattern. Empirical validation deferred to Step 6 e2e run. If selectGroup times out, increase to 12s or replace with expect.poll(leafIndexesFor).toHaveLength(2)."
+  ]
+}

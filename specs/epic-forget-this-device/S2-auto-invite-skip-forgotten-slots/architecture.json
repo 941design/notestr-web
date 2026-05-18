@@ -1,0 +1,53 @@
+{
+  "module_name": "src/marmot/device-sync.ts",
+  "purpose": "Add forgotten-slot skip logic to the auto-invite KP scan inside the useDeviceSync hook, so relay-replayed or live KP events for slots the user has explicitly forgotten are never re-invited.",
+  "public_api": [],
+  "private_files": [
+    "src/marmot/device-sync.ts"
+  ],
+  "owned_data": [
+    "forgottenSlots: Set<string> — closure-scoped inside runKeyPackageSync, NOT module-scoped. Isolated per hook invocation (handles React StrictMode double-mount)."
+  ],
+  "dependencies_allowed": [
+    "src/marmot/forgotten-slots.ts (ForgottenSlotsAPI seam — loadForgottenSlots)"
+  ],
+  "dependencies_forbidden": [
+    "src/marmot/storage.ts — must not call createKVStore('forgotten-slots') directly; that would create a second independent IDB store handle",
+    "src/marmot/forget-device.ts — S3 scope, not yet implemented",
+    "src/components/ — UI layer",
+    "e2e/ — test fixture layer"
+  ],
+  "external_ports": [
+    "window.addEventListener('notestr:forgotten-slots-changed', refreshForgotten) — DOM event bus for cache invalidation",
+    "window.removeEventListener('notestr:forgotten-slots-changed', refreshForgotten) — matching cleanup"
+  ],
+  "events_emitted": [],
+  "events_consumed": [
+    "notestr:forgotten-slots-changed — dispatched by markSlotForgotten in forgotten-slots.ts (S1); triggers refreshForgotten to reload the in-memory Set"
+  ],
+  "test_targets": [
+    "src/marmot/device-sync.test.ts"
+  ],
+  "architect_decisions": [
+    {
+      "decision": "Test file choice: append to existing src/marmot/device-sync.test.ts rather than creating a new file.",
+      "rationale": "The syncKnownKeyPackages and handleKeyPackageEvent code paths are closure-private inside useDeviceSync; they cannot be imported and tested in isolation. Testing them requires mocking the module-level dependencies (loadForgottenSlots, inviteToAllGroups) and exercising exported functions that interact with those closures. The existing test file already mocks @internet-privacy/marmot-ts and ts-mls; adding the forgotten-slots tests there avoids a second file with a duplicate mock setup."
+    },
+    {
+      "decision": "forgottenSlots variable placement: inside runKeyPackageSync closure body (line ~1026), initialized with `let forgottenSlots = await loadForgottenSlots()` before the sync loop.",
+      "rationale": "Architecture.md finding #6 and AC-INVITE-1 both require the variable to live inside the closure, not at module scope. Module-scope state would be shared across React StrictMode double-mounts and across test runs. The closure gives each hook lifecycle its own Set."
+    },
+    {
+      "decision": "removeEventListener cleanup registered in the useEffect return function (the existing cleanup at line 1228), not inside runKeyPackageSync itself.",
+      "rationale": "runKeyPackageSync is async and called with no await inside the effect; its inner scope cannot run the removeEventListener at unmount time. The effect cleanup function (the return () => { ... } at line 1228) is the canonical React unmount callback and the only place guaranteed to execute on unmount."
+    },
+    {
+      "decision": "refreshForgotten captured as a named const in the runKeyPackageSync closure so the same reference is passed to both addEventListener and removeEventListener.",
+      "rationale": "AC-INVITE-4 requires the same reference. An arrow function inline in removeEventListener would be a different reference and would silently fail to deregister the listener."
+    },
+    {
+      "decision": "Slot extraction in syncKnownKeyPackages: use getKeyPackageIdentifier(event) at the guard site, consistent with the existing call at line 1057 in isLocalDevice.",
+      "rationale": "The local keyPackageSlot() helper operates on ListedKeyPackage (from client.keyPackages.list()), not on NostrEvent. getKeyPackageIdentifier from marmot-ts operates on NostrEvent (kind 30443/443) — the correct type at both insertion points."
+    }
+  ]
+}
