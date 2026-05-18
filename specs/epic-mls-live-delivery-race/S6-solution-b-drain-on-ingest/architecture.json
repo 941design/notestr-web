@@ -1,0 +1,35 @@
+{
+  "module_name": "marmot.device-sync",
+  "purpose": "Extends the MLS receive pipeline in device-sync.ts to drain the parked retry queue after successful ingest activity, capped by a per-event-per-epoch retry budget to prevent retry storms on permanently-undecryptable events.",
+  "public_api": [
+    {
+      "name": "useDeviceSync",
+      "signature": "function useDeviceSync(client: MarmotClient | null, pubkey: string, relays: string[], signer: EventSigner): void",
+      "description": "React hook owning the MLS receive pipeline. S6 extends the ingestGroupEventsRaw inner function to run a parked-queue drain when processed.size > 0, bounded by retryAttempts (MAX_RETRIES=3 per event per epoch). No change to the hook's external signature or return type."
+    }
+  ],
+  "private_files": [
+    "src/marmot/device-sync.ts"
+  ],
+  "owned_data": [
+    "retryAttempts: Map<string, Map<string, number>> — effect-closure-scoped, keyed groupId → eventId → retry count within current epoch",
+    "MAX_RETRIES: 3 — constant, capped retries per event per epoch"
+  ],
+  "dependencies_allowed": [
+    "marmot.ingest-queue (read-only: snapshot, remove via existing code)",
+    "marmot.mls-trace (record queue-drain trace events)",
+    "marmot.storage (addSyncedGroupEventIds — unchanged)"
+  ],
+  "dependencies_forbidden": [
+    "task-store (no import from src/store/)",
+    "marmot.ingest-queue (no modification to ingest-queue.ts source)"
+  ],
+  "external_ports": [],
+  "events_emitted": [
+    "queue-drain with trigger: 'ingest-activity' — new trace event emitted when the drain fires on ingest activity"
+  ],
+  "events_consumed": [],
+  "test_targets": [
+    "src/marmot/device-sync.test.ts — new file: three AC-B-6 cases covering drain-on-ingest no-infinite-loop, epoch-reset semantics, per-group keying. Deviation from ingest-queue.test.ts justified because retryAttempts lives in device-sync.ts; surfaced per stories.json scope note."
+  ]
+}

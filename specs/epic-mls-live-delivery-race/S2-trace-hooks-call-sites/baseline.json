@@ -1,0 +1,21 @@
+{
+  "story_id": "S2",
+  "captured_at": "2026-05-01T09:55:00Z",
+  "commands": {
+    "make_test": {
+      "exit_code": 0,
+      "passed": 84,
+      "failed": 0,
+      "skipped": 0,
+      "test_files": 12,
+      "notes": "vitest run + verify-static-export.mjs both green. Includes the 5-case mls-trace.test.ts from S1."
+    },
+    "tsc": {
+      "exit_code": 0,
+      "errors": 0,
+      "notes": "Clean from S1's adjacent fix in e2e/tests/viewport-audit.spec.ts."
+    }
+  },
+  "scope": "S2 modifies device-sync.ts, network.ts, task-store.tsx, client.tsx, types/notestr-test-hooks.d.ts, e2e/global-setup.ts. Pure instrumentation — no behavioural change to production paths. Unit + tsc baseline only (S2 is not e2e-affecting per the team-lead workflow rules — the e2e harness lands in S3).",
+  "notes": "Baseline established before S2 implementation. All hooks added in S2 are gated on the build-time `process.env.NEXT_PUBLIC_E2E_TRACE_MLS === \"1\"` flag, which resolves to no-op (S1's mls-trace) when unset, so production behaviour is invariant."
+}

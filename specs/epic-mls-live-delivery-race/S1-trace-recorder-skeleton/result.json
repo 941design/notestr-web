@@ -1,0 +1,68 @@
+{
+  "story_id": "S1",
+  "status": "done",
+  "started_at": "2026-05-01T09:31:00Z",
+  "completed_at": "2026-05-01T10:05:00Z",
+  "final_outcome": "accepted",
+  "implemented_files_created": [
+    "src/marmot/mls-trace.ts",
+    "src/marmot/mls-trace.test.ts"
+  ],
+  "implemented_files_modified": [
+    "e2e/tests/viewport-audit.spec.ts"
+  ],
+  "test_count_delta": {
+    "unit": "+5",
+    "e2e": "0"
+  },
+  "verification_rounds": 1,
+  "verifier_test_gate": {
+    "make_test": "12 files / 84 tests PASS",
+    "tsc_noemit": "exit 0",
+    "verify_static_export": "both PWA scopes successful"
+  },
+  "verifier_dce_check": "Searched out/_next/static/chunks/*.js (production bundle from verify-static-export.mjs) for `createRecordingTrace`, `FROZEN_EMPTY`, `mls-trace`, `NEXT_PUBLIC_E2E_TRACE_MLS`, and the 20 TraceEvent kind literals (`req-start`, `task-store-recv`, `task-store-load-complete`, `queue-drain`, `ingest-result`, `ingest-call`, etc.). Zero matches. The recording-branch and the named export are empirically absent from the production bundle when NEXT_PUBLIC_E2E_TRACE_MLS is unset, confirming the DCE claim in the source comment.",
+  "verifier_codex_last_mile": "round-1.0: needs-attention (1 HIGH record-by-ref, 1 MEDIUM dump-return-type) — fixed; round-1.1: needs-attention (1 HIGH dump-leaks-refs, 1 MEDIUM duplicate-test-factory) — fixed; round-1.2 (final): needs-attention (1 MEDIUM only — DCE claim verifiability concern, addressed by verifier bundle inspection above; no HIGH or CRITICAL).",
+  "remediation_log": [
+    {
+      "round": 1,
+      "iteration": "1.0 (initial)",
+      "verdict": "needs-attention (codex adversarial review)",
+      "findings": [
+        {
+          "severity": "HIGH",
+          "summary": "record() retained caller's TraceEvent by reference — post-record mutation of filter/eventIds could silently rewrite trace history, threatening S3 classifier accuracy.",
+          "fix": "record() now JSON-clones the event before pushing into the buffer (TraceEvent is JSON-safe by construction: only string/number/string[]/plain-object filter, no functions, no cycles). Header comment block updated to document the contract."
+        },
+        {
+          "severity": "MEDIUM",
+          "summary": "dump() declared TraceEvent[] but no-op returned a frozen empty array cast back to mutable — production-only mutation trap.",
+          "fix": "Widened MlsTrace.dump() return type to `readonly TraceEvent[]`. Both no-op and recording impls return immutable views uniformly. Header comment updated."
+        },
+        {
+          "severity": "ADVISORY",
+          "summary": "No colocated test locked the contracts ahead of S2 wiring.",
+          "fix": "Added src/marmot/mls-trace.test.ts with 4 cases: clone-on-record (eventIds + groupId mutation), clone-on-record (nested filter mutation), dump-snapshot (mutating the dump array doesn't affect subsequent dumps), clear empties the buffer."
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "iteration": "1.1 (post-fix codex re-review)",
+      "verdict": "needs-attention (codex adversarial review last-mile, same round)",
+      "findings": [
+        {
+          "severity": "HIGH",
+          "summary": "dump() leaked live event references in the recording impl — `buffer.slice()` is a shallow array copy; element refs were still shared with the buffer. A consumer could mutate a returned event's primitive field and rewrite the buffer in place.",
+          "fix": "Recording dump() now deep-clones each entry on egress: `buffer.map(e => JSON.parse(JSON.stringify(e)) as TraceEvent)`. Symmetric with record(): together these close both leak directions (call-site → recorder, recorder → consumer). Header comment rewritten to document the symmetric clone contract."
+        },
+        {
+          "severity": "MEDIUM",
+          "summary": "Tests exercised an inline duplicate factory rather than the shipped implementation, so a regression in mls-trace.ts could leave the test suite green.",
+          "fix": "Exported `createRecordingTrace` as a named export from mls-trace.ts (with a JSDoc block explaining DCE remains intact: nothing else in the production graph references the export, so webpack DCEs it when NEXT_PUBLIC_E2E_TRACE_MLS is unset). mls-trace.test.ts now imports the real factory. Added a 5th test case: dump-then-mutate-an-event regression test, asserting a subsequent dump still shows the original value."
+        }
+      ]
+    }
+  ],
+  "notes": "S1 ships src/marmot/mls-trace.ts and colocated src/marmot/mls-trace.test.ts. Module exports MlsTrace interface (record/dump/clear, dump returns `readonly TraceEvent[]`), TraceEvent discriminated union with all 20 variants from spec.md § Trace event shape, `createRecordingTrace` factory (named export so the test imports the shipped factory), and a `mlsTrace` const + default export. Recording-vs-no-op selection happens once at module load via `process.env.NEXT_PUBLIC_E2E_TRACE_MLS === \"1\"` so production webpack DCE removes the recording branch and the unused `createRecordingTrace` export. record() and dump() are SYMMETRIC ABOUT JSON-CLONING: record() clones on enqueue (call-site → recorder leak closed), dump() clones each entry on egress (recorder → consumer leak closed). Pure module — only `import type { Filter }` from applesauce-core, no react/next/DOM. Adjacent cleanup: 2 pre-existing TS implicit-any errors in e2e/tests/viewport-audit.spec.ts (lines 21, 26) typed explicitly to clear the tsc gate (boy-scout rule). Both `make test` (12 files / 84 tests, +1 file / +5 tests vs baseline) and `npx tsc --noEmit` are green. No call sites yet — those land in S2."
+}

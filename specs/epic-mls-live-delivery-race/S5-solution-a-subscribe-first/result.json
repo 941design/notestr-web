@@ -1,0 +1,82 @@
+{
+  "story_id": "S5",
+  "status": "done",
+  "final_outcome": "accepted_with_caveats",
+  "started_at": "2026-05-18T00:00:00Z",
+  "completed_at": "2026-05-18T00:00:00Z",
+  "implemented_files_modified": [
+    "src/marmot/device-sync.ts"
+  ],
+  "implemented_files_created": [],
+  "test_count_delta": {
+    "baseline_files": 13,
+    "final_files": 13,
+    "baseline_tests": 102,
+    "final_tests": 102,
+    "delta": 0
+  },
+  "tsc_status_final": "0",
+  "verification_rounds": 1,
+  "ac_coverage": [
+    {
+      "ac_id": "AC-A-1",
+      "evidence": "syncGroup now opens the persistent subscription (groupSubs.set / subs.push) BEFORE the historical client.network.request() call. Lines 854-892 vs 894-907 in device-sync.ts.",
+      "status": "implemented"
+    },
+    {
+      "ac_id": "AC-A-1a",
+      "evidence": "subscription.next callback checks `cutoverComplete`; pushes to liveBuffer when false (line 871-874). After historical ingestGroupEvents resolves, liveBuffer is spliced+sorted and drained via ingestGroupEvents, then flag flips (lines 916-932).",
+      "status": "implemented"
+    },
+    {
+      "ac_id": "AC-A-1b",
+      "evidence": "`liveBuffer` (line 837) and `cutoverComplete` (line 838) are declared as `const`/`let` inside the syncGroup function body — closure-scoped per call. No module-level variable.",
+      "status": "implemented"
+    },
+    {
+      "ac_id": "AC-A-2",
+      "evidence": "`t0 = Math.floor(Date.now() / 1000)` at sync start (line 832). Subscription uses `filter(t0 - OVERLAP_SECONDS)` (line 855). Historical request uses `filter()` with no since/until (line 896).",
+      "status": "implemented"
+    },
+    {
+      "ac_id": "AC-A-3",
+      "evidence": "`const OVERLAP_SECONDS = 60` at module scope (after SNAPSHOT_D_TAG), with a comment referencing Design Decision 3 in spec.md. Not runtime-configurable.",
+      "status": "implemented"
+    },
+    {
+      "ac_id": "AC-A-4",
+      "evidence": "`ingestGroupEventsRaw` is untouched. The existing `syncedEventIds` dedupe (line 605) still short-circuits events already seen. Duplicate events from the 60s overlap are silently skipped.",
+      "status": "implemented"
+    },
+    {
+      "ac_id": "AC-A-5",
+      "evidence": "Pending re-run of S3 harness across 30 runs after merge. Not verifiable at implementation time.",
+      "status": "pending_validation"
+    },
+    {
+      "ac_id": "AC-A-6",
+      "evidence": "ingestLock is untouched (lines 700-713). Buffer drain calls ingestGroupEvents (lock-protected path) at line 925. Live events during drain also go through ingestGroupEvents (line 879). Lock chains correctly.",
+      "status": "implemented"
+    },
+    {
+      "ac_id": "AC-A-7",
+      "evidence": "Pending 10 consecutive local runs of multi-user.spec.ts:145.",
+      "status": "pending_validation"
+    },
+    {
+      "ac_id": "AC-VAL-2",
+      "evidence": "Skipped — S3 traces from real runs provide sufficient evidence per stories.json scope_notes.",
+      "status": "skipped"
+    }
+  ],
+  "retrospective": {
+    "skipped": true,
+    "reason": "clean_run"
+  },
+  "caveats": [
+    "VQ-S5-011 NO sev9: scope-boundary - network/client/task-store edits are S1/S2 trace infra on dirty tree (user-authorized)",
+    "VQ-S5-012 PARTIAL sev7: new network->device-sync dependency via consumeExpectedPublishForKind445 (GAP-2 documented exception)",
+    "VQ-S5-007/009/018 PARTIAL: AC-A-5/A-7/trace-inspection deferred to e2e re-run",
+    "VQ-S5-019 PARTIAL: S6 merge coord - addressed by S6 architect next"
+  ]
+}

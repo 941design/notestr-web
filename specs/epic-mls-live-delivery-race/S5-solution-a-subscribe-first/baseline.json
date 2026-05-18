@@ -1,0 +1,7 @@
+{
+  "story_id": "S5",
+  "captured_at": "2026-05-18T00:00:00Z",
+  "unit_tests": { "files": 13, "tests": 102 },
+  "e2e_tests": { "files": "skipped", "tests": "skipped" },
+  "tsc_status": "0"
+}

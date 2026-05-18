@@ -1,0 +1,139 @@
+{
+  "story_id": "S7",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S7-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-REG-1",
+      "question": "AC-REG-1 requires that `e2e/tests/mls-live-delivery.spec.ts` exists and contains a single test that deterministically exercises the F2 sequence. Show the file exists and identify the test name. Confirm it is distinct from any existing test file (no collision with `multi-user.spec.ts` or `three-party.spec.ts`).",
+      "severity": 9
+    },
+    {
+      "question_id": "VQ-S7-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-REG-2",
+      "question": "AC-REG-2 requires a new test hook `window.__notestrTestArmAutoInvite(siblingKpEvent: NostrEvent): Promise<void>` in `MarmotProvider`. Show (a) the declaration in `src/types/notestr-test-hooks.d.ts` (must appear BEFORE the assignment in client.tsx, per project convention), (b) the hook assignment in `MarmotProvider`'s test-hook `useEffect` block at ~client.tsx:419, (c) that the hook is gated on `isTestRuntime()`, and (d) that `delete window.__notestrTestArmAutoInvite` appears in the cleanup return of the same effect.",
+      "severity": 10
+    },
+    {
+      "question_id": "VQ-S7-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-REG-3",
+      "question": "AC-REG-3 requires that the regression test calls `__notestrTestArmAutoInvite` BETWEEN A's group creation and A's task dispatch — specifically to force the F2 sequence (Welcome commit at epoch N+1 plus app-message arriving in undefined order on B). Show the test body sequence: (1) A creates group + invites B, (2) `__notestrTestArmAutoInvite(siblingKpEvent)` is called from the test, (3) A dispatches the task, (4) assertion on B. Confirm there is no artificial ordering guarantee inserted between (2) and (3) that would make the race deterministic — the test must exercise the undefined-order scenario.",
+      "severity": 9
+    },
+    {
+      "question_id": "VQ-S7-004",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-REG-4",
+      "question": "AC-REG-4 requires that `await expect(openColumnB).toContainText(TASK_TITLE, { timeout: 5000 })` passes within 5 s (strict assertion window). Show the assertion line with the exact 5000 ms timeout. Confirm this is tighter than the existing 30-s envelope used in `multi-user.spec.ts` and `three-party.spec.ts` — the regression test is intentionally stricter to prevent pass-by-timeout-expansion.",
+      "severity": 9
+    },
+    {
+      "question_id": "VQ-S7-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-REG-5",
+      "question": "AC-REG-5 requires that reverting Solution B (the drain-on-ingest body from S6) causes this test to fail consistently. Per stories.json: this verification is performed ONCE during S6 implementation (before S7 finalizes), the test is run against the reverted state, failure is confirmed, and the revert is NOT committed. Show the note in report.md confirming: (a) Solution B was reverted locally, (b) this test failed ≥3 out of 3 runs, and (c) Solution B was re-applied before commit.",
+      "severity": 8
+    },
+    {
+      "question_id": "VQ-S7-006",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-REG-6",
+      "question": "AC-REG-6 requires the test to be mobile-skipped (multi-context tests don't run on mobile projects). Show the mobile-skip pattern in the test file — likely `const skipMobile = ...` + `test.skip(skipMobile, ...)` per the existing multi-context pattern in `e2e/fixtures/two-party.ts` (exploration § similar_features.multi_context_pattern).",
+      "severity": 7
+    },
+    {
+      "question_id": "VQ-S7-007",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "S7's scope covers `e2e/tests/mls-live-delivery.spec.ts` (new file), `src/marmot/client.tsx`, and `src/types/notestr-test-hooks.d.ts` (per stories.json). Confirm no other file was modified. In particular, confirm `src/marmot/device-sync.ts` was NOT changed for the hook implementation — `__notestrTestArmAutoInvite` lives in `MarmotProvider` (`client.tsx`), not in `device-sync.ts`.",
+      "severity": 8
+    },
+    {
+      "question_id": "VQ-S7-008",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `marmot.client` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? If not, which cross-module dependencies exist? Specifically: does `__notestrTestArmAutoInvite`'s implementation in `MarmotProvider` invoke auto-invite logic from `marmot.device-sync` (which would be a legitimate cross-module call through a declared seam), or does it duplicate auto-invite logic inside `client.tsx` (which would be a boundary violation)? Document the call path.",
+      "severity": 7
+    },
+    {
+      "question_id": "VQ-S7-009",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "The `__notestrTestArmAutoInvite` hook is gated on `isTestRuntime()`. Confirm that (a) the gate prevents the hook from being callable in production (production builds have `isTestRuntime()` return false and the install block is dead code), and (b) `isTestRuntime()` is the correct gate here — NOT `process.env.NEXT_PUBLIC_E2E_TRACE_MLS === \"1\"` (the trace flag). Per stories.json conventions, `isTestRuntime()` is for runtime gating of test-only hooks; the trace flag is for build-time DCE of trace recording. Show that the same gating pattern as other `__notestr*` hooks (client.tsx:419-543) is used.",
+      "severity": 8
+    },
+    {
+      "question_id": "VQ-S7-010",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does `npx tsc --noEmit` pass after S7? The `__notestrTestArmAutoInvite` signature in `notestr-test-hooks.d.ts` must match the assignment in `client.tsx`. Confirm the `NostrEvent` type used in the signature is imported from the correct package (likely `@nostr-dev-kit/ndk` or `nostr-tools`) and is consistent with the type used in the auto-invite scan's implementation.",
+      "severity": 8
+    },
+    {
+      "question_id": "VQ-S7-011",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the regression test use the `quiesceFor()` pattern from `e2e/fixtures/two-party.ts:334-366` rather than a raw `waitForTimeout`? Per stories.json, `quiesceFor()` polls `__notestrTestTasks` until two consecutive 500ms snapshots are deep-equal — appropriate for a 5-second assertion window. Confirm no `page.waitForTimeout(N)` static sleeps were introduced.",
+      "severity": 7
+    },
+    {
+      "question_id": "VQ-S7-012",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "AC-VAL-3 requires the regression test to pass 50 consecutive times after S6 ships. Show the run log (or report.md entry) for 50 consecutive passes. Confirm the test was run with `playwright.config.ts retries=0` for this validation run (retries=0 so each pass is genuine, not a masked retry).",
+      "severity": 9
+    },
+    {
+      "question_id": "VQ-S7-013",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does `make e2e` (full suite, chromium + Mobile Chrome + Mobile Safari) still pass after S7 lands? The new `mls-live-delivery.spec.ts` must be picked up by Playwright's test discovery. Confirm the test runs on the chromium project and is skipped on Mobile Chrome + Mobile Safari (per AC-REG-6), producing the expected result in each project.",
+      "severity": 9
+    },
+    {
+      "question_id": "VQ-S7-014",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "The `__notestrTestArmAutoInvite` hook accepts a `NostrEvent` from the test harness and injects it into the auto-invite scan. Is there a validation gate that (a) confirms the hook is only invocable when `isTestRuntime()` is true (production cannot call it), and (b) the injected event is not trusted as a signed relay event but treated as a test stimulus for the auto-invite scan's internal input path? Document how the hook avoids introducing a bypass for signature verification in production logic.",
+      "severity": 7
+    },
+    {
+      "question_id": "VQ-S7-015",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "Post-implementation confirmation of F2 determinism: run the regression test 5 times in isolation under NEXT_PUBLIC_E2E_TRACE_MLS=1. In each run, confirm the trace shows the F2 sequence: Welcome commit arrives on B's subscription (sub-event with the commit's eventId), followed by the app-message (sub-event with the task's eventId), both producing ingest-result entries — and the drain-on-ingest fires (queue-drain with trigger: \"ingest-activity\") to handle whichever arrived first. Show at least one trace segment from a run where the app-message arrived BEFORE the commit (the F2 race scenario).",
+      "severity": 8
+    },
+    {
+      "question_id": "VQ-S7-016",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "Verify the hook cleanup in `MarmotProvider`: the `delete window.__notestrTestArmAutoInvite` in the effect's cleanup return fires when the component unmounts. Confirm this does not cause a problem in the regression test where the test relies on the hook being available for the full test duration — i.e. the provider does not unmount mid-test due to a re-render or context switch.",
+      "severity": 6
+    },
+    {
+      "question_id": "VQ-S7-017",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "The test fetches ALL kind-30443 events for User A's pubkey and uses events[0] as the siblingKpEvent. If pageA (main context) publishes its own KP BEFORE the evaluate runs, events[0] might be pageA's own KP (already a leaf in the group). In that case `groupHasKeyPackageLeaf` returns true and the invite is skipped — no commit fires, no F2 race, but the test still passes (B sees the task via normal delivery) within the 5s window. Confirm: (a) does the test still pass in this scenario? (b) does the test ALSO pass when the sibling KP fires (the true F2 race path)? If (a) passes trivially without the race, does the test still provide meaningful regression coverage?",
+      "severity": 7
+    },
+    {
+      "question_id": "VQ-S7-018",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "The `__notestrTestArmAutoInvite` hook in `client.tsx` uses `siblingKpEvent.pubkey` (Nostr-level event author field) for the pubkey guard instead of `getKeyPackageNostrPubkey(siblingKpEvent)` (MLS credential identity). The guard ensures only same-identity siblings are processed. Confirm: could a test accidentally pass an event authored by a different pubkey (e.g. User B's pubkey) and have the guard silently drop it, causing a non-obvious test failure? Document the guard behaviour in a code comment.",
+      "severity": 5
+    }
+  ]
+}

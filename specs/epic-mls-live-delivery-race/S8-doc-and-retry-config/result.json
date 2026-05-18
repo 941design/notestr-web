@@ -1,0 +1,34 @@
+{
+  "story_id": "S8",
+  "status": "done",
+  "completed_at": "2026-05-18T00:00:00Z",
+  "files_created": [
+    "docs/task-protocol.md",
+    "specs/epic-mls-live-delivery-race/S8-doc-and-retry-config/architecture.json",
+    "specs/epic-mls-live-delivery-race/S8-doc-and-retry-config/baseline.json",
+    "specs/epic-mls-live-delivery-race/S8-doc-and-retry-config/result.json"
+  ],
+  "files_modified": [
+    "playwright.config.ts",
+    "specs/epic-mls-live-delivery-race/report.md",
+    "BACKLOG.json",
+    "specs/epic-mls-live-delivery-race/S8-doc-and-retry-config/verification.json"
+  ],
+  "tests_added": {},
+  "test_counts": {
+    "baseline": 105,
+    "final": 105
+  },
+  "mocks": [],
+  "implementation_summary": "Created docs/task-protocol.md with a new top-level 'MLS receive pipeline (consumer-side)' section covering: (1) subscribe-first ordering (Solution A) with the 60-second OVERLAP_SECONDS since-bridge and per-call-isolated cutoverComplete/liveBuffer semantics; (2) the retry-trigger contract (Solution B) — drain on ingest activity with MAX_RETRIES=3 per-epoch cap and epoch-advance counter reset; (3) the NEXT_PUBLIC_E2E_TRACE_MLS=1 trace hook, TraceEvent kinds table, and the publish-task identity bridge. The section references the epic by name. Updated playwright.config.ts retries from CI-gated to trace-flag-gated. Filed BACKLOG.json finding 'playwright-retries-zero-after-baseline' for the 50-run cleanup. Added S8 closeout section to report.md documenting AC-X-CI-1/AC-VAL-4/AC-VAL-5 dispositions.",
+  "retrospective": {
+    "skipped": true,
+    "reason": "clean_run"
+  },
+  "final_outcome": "accepted_with_caveats",
+  "verification_rounds": 1,
+  "caveats": [
+    "S8 deliverables complete: docs/task-protocol.md, playwright.config.ts retries, BACKLOG follow-up",
+    "VQ-S8-009/014/015/016 PARTIAL: AC-X-CI-1 10-run baseline, mode (a/b) empirical check, AC-VAL-4 monitoring, AC-VAL-5 regression - all deferred post-rollout"
+  ]
+}

@@ -1,0 +1,181 @@
+{
+  "story_id": "S3",
+  "questions": [
+    {
+      "id": "Q1",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-DIAG-1",
+      "question": "GAP-4 baked-in: per stories.json, AC-DIAG-1's wording is recast from 'no longer fixme-marked' to 'kept under DIAG=1 gate; runs with full trace capture when both DIAG=1 and NEXT_PUBLIC_E2E_TRACE_MLS=1 are set'. Does the implementation keep `process.env.DIAG === '1'` as the outer skip gate (existing behavior at multi-user-diag.spec.ts:35 and the test-body skip at line 72), AND add `NEXT_PUBLIC_E2E_TRACE_MLS === '1'` as a SECOND, INDEPENDENT inner gate that switches between vanilla rerun mode (DIAG only) and full trace-capture + classification mode (both flags set)?",
+      "severity": 9
+    },
+    {
+      "id": "Q2",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-DIAG-2",
+      "question": "When both DIAG=1 and NEXT_PUBLIC_E2E_TRACE_MLS=1 are set, does the harness run the failing 6-test cluster up to 3 times AND on every failure write per-page traces to `e2e/.triage/mls-trace-{A,B,C}-{run}.json` (one file per context per run)? The 6-test cluster is multi-user.spec.ts:145/155/198 + three-party.spec.ts:79/101/135. The 3-run cap is per AC-DIAG-2.",
+      "severity": 9
+    },
+    {
+      "id": "Q3",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-DIAG-3",
+      "question": "Does the harness emit a single-line per-failure classification to `e2e/.triage/mls-trace-classify.log` (cumulative across runs) using the rules from AC-DIAG-3b? Each line should identify the test name, run number, and verdict (one of: F1, F2, F3a, F3b, F3c, F3d, unknown).",
+      "severity": 9
+    },
+    {
+      "id": "Q4",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-DIAG-3a",
+      "question": "Identity-mapping prerequisite (AC-DIAG-3a): does the harness implement a fixture helper `recordExpectedTask(rumorId)` (or equivalent) that participating tests call to record the rumorId of the dispatched task whose UI surfacing is asserted? Per GAP-1, the correlator is `rumor.id` (NOT a fictional TaskEvent.id). The helper writes to `e2e/.triage/expected-task-{run}.json`. The classifier joins `expected-task-{run}.json` → sender's `publish-task` → kind-445 eventId for the receiver-side lookup.",
+      "severity": 10
+    },
+    {
+      "id": "Q5",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-DIAG-3b",
+      "question": "Classifier rules per AC-DIAG-3b: with the kind-445 eventId resolved via the identity bridge, in the receiver's trace: (a) F1 — eventId NOT in any sub-event; (b) F2 — eventId in sub-event AND in ingest-result with result:'unreadable' AND no later queue-drain involving that eventId before timeout; (c) F3 — eventId in sub-event AND ingest-result with result:'processed', UI assertion still timed out — then subclassify via task-store-* events looked up by the matching rumorId from sender's publish-task.rumorId: F3a (no task-store-recv), F3b (task-store-error with deserialize-throw or apply-throw), F3c (task-store-rejected wrong-kind), F3d (task-store-accepted followed by a later task-store-load-complete whose restoredCount does not include the accepted task — detection: task-store-accepted.t < task-store-load-complete.t for same groupId). (d) unknown — none match, print trace excerpt for manual triage.",
+      "severity": 10
+    },
+    {
+      "id": "Q6",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-DIAG-4",
+      "question": "When NEXT_PUBLIC_E2E_TRACE_MLS is unset (DIAG=1 only), does the harness still run but skip the trace dump and classification? Behaviour reduces to a vanilla rerun-on-failure pass — same as the current diagnostic spec.",
+      "severity": 8
+    },
+    {
+      "id": "Q7",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-DIAG-5",
+      "question": "Does the classifier logic live in `e2e/fixtures/mls-trace-classify.ts` (separate file, pure module — no Playwright or fs imports), AND does it have its own colocated unit tests (`e2e/fixtures/mls-trace-classify.test.ts`) covering each F-class verdict with synthetic trace fixtures?",
+      "severity": 9
+    },
+    {
+      "id": "Q8",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-DIAG-6",
+      "question": "Does the harness complete within 12 minutes (3 runs × ~4 min worst case for the 6-test cluster)? Wall-clock measurement is recorded in S4's report.md per stories.json scope notes.",
+      "severity": 5
+    },
+    {
+      "id": "Q9",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Is the classifier module pure: zero imports of `@playwright/test`, `fs`, `path`, `process`, or any DOM/browser APIs? It accepts in-memory trace arrays and returns a verdict struct. The harness file (`multi-user-diag.spec.ts`) is the only place that does fs operations (writeFileSync per spec § Solution A and exploration § fs_write_in_test_pattern).",
+      "severity": 8
+    },
+    {
+      "id": "Q10",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Are the trace dump filenames `e2e/.triage/mls-trace-{A|B|C}-{run}.json` and `e2e/.triage/expected-task-{run}.json` distinct from `/e2e-triage` skill's filenames (project memory: `e2e/.triage/` is shared)? The existing files there are `device.md`, `findings-merged.md`, `multi-party.md`, `run.log`, `tasks.md` — no collision with our `.json` files.",
+      "severity": 5
+    },
+    {
+      "id": "Q11",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does the harness use `recordExpectedTask(rumorId)` BEFORE each task assertion in the failing-cluster tests? Or — since modifying the existing failing-cluster tests would violate AC-X-NO-TEST-WEAKEN-1 — does the harness REPLACE the failing tests with its own instrumented copies that exercise the same scenarios? Per AC-DIAG-2 the harness runs 'the failing 6-test cluster' — clarify whether this means re-running the existing tests as black boxes or an instrumented re-run. The architect should pick the interpretation that does NOT modify multi-user.spec.ts / three-party.spec.ts.",
+      "severity": 9
+    },
+    {
+      "id": "Q12",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "How is the rumorId of the dispatched task captured by the test for `recordExpectedTask`? Options: (a) the test reads `__notestrTestSentRumors(groupId)` after dispatch and picks the most recent rumor.id; (b) the test reads from the trace via `__notestrTestMlsTrace()` after dispatch and finds the publish-task with the matching task title; (c) the test wraps the dispatch with a custom hook that returns the rumor.id. Recommend (a) — already exposed and well-tested. The architect documents the choice.",
+      "severity": 7
+    },
+    {
+      "id": "Q13",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Naming clash with existing `multi-user-diag.spec.ts:71`'s `test('run triangulation', ...)`: the new harness test(s) should either replace or supplement this. Per stories.json scope notes, this story EXTENDS the existing harness rather than replacing it. So the new behavior layers on top of the existing test, OR new tests are added in additional `test(...)` blocks within the same describe.serial.",
+      "severity": 6
+    },
+    {
+      "id": "Q14",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Is the classifier well-typed: accepts `{ senderTrace: TraceEvent[]; receiverTrace: TraceEvent[]; expectedRumorIds: string[] }` (or similar) and returns a typed verdict struct (e.g. `{ verdict: 'F1' | 'F2' | 'F3a' | ...; rationale: string; matchedEvents?: ... }`)? No `any`, no `unknown` casts unless boundary-justified.",
+      "severity": 7
+    },
+    {
+      "id": "Q15",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the classifier correctly handle missing data (e.g. publish-task absent because of round-2's 'count>1 → no emit' ambiguity branch from S2)? Per stories.json + AC-REPORT-3, missing publish-task leads to `unknown` verdict, not an error. The classifier should be defensive against partial traces.",
+      "severity": 8
+    },
+    {
+      "id": "Q16",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does `make test` still pass after S3 (12 → 13 files / 90 → 90+N tests where N is the new classifier test count)? The new test file `e2e/fixtures/mls-trace-classify.test.ts` should be picked up by vitest's `**/*.test.ts` glob.",
+      "severity": 9
+    },
+    {
+      "id": "Q17",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does the classifier unit test cover ALL six verdicts (F1, F2, F3a, F3b, F3c, F3d, unknown) with synthetic trace fixtures? Each test case should construct a representative trace (a few well-chosen TraceEvent records) and assert the classifier's verdict + rationale.",
+      "severity": 9
+    },
+    {
+      "id": "Q18",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "The harness writes to `e2e/.triage/`. Does it use safe file paths (no user-supplied data interpolated into the path), and does it protect against path traversal via the {run} or {A|B|C} components? These are constants/integers in the code, so the surface is small — confirm.",
+      "severity": 5
+    },
+    {
+      "id": "Q19",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "Coverage scope: the harness runs ONE representative scenario (multi-user live-delivery, the multi-user.spec.ts:145 equivalent) up to 3 times rather than re-running every member of the failing 6-test cluster as black boxes. Per Q11 / AC-X-NO-TEST-WEAKEN-1, the failing-cluster tests cannot be modified, and Playwright doesn't support cross-spec orchestration from inside a test body. The chosen interpretation: the harness emulates ONE canonical F-class trigger; the three other multi-user tests + three three-party tests share the same architectural shape (kind-445 publish → live MLS subscription → UI assertion timeout) and would classify under the same F-classes. AC-DIAG-2's wording 'the failing 6-test cluster' is reinterpreted as 'a representative scenario from the failing cluster' — surfaced to the team-lead in result.json notes. Confirm this reframing is acceptable.",
+      "severity": 7
+    },
+    {
+      "id": "Q20",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "vitest.config.ts include glob extended to pick up `e2e/fixtures/**/*.test.ts` so the classifier unit tests run via `make test`. The classifier itself (e2e/fixtures/mls-trace-classify.ts) is a pure module — no Playwright/fs/DOM imports — so vitest can run it in node. Confirm the include extension does not pull in other e2e files that aren't `*.test.ts` (verified by reading the dir).",
+      "severity": 6
+    },
+    {
+      "id": "Q21",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "12 classifier unit tests cover all F-class verdicts (F1, F2, F3a, F3b, F3c, F3d, unknown) plus edge cases (no publish-task, sub-event without ingest-result, F2 recovers via drain, F3d ordering check). Plus 2 tests for formatClassifyLine. Test count delta is +12 unit (12 classifier + 0 e2e since e2e tests aren't part of `make test`).",
+      "severity": 9
+    },
+    {
+      "id": "Q22",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "question": "The classifier file mirrors the TraceEvent union from src/marmot/mls-trace.ts rather than importing it. Rationale: e2e/fixtures/ is structurally separate from src/ (different bundle, no Next path alias). Importing across boundaries would couple e2e to internal types. Drift risk: if the union changes in src/, the classifier could classify wrong shapes. Mitigation: the union variants here are exactly the ones called out in AC-HOOK-1..10 (which spec the trace event shape); a regression test in S2's mls-trace.test.ts would catch the source side. Acceptable trade-off?",
+      "severity": 5
+    },
+    {
+      "id": "Q23",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "Trace dump path safety (Q18 follow-up): paths are composed from constants (TRIAGE_DIR resolved at module load via path.resolve) + literal labels ('A'|'B'|'C') + integer run number (1..MAX_RUNS=3). No user input interpolated. Filename pattern: `mls-trace-{A|B|C}-{1|2|3}.json`. Risk surface: zero — no user input on the file path.",
+      "severity": 4
+    },
+    {
+      "id": "Q24",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "The classifier handles the 'no publish-task' case (returning `unknown` with a clear rationale). This is exactly the path that S2's count>1 ambiguity branch produces — so the classifier degrades gracefully when the bridge couldn't resolve a rumor. Confirm the unknown rationale message is informative enough to debug from the log alone.",
+      "severity": 7
+    }
+  ]
+}

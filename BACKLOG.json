@@ -1,0 +1,125 @@
+{
+  "version": 3,
+  "updated_at": "2026-05-18T14:31:11Z",
+  "epics": [
+    {
+      "path": "specs/epic-delete-tasks-and-groups/",
+      "status": "DONE",
+      "next_action": "seeded by /base:backlog init 2026-05-12"
+    },
+    {
+      "path": "specs/epic-e2e-test-infrastructure/",
+      "status": "DONE",
+      "next_action": "seeded by /base:backlog init 2026-05-12"
+    },
+    {
+      "path": "specs/epic-event-sourced-receive-engine/",
+      "status": "PLANNED",
+      "next_action": "seeded by /base:backlog init 2026-05-12"
+    },
+    {
+      "path": "specs/epic-forget-this-device/",
+      "status": "PLANNED",
+      "next_action": "seeded by /base:backlog init 2026-05-12"
+    },
+    {
+      "path": "specs/epic-group-member-list/",
+      "status": "DONE",
+      "next_action": "seeded by /base:backlog init 2026-05-12"
+    },
+    {
+      "path": "specs/epic-identity-scoped-group-and-task-visibility/",
+      "status": "DONE",
+      "next_action": "seeded by /base:backlog init 2026-05-12"
+    },
+    {
+      "path": "specs/epic-mls-live-delivery-race/",
+      "status": "DONE",
+      "next_action": "completed 2026-05-18"
+    },
+    {
+      "path": "specs/epic-multi-device-sync/",
+      "status": "PLANNED",
+      "next_action": "seeded by /base:backlog init 2026-05-12"
+    },
+    {
+      "path": "specs/epic-property-based-invariants/",
+      "status": "IN_PROGRESS",
+      "next_action": "seeded by /base:backlog init 2026-05-12"
+    },
+    {
+      "path": "specs/epic-property-tests-l3-completion/",
+      "status": "PLANNED",
+      "next_action": "seeded by /base:backlog init 2026-05-12"
+    },
+    {
+      "path": "specs/epic-property-tests-l3-multi-device/",
+      "status": "PLANNED",
+      "next_action": "seeded by /base:backlog init 2026-05-12"
+    },
+    {
+      "path": "specs/epic-property-tests-l3-three-party/",
+      "status": "PLANNED",
+      "next_action": "seeded by /base:backlog init 2026-05-12"
+    },
+    {
+      "path": "specs/epic-rename-device-cross-context-coverage/",
+      "status": "PLANNED",
+      "next_action": "seeded by /base:backlog init 2026-05-12"
+    },
+    {
+      "path": "specs/epic-responsive-layout/",
+      "status": "DONE",
+      "next_action": "seeded by /base:backlog init 2026-05-12"
+    },
+    {
+      "path": "specs/epic-task-sync-publish-contract/",
+      "status": "PLANNED",
+      "next_action": "seeded by /base:backlog init 2026-05-12"
+    }
+  ],
+  "findings": [
+    {
+      "slug": "playwright-browser-revision-stamp",
+      "scope": "any",
+      "anchor": {
+        "path": "Makefile",
+        "range": [
+          66,
+          72
+        ]
+      },
+      "text": "Extend Makefile cross-platform stamp to cover /opt/playwright-browsers (mismatched Playwright browser revisions cause harness crashes — 1208 expected, 1223 installed). CLAUDE.md flags node_modules drift but not browser binaries.",
+      "created_at": "2026-05-18"
+    },
+    {
+      "slug": "playwright-retries-zero-after-baseline",
+      "scope": "any",
+      "anchor": {
+        "path": "playwright.config.ts:retries"
+      },
+      "text": "Drop playwright.config.ts retries to 0 unconditionally after epic-mls-live-delivery-race's 50-run baseline",
+      "created_at": "2026-05-18"
+    },
+    {
+      "slug": "mls-trace-event-schema-parity-test",
+      "scope": "any",
+      "anchor": {
+        "path": "e2e/fixtures/mls-trace-classify.ts",
+        "range": [
+          25,
+          103
+        ]
+      },
+      "text": "Add schema-parity regression test for mls-trace TraceEvent union (src/marmot/mls-trace.ts vs e2e/fixtures/mls-trace-classify.ts copy). Filter field drift already present (Filter vs unknown) but harmless today; no test catches future divergence.",
+      "created_at": "2026-05-18"
+    }
+  ],
+  "archive": [
+    {
+      "date": "2026-05-18",
+      "text": "epic-e2e-relay-state-isolation: per-spec docker compose restart relay auto-fixture to wipe stale kind-30443 KeyPackages between spec files.",
+      "reason": "Relitigates the 2026-05-01 reversal in commit 7b31ba1. The per-spec _relayReset fixture was tried, broke 'npx playwright test' for callers without the relay container up, and masked test-design bugs behind sweeping cleanups. The standing principle (feedback_e2e_relay_independence.md) is that e2e tests must pass against any relay state via within-test isolation: pinClientSlot, rotated bunker keys, Date.now() group names, clearAppState — not fixture-level resets. If a test seems to need a clean relay, the test has a bug."
+    }
+  ]
+}

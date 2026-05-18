@@ -1,0 +1,143 @@
+{
+  "story_id": "S8",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S8-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-DOC-1",
+      "question": "AC-DOC-1 requires a new top-level section \"MLS receive pipeline (consumer-side)\" in `docs/task-protocol.md`. Show that the section exists as a top-level heading (`##` or `#` level, per the existing doc structure) and that its body covers ALL three required topics: (a) subscribe-first ordering (S5's since-bridge pattern), (b) the retry-trigger contract — epoch advance OR ingest activity with MAX_RETRIES cap per epoch (S6's drain-on-ingest), and (c) the trace hook and build flag (`NEXT_PUBLIC_E2E_TRACE_MLS=1`). A section that describes only one or two of the three topics does not satisfy this AC.",
+      "severity": 9
+    },
+    {
+      "question_id": "VQ-S8-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-DOC-2",
+      "question": "AC-DOC-2 requires the new doc section to reference this epic by name. Show the exact sentence or line containing the epic name \"MLS Live-Delivery Race\" (or the slug `epic-mls-live-delivery-race`) in the doc section body.",
+      "severity": 6
+    },
+    {
+      "question_id": "VQ-S8-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-DOC-3",
+      "question": "AC-DOC-3 requires `playwright.config.ts` retries to read: `retries: process.env.NEXT_PUBLIC_E2E_TRACE_MLS === \"1\" ? 0 : 1`. Show the diff. Confirm (a) the previous gate (`process.env.CI`) is replaced — NOT extended — with the trace-flag gate, (b) the value 0 applies when the trace flag is set (failures pin a trace on the first run), and (c) the value 1 applies otherwise (covers residual flake during rollout per AC-X-CI-1). Note: this is NOT a gate on `CI` environment presence.",
+      "severity": 9
+    },
+    {
+      "question_id": "VQ-S8-004",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-DOC-4",
+      "question": "AC-DOC-4 requires a follow-up to be filed (in `specs/` or as a tracker note in `report.md`) for dropping retries to 0 unconditionally after 50 consecutive clean local runs. Show the follow-up artifact: either (a) a new spec stub path in `specs/` with a one-line description, or (b) a clearly marked TODO or follow-up section in `report.md`. The AC does NOT require the drop itself to happen in S8 — only that the intent is recorded.",
+      "severity": 6
+    },
+    {
+      "question_id": "VQ-S8-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-X-NO-NDK-CHANGE-1",
+      "question": "AC-X-NO-NDK-CHANGE-1 (cross-cutting closeout at S8): review the entire epic's diff (S1+S2+S5+S6+S7+S8). Confirm that `node_modules/@nostr-dev-kit/ndk` was NOT patched, vendored, or version-bumped anywhere in the diff. Show git diff output (or equivalent) covering `package.json` and `package-lock.json` — the NDK version must be identical before and after.",
+      "severity": 9
+    },
+    {
+      "question_id": "VQ-S8-006",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-X-NO-MARMOT-CHANGE-1",
+      "question": "AC-X-NO-MARMOT-CHANGE-1 (cross-cutting closeout at S8): confirm that `node_modules/@internet-privacy/marmot-ts` was NOT patched or version-bumped, and that the `NostrNetworkInterface` type was not modified anywhere in `src/`. Show the relevant sections of `package.json` diff.",
+      "severity": 9
+    },
+    {
+      "question_id": "VQ-S8-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-X-NO-RELAY-CHANGE-1",
+      "question": "AC-X-NO-RELAY-CHANGE-1 (cross-cutting closeout at S8): confirm that `docker-compose.e2e.yml`, `strfry.conf`, and any relay container configuration were NOT modified anywhere in the epic's diff.",
+      "severity": 8
+    },
+    {
+      "question_id": "VQ-S8-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-X-NO-TEST-WEAKEN-1",
+      "question": "AC-X-NO-TEST-WEAKEN-1 (cross-cutting closeout at S8): confirm that none of the failing-cluster tests (`multi-user.spec.ts:145/155/198`, `three-party.spec.ts:79/101/135`) had their timeouts extended, assertions weakened, or `test.fixme` / `test.skip` applied anywhere in the epic. Show the diff for `e2e/tests/multi-user.spec.ts` and `e2e/tests/three-party.spec.ts` — expected: zero net changes to those files from this epic.",
+      "severity": 9
+    },
+    {
+      "question_id": "VQ-S8-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-X-CI-1",
+      "question": "AC-X-CI-1 (recast per GAP-3 — no CI exists): the AC requires `make e2e` (chromium + Mobile Chrome + Mobile Safari) to pass for ten consecutive local runs with `playwright.config.ts retries=1`. Show the ten-run log or report.md entry documenting run conditions (host, date, build flag values, all-pass result). Per GAP-3, this replaces the original \"ten consecutive CI runs\" requirement.",
+      "severity": 9
+    },
+    {
+      "question_id": "VQ-S8-010",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-X-RELAY-INDEPENDENCE-1",
+      "question": "AC-X-RELAY-INDEPENDENCE-1 (cross-cutting closeout at S8): review the entire epic's e2e diff. Confirm no new test fixture was added that resets, wipes, or asserts against relay state. Confirm the retry mechanism introduced in S6 is purely consumer-side (no relay-side operation). Per project memory: tests never start/stop/wipe the relay; if a test needs a clean relay, the test has a bug.",
+      "severity": 9
+    },
+    {
+      "question_id": "VQ-S8-011",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "S8's `files_to_modify` are `docs/task-protocol.md`, `playwright.config.ts`, and `specs/epic-mls-live-delivery-race/report.md`. Confirm no source file (`src/**`) was modified in S8 — all source changes landed in S5/S6/S7. S8 is purely doc, config, and report.",
+      "severity": 8
+    },
+    {
+      "question_id": "VQ-S8-012",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could the `docs/task-protocol.md` doc section be the authoritative reference for the MLS receive pipeline contract, so that `marmot.device-sync` could in principle be replaced by any implementation that honours the subscribe-first + retry-trigger spec documented there? Does the section describe the observable contract (ordering guarantees, retry semantics, trace hook interface) rather than the implementation details (specific line numbers, variable names)?",
+      "severity": 6
+    },
+    {
+      "question_id": "VQ-S8-013",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does `npx tsc --noEmit` pass after the `playwright.config.ts` change? The retries expression `process.env.NEXT_PUBLIC_E2E_TRACE_MLS === \"1\" ? 0 : 1` must type-check correctly within the Playwright config's type context. Confirm no type errors are introduced by the change.",
+      "severity": 7
+    },
+    {
+      "question_id": "VQ-S8-014",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "After S8 changes `playwright.config.ts`, does the full e2e suite still behave correctly in both modes: (a) without the trace flag — retries=1, suite passes with at most one retry per test, and (b) with NEXT_PUBLIC_E2E_TRACE_MLS=1 — retries=0, a failing test pins a trace on the first failure without retry? Confirm the two modes were manually verified on at least one run each.",
+      "severity": 8
+    },
+    {
+      "question_id": "VQ-S8-015",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "AC-VAL-4 (post-rollout, one week): since no CI infrastructure exists (GAP-3), query local run logs over the observation window for `multi-user.spec.ts:145` and `three-party.spec.ts:79` retry counts. Expected ≤2 across the week. Per stories.json the architect may document this as a 'when CI lands' follow-up. Confirm disposition in report.md.",
+      "severity": 5
+    },
+    {
+      "question_id": "VQ-S8-016",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "AC-VAL-5 (one-shot regression confirmation): reintroduce the deleted `_relayReset` fixture locally (do NOT commit), run `make e2e` 10 times, compare failure rate to the post-S5/S6 baseline. The two should be statistically indistinguishable. Then revert via `git restore` (no commit). Show the report.md entry documenting both run outcomes. Confirm the fixture revert was performed and no relay-reset code was committed.",
+      "severity": 6
+    },
+    {
+      "question_id": "VQ-S8-017",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "`docs/task-protocol.md` did not previously exist — S8 created it as a new file rather than appending to an existing one. Confirm that CLAUDE.md's reference to `./docs/task-protocol.md` is now satisfied and that the file is coherent as a standalone protocol document (i.e. the MLS receive pipeline section is self-contained and the document does not assume a reader has already seen a prior version of the file).",
+      "severity": 5
+    },
+    {
+      "question_id": "VQ-S8-018",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "question": "The `playwright.config.ts` retries change replaces the `process.env.CI` gate with the trace-flag gate. This means local runs that previously had retries=0 now have retries=1 (unless the trace flag is set). Confirm this behavioral change is intentional per AC-DOC-3 and that the stories.json scope note for AC-DOC-3 (AC-X-CI-1 requires retries=1 for the rollout window) was the authoritative guidance. Flag if any downstream effect (e.g. longer local failure discovery time) warrants a note in report.md.",
+      "severity": 6
+    }
+  ]
+}

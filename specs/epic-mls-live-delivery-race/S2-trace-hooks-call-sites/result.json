@@ -1,0 +1,134 @@
+{
+  "story_id": "S2",
+  "status": "done",
+  "started_at": "2026-05-01T09:55:00Z",
+  "completed_at": "2026-05-01T14:30:00Z",
+  "final_outcome": "accepted",
+  "verifier_test_gate": {
+    "make_test": "12 files / 90 tests PASS",
+    "tsc_noemit": "exit 0",
+    "verify_static_export": "both PWA scopes successful"
+  },
+  "verifier_codex_last_mile": "round 1.0 (deferred dequeue): needs-attention (1 HIGH FIFO ordering, 1 HIGH pre-publish throw); round 2 (mutex+window): needs-attention (1 HIGH residual mis-correlation under commit interleave); round 3 (deferred dequeue + && front guard + 5 tests): needs-attention (1 HIGH post-consume throw — verifier classified as false positive due to existing `&& front` guard); round 3 final (with regression test): approve, no findings.",
+  "implemented_files_created": [],
+  "implemented_files_modified": [
+    "src/types/notestr-test-hooks.d.ts",
+    "src/marmot/network.ts",
+    "src/marmot/device-sync.ts",
+    "src/marmot/device-sync.test.ts",
+    "src/store/task-store.tsx",
+    "src/marmot/client.tsx",
+    "e2e/global-setup.ts"
+  ],
+  "test_count_delta": {
+    "unit": "+6",
+    "e2e": "0"
+  },
+  "verification_rounds": 3,
+  "remediation_log": [
+    {
+      "round": 1,
+      "iteration": "1.0 (initial)",
+      "verdict": "BLOCK (verifier-found HIGH; Q21 NO with severity 7)",
+      "findings": [
+        {
+          "severity": "HIGH",
+          "summary": "GAP-2 receive-path bridge unreachable. marmot-ts intentionally suppresses self-echo at marmot-group.js:793 (#sentEventIds.delete → kind:'skipped', reason:'self-echo'), so the sender's own kind-445 never yields 'processed' and the applicationMessage event never fires. Even if it did, EventEmitter3's emit happens AFTER ts-mls's `yield`, making the lastIngestRumorId read off-by-one.",
+          "fix": "Replaced receive-path bridge with publish-path bridge (verifier's option A). Bridge mechanism: per-hTag FIFO `expectedPublishByHTag` populated by `enqueueExpectedPublish` from task-store.tsx:dispatch BEFORE sendApplicationRumor; consumed by `consumeExpectedPublishForKind445` from NdkNetworkAdapter.publish as the FIRST line. On kind-445 with matching `#h`, dequeues front and emits `publish-task` joining rumorId ↔ kind-445 eventId. Removed receive-path lastIngestRumorId map, receive-path lookup in ingestGroupEventsRaw, markPublishedRumor / clearPublishedRumorsForGroup exports."
+        }
+      ]
+    },
+    {
+      "round": 1,
+      "iteration": "1.1 (post-publish-path codex re-review)",
+      "verdict": "BLOCK (codex 2 HIGHs)",
+      "findings": [
+        {
+          "severity": "HIGH (codex 1)",
+          "summary": "FIFO correlation load-bearing on caller serialization that the bridge does not enforce. Two parallel dispatch() calls on the same group (e.g. user double-click) interleave their enqueues and would correlate rumorId↔eventId out of order.",
+          "fix": "Per-group dispatch publish mutex in task-store.tsx: `dispatchPublishLock: Map<groupId, Promise<void>>` using the chain-promise pattern (mirrors device-sync.ts:ingestLock). The lock brackets ONLY the `if (group)` publish block; optimistic local setState and IDB persistence run unblocked. Cross-group dispatches still proceed in parallel. Released in the inner finally and dropped from the Map when the chain becomes the tail."
+        },
+        {
+          "severity": "HIGH (codex 2)",
+          "summary": "Pre-publish failures leave stale entries that poison the next successful publish. If `createApplicationMessage`/`createGroupEvent` throws (epoch divergence, ts-mls state error), the FIFO entry stays parked and the next successful publish on the same hTag emits `publish-task` correlating the stale rumorId to a NEW kind-445 eventId. S3's classifier is automated; timestamp-skew detection is unreliable.",
+          "fix": "New `removeExpectedPublishByRumorId(hTag, rumorId)` export from device-sync.ts. Called inside dispatch's catch around sendApplicationRumor (BEFORE the existing console.error / CustomEvent dispatch) so the parked entry is dropped on any publish failure. O(n) splice, n≤1 in practice with the mutex from codex-1 fix."
+        },
+        {
+          "severity": "MEDIUM (verifier spot-check, finding 3)",
+          "summary": "marmot-ts publishes kind-445 events from FOUR sites (commits, proposals, application messages, commits-with-welcomes — all GROUP_EVENT_KIND=445 per marmot-ts/dist/core/protocol.js:43, confirmed at marmot-group.js:232/338/400/532). A commit publish from auto-invite/per-leaf-remove flows landing between our enqueue and our sendApplicationRumor's publish would dequeue OUR application-rumor entry and emit a mis-correlated `publish-task`.",
+          "fix": "New per-hTag in-flight counter `dispatchPublishInFlightByHTag` with `beginDispatchPublishWindow(hTag)` / `endDispatchPublishWindow(hTag)` brackets around the try/sendApplicationRumor block in dispatch. `consumeExpectedPublishForKind445` now also gates on the counter being > 0 for the hTag. Outside the window, kind-445 publishes from createCommit paths do NOT dequeue our entry. Pathological case (commit publish interleaves into our await chain WHILE counter is up) acknowledged in code comments at the `dispatchPublishInFlightByHTag` declaration; acceptable for diagnostic-only trace."
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "iteration": "2.0 (post-window-scoping codex re-review)",
+      "verdict": "BLOCK (codex HIGH on residual mis-correlation under in-window commit interleave)",
+      "findings": [
+        {
+          "severity": "HIGH (codex)",
+          "summary": "The round-1.1 window-counter scope still allows a commit publish that interleaves into our await chain WHILE our counter is up to dequeue our parked entry and emit `publish-task` with the WRONG kind-445 eventId. Codex elevated this from acceptable noise because: (a) AC-DIAG-3a makes publish-task an authoritative bridge for the F-class classifier; (b) AC-VAL-1's stability check (≤1 disagreement across 3 runs) can be deterministically wrong if the same dispatch races the same createCommit (auto-invite or per-leaf-remove from the failing-cluster tests); (c) S4 is a decision gate so a wrong F-class verdict misroutes the entire epic.",
+          "fix": "Replaced 'consume → immediate dequeue' with 'consume → count → defer dequeue to endDispatchPublishWindow' (verifier's option B). New module-scoped `windowKind445State: Map<hTag, {count, firstEvent}>` initialized in beginDispatchPublishWindow, populated by consumeExpectedPublishForKind445 (count++, firstEvent captured on count===1, NOT dequeued), drained in endDispatchPublishWindow. Decision logic: count===1 → emit publish-task with the firstEvent (unambiguous: mutex + awaited-publish guarantees the one event observed is ours); count>1 → emit nothing AND drop the parked FIFO entry (auto-invite commit interleaved; better to lose the trace than emit a wrong correlation; S3 classifies the test as `unknown` per AC-DIAG-3); count===0 → leave parked (defensive — cleanup-on-throw already handled the entry). 5 colocated tests in src/marmot/device-sync.test.ts cover happy path, ambiguous-2-events, no-poisoning-of-next-dispatch, out-of-window ignores, and removeExpectedPublishByRumorId regression. Test count goes from 84 to 89."
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "iteration": "3.0 (post-deferred-dequeue codex re-review)",
+      "verdict": "BLOCK (codex HIGH — verifier classified as false positive after code-trace; light remediation: lock the contract empirically with a regression test)",
+      "findings": [
+        {
+          "severity": "HIGH (codex; verifier-judged false positive)",
+          "summary": "Codex claimed: when consume captures count=1 + firstEvent at the START of network.publish, and the publish then rejects (timeout / no relay ack), the dispatch's catch removes the FIFO entry but the count===1 branch still emits a stale publish-task with the failed event id. Verifier traced through the actual code at endDispatchPublishWindow:217 and showed the count===1 branch is gated on `&& front`, which is falsy when the catch has already emptied the FIFO — so no emit fires. Codex's HIGH was a misread.",
+          "fix": "Per the verifier's recommendation, did NOT make the structural changes codex suggested (parallel publishSucceeded bit, etc.). Instead added the regression test codex requested as the 6th colocated case in src/marmot/device-sync.test.ts: 'emits NOTHING when publish fails AFTER consume runs (post-consume throw)' — locks the contract empirically. Sequence: enqueueExpectedPublish → beginDispatchPublishWindow → consumeExpectedPublishForKind445(event) → removeExpectedPublishByRumorId (simulating the dispatch's catch on publish failure) → endDispatchPublishWindow → assert publishTaskRecords.length === 0. Test passes. The `&& front` guard at endDispatchPublishWindow:217 is now empirically locked as the publishSucceeded-equivalent. Test count goes from 89 to 90."
+        }
+      ]
+    }
+  ],
+  "loc_delta": {
+    "added": 525,
+    "removed": 47,
+    "files_changed": 6,
+    "notes": "Round-1.0 added ~340 LOC; round-1.1 added another ~190 LOC (mutex chain in task-store, beginDispatchPublishWindow/endDispatchPublishWindow brackets, removeExpectedPublishByRumorId export, dispatchPublishInFlightByHTag counter, plus extensive header doc-comments documenting the bridge-correctness reasoning)."
+  },
+  "trace_call_sites": {
+    "network.ts": [
+      "consumeExpectedPublishForKind445(event) (publish first line) — emits publish-task on kind-445 with matching #h FIFO entry",
+      "req-start before opening closeOnEose subscribe",
+      "req-event per event delivered before EOSE",
+      "req-eose on eose handler (with eventCount)",
+      "req-close on close handler",
+      "sub-start at top of subscribe()",
+      "sub-close on close handler"
+    ],
+    "device-sync.ts": [
+      "ingest-call before the for-await loop in ingestGroupEventsRaw",
+      "ingest-result per yielded result with epochBefore/epochAfter",
+      "queue-enqueue on unreadable result",
+      "epoch-change in attachRetryOnEpochAdvance handler when newEpoch > prev",
+      "queue-drain (epoch-advance) in same handler when queue has entries",
+      "sub-event in syncGroup's subscription.next callback (carries group.state.groupContext.epoch)"
+    ],
+    "task-store.tsx": [
+      "task-store-load-start at top of load()",
+      "task-store-load-complete before setState(restored), with restoredCount",
+      "task-store-error deserialize-throw in catch around deserializeApplicationData; rumorId: null",
+      "task-store-recv first line after deserialize succeeds; before kind check",
+      "task-store-rejected wrong-kind when kind check early-returns",
+      "task-store-accepted before setState(nextState); taskEventId: rumor.id (per GAP-1)",
+      "task-store-error apply-throw in catch around JSON.parse + applyEvent",
+      "enqueueExpectedPublish in dispatch BEFORE sendApplicationRumor — registers expected publish by hTag for the publish-path bridge"
+    ],
+    "client.tsx": [
+      "window.__notestrTestMlsTrace install gated on process.env.NEXT_PUBLIC_E2E_TRACE_MLS === '1' for build-time DCE; cleanup mirrors install"
+    ],
+    "global-setup.ts": [
+      "NEXT_PUBLIC_E2E_TRACE_MLS explicit pass-through in next-build env block"
+    ]
+  },
+  "gap_resolutions": {
+    "GAP-1": "rumor.id is the canonical correlator throughout. `publish-task.taskEventId` and `task-store-accepted.taskEventId` are populated from rumor.id (no TaskEvent.id field exists). Documented inline at every site.",
+    "GAP-2": "Sender-side `publish-task` emitted on the PUBLISH path (not the receive path, because marmot-ts suppresses self-echo). Mechanism (after round-1 hardening): (1) per-group dispatch mutex in task-store.tsx (`dispatchPublishLock`) serializes concurrent dispatches; (2) inside the lock, `enqueueExpectedPublish(hTag, rumor.id, groupId, rumor.id)` adds an entry to a per-hTag FIFO `expectedPublishByHTag`; (3) `beginDispatchPublishWindow(hTag)` increments a per-hTag in-flight counter `dispatchPublishInFlightByHTag`; (4) `await sendApplicationRumor(rumor)` fires marmot-ts's chain ending at `network.publish(applicationEvent)`; (5) `consumeExpectedPublishForKind445(event)` is the FIRST line of NdkNetworkAdapter.publish — gated on (event.kind===445) AND (#h tag matches a pending entry) AND (dispatchPublishInFlightByHTag>0). When all gates pass, dequeues the FIFO front and emits `publish-task`; (6) on throw, dispatch's catch calls `removeExpectedPublishByRumorId(hTag, rumor.id)` to drop the parked entry; (7) `endDispatchPublishWindow(hTag)` runs in the finally regardless of success/failure. The window-counter scoping discriminates application-rumor publishes from concurrent commit/proposal publishes on the same kind-445/#h (marmot-ts has FOUR kind-445 publish sites — all GROUP_EVENT_KIND=445 per marmot-ts/dist/core/protocol.js:43). Pathological case: commit publish interleaves into our await chain while the counter is up — still mis-correlates, acknowledged in code comments. Cleanup: `clearExpectedPublishesForHTag(hTag)` (clears both the FIFO and the counter) is called from `refreshGroupSync` on group teardown using the still-held entry.group reference."
+  },
+  "notes": "S2 inlines mlsTrace.record(...) calls at every site enumerated in spec.md § Stories S2 and § Trace event shape, plus the GAP-2 publish-path bridge for sender-side `publish-task` correlation hardened across three remediation rounds. All recording is gated on the S1 module's build-time check (`process.env.NEXT_PUBLIC_E2E_TRACE_MLS === \"1\"`); when unset, every record() resolves to the no-op default with empty body and the install block in client.tsx is dead-coded out. `make test` 12 files / 90 tests (was 84 baseline — +6 from new colocated bridge tests in device-sync.test.ts) and `npx tsc --noEmit` exit 0. Two existing applicationMessage listeners (device-sync's persistence and task-store's React state) are NOT collapsed; they receive different trace hooks per AC-HOOK-10's split semantics. Round 1.0 replaced the receive-path bridge with publish-path; round 1.1 added mutex + cleanup-on-throw + window-counter scoping; round 2.0 replaced 'consume → immediate dequeue' with 'consume → count → defer-dequeue-to-endWindow' so a commit publish interleaving in-window is detected by count>1 and we emit nothing rather than a wrong correlation; round 3.0 added a regression test for the post-consume-throw path codex flagged (test passes — confirming the existing `&& front` guard at endDispatchPublishWindow:217 already provides the publishSucceeded-equivalent semantics). verification.json: Q21→Q27, Q22→Q28, Q30 superseded by Q31; Q29 (mutex), Q31 (deferred-dequeue), Q32 (post-consume-throw regression) are the active post-impl ARCHITECTURE questions."
+}

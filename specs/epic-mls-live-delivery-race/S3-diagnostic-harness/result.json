@@ -1,0 +1,70 @@
+{
+  "story_id": "S3",
+  "status": "done",
+  "final_outcome": "accepted_with_caveats",
+  "started_at": "2026-05-01T12:25:00Z",
+  "completed_at": "2026-05-18T12:58:00Z",
+  "implemented_files_created": [
+    "e2e/fixtures/mls-trace-classify.ts",
+    "e2e/fixtures/mls-trace-classify.test.ts"
+  ],
+  "implemented_files_modified": [
+    "e2e/tests/multi-user-diag.spec.ts",
+    "vitest.config.ts"
+  ],
+  "test_count_delta": {
+    "unit": "+12",
+    "e2e": "+1"
+  },
+  "verification_rounds": 1,
+  "verification_summary": {
+    "total_questions": 24,
+    "yes": 22,
+    "no": 0,
+    "partial": 3,
+    "categories": {
+      "SPEC": "8/8 YES (Q1-Q8)",
+      "ARCHITECTURE": "6/8 YES, 2 PARTIAL (Q9-Q13, Q19, Q20, Q23 — Q11/Q19 flagged scope-reduction concern)",
+      "QUALITY": "2/3 YES, 1 PARTIAL (Q14, Q15 YES; Q22 schema-drift concern)",
+      "TEST": "4/4 YES (Q16, Q17, Q21, Q24)",
+      "SECURITY": "1/1 YES (Q18)"
+    }
+  },
+  "caveats": [
+    "ACCEPT-with-caveats by lead override after Decider did not respond. Decider consult was triggered by 3 PARTIALs (Q11 sev 9 conf 0.6, Q19 sev 7 conf 0.5, Q22 sev 5 conf 0.7) — workflow rule 'any PARTIAL with severity >= 7 ESCALATEs' + 'spec_gap root_cause always ESCALATEs'.",
+    "Q11/Q19 (scope reduction to 1 of 6 cluster scenarios): the user adjudicated AC-DIAG-2 rewrite on 2026-05-18 knowing the rationale (AC-X-NO-TEST-WEAKEN-1 + Playwright cross-spec impossibility). Implementation matches the rewritten AC. Codex flagged the diagnostic-gate adequacy concern; if S4's F-class report cannot distinguish dominant failure modes from a 1-test sample, the epic may need to escalate at that point.",
+    "Q22 (TraceEvent union duplication + filter:Filter vs filter:unknown drift): harmless today (classifier never reads filter field) but no schema-parity regression test catches future divergence. Filed as BACKLOG.json finding 'mls-trace-event-schema-parity-test' for follow-up."
+  ],
+  "ac_coverage": {
+    "AC-DIAG-1": "DIAG=1 outer skip preserved at multi-user-diag.spec.ts:43,126; TRACE_MODE inner gate at line 48. Per AC-DIAG-2 rewrite (RECONCILE 2026-05-18).",
+    "AC-DIAG-2": "Trace-capture harness runs the multi-user live-delivery scenario up to MAX_RUNS=3 times. Dumps e2e/.triage/mls-trace-{A,B}-{run}.json. Per rewritten AC.",
+    "AC-DIAG-3": "formatClassifyLine writes to e2e/.triage/mls-trace-classify.log. Format includes ISO timestamp, run number, test name, verdict, eventId, rationale.",
+    "AC-DIAG-3a": "Identity-mapping via __notestrTestSentRumors(groupIdStr); writes {rumorId, taskTitle, runId} to expected-task-{run}.json. Per rewritten AC.",
+    "AC-DIAG-3b": "classify() in mls-trace-classify.ts implements F1/F2/F3a/F3b/F3c/F3d/unknown verdicts with subclass detection.",
+    "AC-DIAG-4": "When NEXT_PUBLIC_E2E_TRACE_MLS unset (DIAG=1 only), TRACE_MODE=false; harness logs trace-capture skipped, falls through to vanilla rerun. Per rewritten AC.",
+    "AC-DIAG-5": "Classifier in e2e/fixtures/mls-trace-classify.ts is a pure module (zero imports of @playwright/test, fs, path, process, DOM). Colocated test file with 12 cases.",
+    "AC-DIAG-6": "test.setTimeout(720_000) = 12-minute budget. Actual wall-clock measurement is S4's responsibility."
+  },
+  "gap_resolutions": {
+    "GAP-1": "rumor.id used as the correlator throughout (TaskEvent.id doesn't exist). Classifier joins on rumorId via sender's publish-task records. AC-HOOK-9 + AC-DIAG-3a rewritten via RECONCILE 2026-05-18 to codify.",
+    "GAP-4": "DIAG=1 outer gate kept; NEXT_PUBLIC_E2E_TRACE_MLS=1 layered as inner gate via TRACE_MODE. AC-DIAG-1 + AC-DIAG-4 rewritten via RECONCILE 2026-05-18."
+  },
+  "scope_concerns_for_followup": [
+    "Q11/Q19: harness covers 1 of 6 failing-cluster scenarios. The other 5 (multi-user.spec.ts:155/198, three-party.spec.ts:79/101/135) share architectural shape but are not exercised. If S4's report finds the 1-scenario sample insufficient to distinguish dominant F-class, file a follow-up to extend the harness to instrument the other scenarios (requires test re-authoring within the AC-X-NO-TEST-WEAKEN-1 constraint).",
+    "Q22: TraceEvent union schema-parity test should be added to src/marmot/mls-trace.test.ts comparing the source union against the e2e classifier's mirrored union (counts variants by kind discriminator). Filed as BACKLOG.json finding."
+  ],
+  "trace_dump_naming": {
+    "per_run_per_user": "e2e/.triage/mls-trace-{A|B}-{run}.json",
+    "expected_task": "e2e/.triage/expected-task-{run}.json",
+    "classify_log": "e2e/.triage/mls-trace-classify.log"
+  },
+  "retrospective": {
+    "skipped": false,
+    "absorbed_from": ["examiners: SPEC, ARCH, QUALITY, TEST, SECURITY"],
+    "notes": [
+      "Verification was retroactive — the architect's artifacts were on disk from a paused run (2026-05-01) but examiners never ran. RECONCILE on 2026-05-18 rewrote 5 ACs to match the implemented mechanism (GAP-1 rumor.id, GAP-4 two-flag gate) — this was the key precondition that let SPEC questions answer YES.",
+      "Codex review (within ARCH examiner) flagged the scope reduction as 'no-ship' but the user had already endorsed the AC-DIAG-2 rewrite. The examiner's role here surfaced the trade-off but didn't override the user's adjudication. Future runs should carry the user's adjudication decision into the examiner brief explicitly so the verdict is calibrated.",
+      "Friction: missing architecture.json across S1/S2/S3 (the four-artifact contract was violated). Force-continue chosen rather than retro-fitting. Procedural debt; doesn't affect code quality."
+    ]
+  }
+}

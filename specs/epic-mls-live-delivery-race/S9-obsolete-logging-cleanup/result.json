@@ -1,0 +1,46 @@
+{
+  "story_id": "S9",
+  "status": "done",
+  "remediation_rounds": 0,
+  "files_created": [
+    "specs/epic-mls-live-delivery-race/S9-obsolete-logging-cleanup/architecture.json",
+    "specs/epic-mls-live-delivery-race/S9-obsolete-logging-cleanup/baseline.json",
+    "specs/epic-mls-live-delivery-race/S9-obsolete-logging-cleanup/result.json"
+  ],
+  "files_modified": [
+    "src/marmot/device-sync.ts",
+    "src/store/task-store.tsx",
+    "src/marmot/client.tsx"
+  ],
+  "implementation_summary": "Removed 5 console.debug calls (and the orphaned errorMessages local variable) whose information is fully captured by S2's structured MlsTrace events. Retained 2 catch-block console.debug calls per AC-CLEAN-2. No new logging added. TypeScript clean, 105 unit tests pass.",
+  "ac_coverage": [
+    {
+      "ac_id": "AC-CLEAN-1",
+      "status": "satisfied",
+      "detail": "Removed: [mls-receive:ingest-result] (device-sync.ts, duplicated by ingest-result trace), [mls-receive:retry-on-epoch] (device-sync.ts, duplicated by queue-drain trace), [mls-receive:app-msg-emit] (device-sync.ts, covered by task-store-recv trace in task-store.tsx), [mls-receive:live-in] (device-sync.ts, duplicated by sub-event trace), [mls-receive:sync-start] (device-sync.ts, covered by req-start/req-eose/req-close network trace), [mls-receive:task-store-in] (task-store.tsx, duplicated by task-store-recv trace per AC-HOOK-10), [mls-receive:state-changed] (client.tsx, duplicated by epoch-change trace). Also removed the orphaned errorMessages local variable whose only consumer was the removed [mls-receive:ingest-result] call."
+    },
+    {
+      "ac_id": "AC-CLEAN-2",
+      "status": "satisfied",
+      "detail": "Retained: [mls-receive:drain-on-ingest-failed] (device-sync.ts:768, catch-block error passing raw err object — trace only records result:unreadable, not the raw exception), [mls-receive:retry-failed] (device-sync.ts:842, catch-block error from epoch-advance retry path — not covered by any trace event)."
+    },
+    {
+      "ac_id": "AC-CLEAN-3",
+      "status": "satisfied",
+      "detail": "Diff is deletions-only across all three modified files. No console.log/warn/error/debug added. The MlsTrace recorder remains unchanged and gated on NEXT_PUBLIC_E2E_TRACE_MLS=1 (src/marmot/mls-trace.ts untouched)."
+    }
+  ],
+  "test_counts": {
+    "baseline_files": 13,
+    "baseline_tests": 105,
+    "final_files": 13,
+    "final_tests": 105
+  },
+  "mocks_introduced": [],
+  "retrospective": {
+    "skipped": true,
+    "reason": "clean_run"
+  },
+  "final_outcome": "accepted",
+  "verification_rounds": 0
+}

@@ -1,0 +1,45 @@
+{
+  "story_id": "S5",
+  "decision": "restructure",
+  "files_modified": ["src/marmot/device-sync.ts"],
+  "module_constraints": {
+    "syncGroup": "subscribe-first; closure-scoped cutover state (liveBuffer: NostrEvent[], cutoverComplete: boolean); OVERLAP_SECONDS=60 module constant with comment referencing Design Decision 3; filter becomes (since?: number) => Filter; groupSubs.set/subs.push precede request()",
+    "ingestGroupEventsRaw": "untouched — S6's surface",
+    "ingestLock": "preserved (AC-A-6) — buffer drain goes through ingestGroupEvents (the lock-protected path)",
+    "syncedEventIds": "preserved (AC-A-4) — dedupes events that arrive both via subscription overlap and historical request"
+  },
+  "seam_impact": "none — receive engine internals only; no module boundary crosses",
+  "new_module_scope_constants": [
+    {
+      "name": "OVERLAP_SECONDS",
+      "value": 60,
+      "scope": "module",
+      "rationale": "Design Decision 3 in spec.md: sized for end-user clock skew (mobile/desktop clocks drift tens of seconds), not dev-host sub-second skew. 60s provides 60000x margin over the macOS sub-second concern (GAP-5)."
+    }
+  ],
+  "new_closure_scope_variables": [
+    {
+      "name": "t0",
+      "type": "number",
+      "scope": "syncGroup call",
+      "description": "Math.floor(Date.now() / 1000) at sync start — the since-bridge cutover timestamp"
+    },
+    {
+      "name": "liveBuffer",
+      "type": "NostrEvent[]",
+      "scope": "syncGroup call",
+      "description": "Holds live subscription events while historical fetch is in flight. Drained in created_at order after historical ingest completes."
+    },
+    {
+      "name": "cutoverComplete",
+      "type": "boolean",
+      "scope": "syncGroup call",
+      "description": "Flips to true after buffer drain. Subsequent live events bypass the buffer and go directly to ingestGroupEvents."
+    }
+  ],
+  "s2_hooks_preserved": [
+    "sub-event trace record (moved into the new subscription callback, preserving epoch at receipt)",
+    "[mls-receive:live-in] console.debug",
+    "[mls-receive:sync-start] console.debug"
+  ]
+}

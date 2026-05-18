@@ -1,0 +1,22 @@
+{
+  "story_id": "S1",
+  "captured_at": "2026-05-01T09:32:00Z",
+  "commands": {
+    "make_test": {
+      "exit_code": 0,
+      "passed": 79,
+      "failed": 0,
+      "skipped": 0,
+      "test_files": 11,
+      "duration_seconds": 4.35,
+      "notes": "vitest run + verify-static-export.mjs both green"
+    },
+    "tsc": {
+      "exit_code": 0,
+      "errors": 0,
+      "notes": "Initial run had 2 pre-existing errors in e2e/tests/viewport-audit.spec.ts:21,26 (implicit-any on Playwright console/pageerror callbacks). These are unrelated to S1 (Playwright e2e file, not src/marmot/). Fixed in baseline pass per boy-scout rule: typed `msg` and `err` parameters explicitly. tsc now clean."
+    }
+  },
+  "scope": "S1 is a unit + tsc story (pure module, no e2e impact). e2e baseline not captured per team-lead workflow rules.",
+  "notes": "Baseline established before any S1 implementation. The viewport-audit.spec.ts type fix is a non-functional adjacent cleanup; no behavioural change."
+}

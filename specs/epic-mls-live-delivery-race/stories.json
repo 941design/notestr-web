@@ -1,0 +1,501 @@
+{
+  "epic": "epic-mls-live-delivery-race",
+  "epic_title": "MLS Live-Delivery Race — kind-445 Subscription Gap",
+  "spec_path": "specs/epic-mls-live-delivery-race/spec.md",
+  "acceptance_criteria_path": "specs/epic-mls-live-delivery-race/acceptance-criteria.md",
+  "exploration_path": "specs/epic-mls-live-delivery-race/exploration.json",
+  "conventions": {
+    "build_commands_through_make": "All build/test commands go through make for platform-stamp gating; do not call npm/npx directly without make first.",
+    "no_ci": "No CI infrastructure exists in this repo. AC-X-CI-1 and AC-DOC-4 wording must be recast as local consecutive `make e2e` runs (per GAP-3).",
+    "static_gate": "Only static gate beyond tests is `npx tsc --noEmit`. No lint tooling (no ESLint/Biome/Prettier).",
+    "test_hooks_registry": "New `window.__notestr*` hooks MUST be declared in `src/types/notestr-test-hooks.d.ts` first.",
+    "vitest_colocation": "Vitest tests are colocated next to source as `*.test.ts` / `*.test.tsx`.",
+    "triage_dir_shared": "`e2e/.triage/` is shared with the `/e2e-triage` skill — use distinct file names (e.g. `mls-trace-*.json`, `expected-task-*.json`, `mls-trace-classify.log`).",
+    "test_runtime_flag": "Use the `isTestRuntime()` pattern (defined in client.tsx:38, task-store.tsx:18) for runtime gating; for build-time DCE check `process.env.NEXT_PUBLIC_E2E_TRACE_MLS === \"1\"` at module-load.",
+    "next_public_env_propagation": "global-setup.ts spreads process.env into the Next build; add explicit pass-through for NEXT_PUBLIC_E2E_TRACE_MLS for clarity (per exploration.testing_and_conventions.next_public_env_propagation)."
+  },
+  "stories": [
+    {
+      "id": "S1",
+      "name": "trace-recorder-skeleton",
+      "title": "Trace recorder skeleton",
+      "story_order": 1,
+      "decision_gate": false,
+      "status": "done",
+      "description": "Create `src/marmot/mls-trace.ts` exposing the `MlsTrace` interface, the `TraceEvent` discriminated union (all variants from spec.md § Trace event shape), and a default no-op implementation. The `NEXT_PUBLIC_E2E_TRACE_MLS=1`-gated implementation lives in this file as well, selected at module load via `process.env.NEXT_PUBLIC_E2E_TRACE_MLS === \"1\"` so production builds DCE the recording impl. ~80 LOC. No behavioural change to the rest of the system.",
+      "acceptance_criteria": [
+        "AC-TRACE-1",
+        "AC-TRACE-2",
+        "AC-TRACE-3",
+        "AC-TRACE-4",
+        "AC-TRACE-5"
+      ],
+      "files_to_create": [
+        "src/marmot/mls-trace.ts"
+      ],
+      "files_to_modify": [],
+      "depends_on": [],
+      "scope_notes": [
+        "Pure module: zero runtime dependencies on `react`, `next`, or DOM APIs (AC-TRACE-5).",
+        "TraceEvent union must include every variant in spec.md § Trace event shape, including the task-store-* variants (task-store-load-start, task-store-load-complete, task-store-recv, task-store-accepted, task-store-rejected, task-store-error) and `publish-task` — these are consumed by S2 hook sites and S3 classification.",
+        "No-op default's `record`, `dump`, `clear` method bodies should be empty (or return a frozen empty array for `dump`) so the source-level no-op shape is reviewable per AC-HOOK-7.",
+        "Build-time gate is `process.env.NEXT_PUBLIC_E2E_TRACE_MLS === \"1\"` evaluated at module load — same shape as the existing `isTestRuntime()` pattern (exploration § build_flag_pattern). Production webpack DCE removes the recording branch when the env var is unset at build time.",
+        "Independently mergeable: nobody calls `mlsTrace.record` until S2 wires up call sites."
+      ]
+    },
+    {
+      "id": "S2",
+      "name": "trace-hooks-call-sites",
+      "title": "Trace hooks at every relevant call site",
+      "story_order": 2,
+      "decision_gate": false,
+      "status": "done",
+      "description": "Inline `mlsTrace.record(...)` calls at every call site enumerated in spec.md § Stories S2 and § Trace event shape. Covers: `device-sync.ts:syncGroup` / `ingestGroupEventsRaw` / `attachRetryOnEpochAdvance` (pipeline events), `network.ts:request` / `network.ts:subscription` (relay traffic), `task-store.tsx:dispatch` (publish-task identity bridge), `task-store.tsx` load effect (load-start/load-complete for F3d), and `task-store.tsx:handleApplicationMessage` (recv/accepted/rejected/error for F3 subclassing). Install `window.__notestrTestMlsTrace = () => mlsTrace.dump()` in `MarmotProvider` gated on the same build flag. Add explicit `NEXT_PUBLIC_E2E_TRACE_MLS` pass-through in `e2e/global-setup.ts` for clarity. Build-time gated via the S1 module so unset builds DCE every call. ~180 LOC. No production behaviour change.",
+      "acceptance_criteria": [
+        "AC-HOOK-1",
+        "AC-HOOK-2",
+        "AC-HOOK-3",
+        "AC-HOOK-4",
+        "AC-HOOK-5",
+        "AC-HOOK-6",
+        "AC-HOOK-7",
+        "AC-HOOK-8",
+        "AC-HOOK-9",
+        "AC-HOOK-10"
+      ],
+      "files_to_create": [],
+      "files_to_modify": [
+        "src/marmot/device-sync.ts",
+        "src/marmot/network.ts",
+        "src/store/task-store.tsx",
+        "src/marmot/client.tsx",
+        "src/types/notestr-test-hooks.d.ts",
+        "e2e/global-setup.ts"
+      ],
+      "depends_on": [
+        "S1"
+      ],
+      "scope_notes": [
+        "GAP-1 RESOLUTION (BAKED IN): TaskEvent has no `id` field. Use `rumor.id` as the canonical correlator throughout. The trace event field name `taskEventId` may stay as-is in the TraceEvent union shape from S1, but it is POPULATED FROM A STABLE CORRELATOR (rumor.id is preferred over content hash). Wherever spec or ACs reference `TaskEvent.id`, treat that as `rumor.id`. Do NOT add an `id` field to TaskEvent (option (a) in GAP-1 is explicitly not taken). Architect should document this in the implementation plan and adjust AC-HOOK-9/10 wording as needed via report-back, not silent rewriting.",
+        "GAP-2 RESOLUTION (BAKED IN): `sendApplicationRumor` does not return the kind-445 relay event id. Take option (c) — sender-side own-replay. Track `Map<rumorId, {dispatchedAt, ...}>` in `device-sync.ts` at dispatch time. When `ingestGroupEventsRaw` yields a `processed` result whose decrypted `rumor.id` matches a tracked entry, emit `publish-task` at that moment with both the rumorId and the kind-445 eventId. This means `publish-task` lags by one round-trip (the sender's own subscription replay), but the rumorId↔eventId bridge is reliable. Architect to confirm this approach when scoping S2.",
+        "Network-side hooks (AC-HOOK-4/5): per exploration § network.s2_hooks, emit `sub-event` from device-sync.ts's `subscription.next` callback (NOT from network.ts's adapter), because only device-sync has access to `group.state.groupContext.epoch` for the trace's `epoch` field. `network.ts:subscription` only emits `sub-start`/`sub-close`.",
+        "`reqId` and `subId` should be generated as `crypto.randomUUID()` per request/subscription invocation (exploration § network.s2_hooks).",
+        "Test hook installation pattern: useEffect inside `MarmotProvider` with `isTestRuntime() && process.env.NEXT_PUBLIC_E2E_TRACE_MLS === '1'` guard, alongside the existing `__notestrTest*` hooks at client.tsx:~419 (exploration § client.s2_window_hook). Cleanup with `delete window.__notestrTestMlsTrace`.",
+        "Type registry: declare `__notestrTestMlsTrace` signature in `src/types/notestr-test-hooks.d.ts` BEFORE assignment in client.tsx (project convention).",
+        "Build-flag DCE: every `mlsTrace.record(...)` call site relies on the S1 module's no-op default to be a static empty function when the flag is unset. No additional per-site `if (process.env...) ` guards are required, but architect may add them at hot paths if profiling shows the empty call cost matters (advisory only).",
+        "AC-HOOK-7 contract is source-level (the no-op default's empty method bodies), not bundle-grep — minification mangles names. Verifier should read mls-trace.ts source, not grep the bundle.",
+        "AC-HOOK-8 (1 KB per-event / 1 MB total budget) is advisory, spot-measured during S3, not a merge gate.",
+        "Filter recording (in `req-start`/`sub-start`): structural copy of the filter object (no Object refs) so the dump is JSON-safe (spec.md § Trace event shape closing paragraph).",
+        "Load/recv hooks in task-store.tsx must use line offsets that match the current file (exploration § task_store.s2_hooks identifies approximate lines 49–66 for load and 69–99 for the listener; architect verifies actual lines at scoping time).",
+        "Two listeners DO NOT MERGE: device-sync.ts:475–494 PERSISTS to IDB; task-store.tsx:72–98 updates REACT STATE. The split is documented at task-store.tsx:87 and must NOT be collapsed (exploration § task_store.two_listeners). Trace hooks live on the React-state listener for F3 classification, plus the persistence listener if needed for cross-checking — but F3 classification per AC-DIAG-3b consumes only the task-store-* events from the React-state path.",
+        "global-setup.ts must explicitly pass NEXT_PUBLIC_E2E_TRACE_MLS through into the Next build env (exploration § next_public_env_propagation). Implicit pass-through via `...process.env` works but explicit is clearer; the architect should add an explicit set.",
+        "Independently mergeable on top of S1: no fixes ship yet, only instrumentation."
+      ]
+    },
+    {
+      "id": "S3",
+      "name": "diagnostic-harness",
+      "title": "Diagnostic harness with F-class classifier",
+      "story_order": 3,
+      "decision_gate": false,
+      "description": "Extend `e2e/tests/multi-user-diag.spec.ts` to run the failing 6-test cluster up to 3 times under `NEXT_PUBLIC_E2E_TRACE_MLS=1` and `DIAG=1`, dump per-page traces to `e2e/.triage/mls-trace-{A,B,C}-{run}.json` on each failure, and emit a single-line per-failure classification (F1, F2, F3 with subclass F3a–F3d, or `unknown`) via the dedicated classifier in `e2e/fixtures/mls-trace-classify.ts`. Classifier has its own colocated unit test with synthetic-trace fixtures. The harness completes within 12 minutes (3×4 min worst case). ~150 LOC for the harness + classifier.",
+      "acceptance_criteria": [
+        "AC-DIAG-1",
+        "AC-DIAG-2",
+        "AC-DIAG-3",
+        "AC-DIAG-3a",
+        "AC-DIAG-3b",
+        "AC-DIAG-4",
+        "AC-DIAG-5",
+        "AC-DIAG-6"
+      ],
+      "files_to_create": [
+        "e2e/fixtures/mls-trace-classify.ts",
+        "e2e/fixtures/mls-trace-classify.test.ts"
+      ],
+      "files_to_modify": [
+        "e2e/tests/multi-user-diag.spec.ts"
+      ],
+      "depends_on": [
+        "S2"
+      ],
+      "scope_notes": [
+        "GAP-4 RESOLUTION (BAKED IN): multi-user-diag.spec.ts is currently gated by `process.env.DIAG === '1'` (env-skip), NOT `test.fixme` as the spec wording assumed. KEEP THE DIAG=1 GATE. Add `NEXT_PUBLIC_E2E_TRACE_MLS=1` as a SECOND, INDEPENDENT gate: when both are set, run the harness with full trace capture; when only DIAG=1 is set, run the harness without trace dumps (vanilla rerun-on-failure pass). Reword AC-DIAG-1 in the implementation plan from 'no longer fixme-marked' to 'kept under DIAG=1 gate; runs with full trace capture when both DIAG=1 and NEXT_PUBLIC_E2E_TRACE_MLS=1 are set'. The architect should surface this AC rewording back to the team lead at scoping time so it is explicit in the report.md and not silent.",
+        "Identity-mapping bridge (AC-DIAG-3a): test fixture helper `recordExpectedTask(rumorId)` writes the expected rumor id to `e2e/.triage/expected-task-{run}.json`. Per GAP-1, the correlator is rumorId (not TaskEvent.id). The classifier reads expected-task-{run}.json, joins to the sender's `publish-task` trace events to extract the kind-445 eventId, and uses that eventId as the lookup key in the receiver's trace.",
+        "Classifier rules (AC-DIAG-3b): the F3 subclass detection consumes the structured `task-store-*` trace events (NOT console.debug strings). F3a — no `task-store-recv` for rumorId. F3b — `task-store-error` with reason deserialize-throw or apply-throw. F3c — `task-store-rejected` with reason wrong-kind. F3d — `task-store-accepted` followed by a later `task-store-load-complete` whose `restoredCount` does not include the accepted task (timestamp comparison `task-store-accepted.t < task-store-load-complete.t` for the same `groupId`).",
+        "Classifier file (`e2e/fixtures/mls-trace-classify.ts`) is pure — no Playwright or fs imports. Takes traces as plain objects, returns a verdict string. Unit-tested with synthetic traces representing each F-class (AC-DIAG-5).",
+        "Harness output: per-failure single-line summary written to `e2e/.triage/mls-trace-classify.log` (cumulative across runs) so AC-VAL-1 can read three F-class verdicts from one place.",
+        "Per-run trace dump file naming: `e2e/.triage/mls-trace-{A|B|C}-{run}.json` and `e2e/.triage/expected-task-{run}.json` — distinct from `/e2e-triage` skill's filenames (project memory: `e2e/.triage/` is shared).",
+        "Harness uses `fs.writeFileSync` from inside the test body (precedent: `e2e/tests/viewport-audit.spec.ts:41–123`).",
+        "When `NEXT_PUBLIC_E2E_TRACE_MLS` is unset (AC-DIAG-4): harness still runs under DIAG=1, but skips the trace dump and classification — vanilla rerun-on-failure.",
+        "Wall-clock target: 12 minutes (AC-DIAG-6). Recorded in S4's report.md."
+      ],
+      "status": "done"
+    },
+    {
+      "id": "S4",
+      "name": "empirical-f-class-report",
+      "title": "Empirical F-class report (DECISION GATE)",
+      "story_order": 4,
+      "decision_gate": true,
+      "description": "Run S3's harness three times locally (per GAP-3 — no CI exists) and capture the classifier verdicts for each failure of the 6-test cluster. Write `specs/epic-mls-live-delivery-race/report.md` enumerating each test × run, listing the verdict, and decide whether F1, F2, F3, both/all, or neither dominates. Document the decision: ship S5 (Solution A), S6 (Solution B), both, or terminate the epic and file a follow-up F3 spec (per AC-REPORT-2a). Also satisfies AC-VAL-1 (manual stability check). NO CODE CHANGES — this is a data-collection and decision-recording story.\n\n**DECISION GATE**: After this story completes, the team lead MUST surface `report.md` to the user before S5+ begin. S4 completing does NOT auto-unblock S5/S6/S7/S8/S9. The user reviews the F-class breakdown and explicitly authorizes the next phase. If F3 dominates (≥50% across three runs AND classifier `unknown` rate ≤20%), the epic terminates after S4 and a separate spec is filed for the dominant F3 subclass.",
+      "acceptance_criteria": [
+        "AC-REPORT-1",
+        "AC-REPORT-2",
+        "AC-REPORT-2a",
+        "AC-REPORT-3",
+        "AC-VAL-1"
+      ],
+      "files_to_create": [
+        "specs/epic-mls-live-delivery-race/report.md"
+      ],
+      "files_to_modify": [],
+      "depends_on": [
+        "S3"
+      ],
+      "scope_notes": [
+        "DECISION GATE: this story's report.md is the input to a HUMAN DECISION. The team lead must surface report.md to the user before S5+ start. S5/S6/S7/S8/S9 dependencies that name S4 are not auto-unblocked.",
+        "GAP-3 RESOLUTION: 'three CI runs' in AC-REPORT-1 is recast as 'three local consecutive `make e2e` runs' (no CI exists in this repo). Document the run conditions in report.md (host, date, build flag values).",
+        "Classifier disagreement budget (AC-VAL-1): classifier should disagree with itself on at most one of six tests across three runs. Recorded in report.md.",
+        "`unknown` budget (AC-REPORT-2a): if `unknown` rate exceeds 20% of failures, the F3 termination clause is INVALID — the classifier is underspecified and must be improved before terminating. The architect should make this explicit in report.md's decision section.",
+        "F3 termination paths per AC-REPORT-2a:\n  - F3a → file new spec: TaskStoreProvider mount-ordering fix\n  - F3b → file new spec: upstream rumor-shape audit (sender producing rumors with empty id/pubkey)\n  - F3c → file new spec: upstream protocol/kind-routing audit (rumor kind drift)\n  - F3d → file new spec: TaskStoreProvider load/live merge guard",
+        "If F1/F2 dominate (or both), ship S5 and/or S6 accordingly. Both can ship in parallel — they are file-overlapping in device-sync.ts but operationally independent.",
+        "AC-VAL-1 is a recording requirement, not a separate validation block; it lives in this story because S4 is when the classifier stability is observed.",
+        "No code changes ship from this story — report.md is the only artifact."
+      ],
+      "status": "done"
+    },
+    {
+      "id": "S5",
+      "name": "solution-a-subscribe-first",
+      "title": "Solution A — subscribe-first with since-bridge",
+      "story_order": 5,
+      "decision_gate": false,
+      "description": "Replace `device-sync.ts:syncGroup` body (lines ~514–550) with the subscribe-first pattern from spec.md § Solution A. Open the persistent NDK subscription FIRST with `since: t0 - OVERLAP_SECONDS` where `OVERLAP_SECONDS = 60`; route incoming events into a closure-scoped `liveBuffer` until the historical one-shot `request()` resolves and its events are ingested; then drain the buffer in `created_at` order under a `cutoverComplete` flag flip; subsequent live events bypass the buffer. The 60s overlap is sized for end-user clock skew (Design Decision 3) and dedupes via the existing `syncedEventIds` set inside `ingestGroupEventsRaw`. ~50 LOC delta. Re-run S3 after this lands and confirm zero F1-classified failures across 30 runs (10 × 3 trials).",
+      "acceptance_criteria": [
+        "AC-A-1",
+        "AC-A-1a",
+        "AC-A-1b",
+        "AC-A-2",
+        "AC-A-3",
+        "AC-A-4",
+        "AC-A-5",
+        "AC-A-6",
+        "AC-A-7",
+        "AC-VAL-2"
+      ],
+      "files_to_create": [],
+      "files_to_modify": [
+        "src/marmot/device-sync.ts"
+      ],
+      "depends_on": [
+        "S4"
+      ],
+      "scope_notes": [
+        "BLOCKED on S4 decision gate: do NOT start until the team lead has surfaced report.md to the user and the user authorizes shipping S5 (i.e. F1 is non-trivial in the report).",
+        "Replacement target per exploration § device_sync.s5_replacement_target: lines 514–525 (request+ingest) and 529–550 (subscription+set) are replaced. Lines 511–513 (relaysForGroup, hTag, filter) stay; `filter` becomes `(since?: number) => Filter`. `groupSubs.set` / `subs.push` move BEFORE the `request()` call. Add closure-local: `t0`, `OVERLAP_SECONDS = 60`, `liveBuffer: NostrEvent[]`, `cutoverComplete: boolean`.",
+        "Cutover state-machine is per-`syncGroup`-call (closure-scoped, not module-scoped) — concurrent syncs for different groups have independent buffers (AC-A-1b).",
+        "OVERLAP_SECONDS = 60 is a code constant with a comment referencing Design Decision 3 in spec.md (AC-A-3). Not runtime-configurable.",
+        "GAP-5: this is the first src/ caller of NDK's `since` filter parameter in production. ndk-subscriber.ts:65–77 already auto-injects since for tests but with a 'skip when filter.ids present' guard. Production filter has `#h`, no ids — guard does not fire. The 60s overlap covers any sub-second clock skew concern by 60000x margin (per Design Decision 3). No additional action needed — flagged for awareness only.",
+        "`syncedEventIds` dedupe inside `ingestGroupEventsRaw` is unchanged. The architect should verify (and the verifier confirms via trace inspection) that each event id appears at most once with `result: \"processed\"` (AC-A-4).",
+        "Pre-existing `ingestLock` (device-sync.ts:413–430) still serialises ingest calls; concurrent live-subscription deliveries do not race against the historical fetch (AC-A-6). Do not remove or relax the lock.",
+        "AC-A-5 (zero F1 across 30 runs) is satisfied by re-running S3 after this story merges — outcome documented in report.md.",
+        "AC-VAL-2 is advisory (optional `tc qdisc` socket-delay simulation). Skip if S3 traces from real runs already provide sufficient evidence — architect's call.",
+        "AC-A-7 (multi-user.spec.ts:145 passes 10 consecutive times locally) is the spot-check before declaring S5 done.",
+        "S5 and S6 are file-overlapping (both modify device-sync.ts) but functionally independent. They can ship in either order or together — coordinate with the S6 architect to avoid merge churn."
+      ],
+      "status": "done"
+    },
+    {
+      "id": "S6",
+      "name": "solution-b-drain-on-ingest",
+      "title": "Solution B — drain on ingest activity",
+      "story_order": 6,
+      "decision_gate": false,
+      "description": "Extend `device-sync.ts:ingestGroupEventsRaw` to drain the parked retry queue after the existing `addSyncedGroupEventIds(...)` call when `processed.size > 0`. Add a module-scoped `retryAttempts: Map<string, Map<string, number>>` (groupId → eventId → count) and `MAX_RETRIES = 3` cap per-event-per-epoch. In `attachRetryOnEpochAdvance`, reset the inner map on `newEpoch > prev` BEFORE the existing epoch-advance drain. In `refreshGroupSync`, call `retryAttempts.delete(groupId)` alongside the existing teardown. Drain emits `queue-drain` trace events with `trigger: \"ingest-activity\"` (or `\"epoch-advance\"` for the existing path). Extend `src/marmot/ingest-queue.test.ts` with new cases per AC-B-6 (drain-on-ingest no-infinite-loop within an epoch, epoch-reset semantics, per-group keying). ~80 LOC delta.",
+      "acceptance_criteria": [
+        "AC-B-1",
+        "AC-B-2",
+        "AC-B-2a",
+        "AC-B-3",
+        "AC-B-4",
+        "AC-B-5",
+        "AC-B-6",
+        "AC-B-7",
+        "AC-B-8"
+      ],
+      "files_to_create": [],
+      "files_to_modify": [
+        "src/marmot/device-sync.ts",
+        "src/marmot/ingest-queue.test.ts"
+      ],
+      "depends_on": [
+        "S4"
+      ],
+      "scope_notes": [
+        "BLOCKED on S4 decision gate: do NOT start until the team lead has surfaced report.md to the user and the user authorizes shipping S6 (i.e. F2 is non-trivial in the report).",
+        "Insertion points per exploration § device_sync.s6_insertion_points:\n  - Module/effect state (~line 281–295): add `retryAttempts: Map<string, Map<string, number>>`, `MAX_RETRIES = 3`.\n  - Drain block: insert after `addSyncedGroupEventIds(...)` call (~line 406) inside `ingestGroupEventsRaw` — full snippet in spec.md § Solution B.\n  - Epoch reset: inside `attachRetryOnEpochAdvance` handler, after `lastEpoch.set(...)` (~line 439) and BEFORE `queue.prune()`, call `retryAttempts.get(group.idStr)?.clear()`.\n  - Teardown: in `refreshGroupSync` teardown loop alongside `pendingRetry.delete` (~line 564), call `retryAttempts.delete(groupId)`.",
+        "retryAttempts is per-event-per-epoch, not per-event-lifetime — the reset on epoch advance (AC-B-2a) is what enables recovery of events that took more than MAX_RETRIES attempts within a single epoch.",
+        "ingest-queue.ts itself does NOT change. retryAttempts lives in device-sync.ts; the queue is consulted via `retryQueue.snapshot()` and externally filtered (exploration § ingest_queue.s6_relationship).",
+        "The drain enters via the lock-protected `ingestGroupEvents` path (preserves serialisation guarantee — exploration § similar_features.ingest_lock).",
+        "AC-B-6 unit test additions in `src/marmot/ingest-queue.test.ts` (file already exists per exploration § implementer_quick_reference): the file's tests today cover queue mechanics; new cases cover the device-sync-side drain semantics (no-infinite-loop within epoch, epoch-reset, per-group keying). Architect note: since retryAttempts lives in device-sync, the new tests may need to instantiate a small device-sync test harness or extract a pure helper for the retry-budget logic. Confirm test placement during scoping — AC-B-6 says ingest-queue.test.ts but the implementation may suggest a new device-sync.test.ts is more appropriate. If the architect deviates from AC-B-6's stated file, surface to team lead.",
+        "AC-B-7 (zero F2 across 30 runs) is satisfied by re-running S3 after this story merges — outcome documented in report.md.",
+        "AC-B-8 (three-party.spec.ts:79 passes 10 consecutive times locally) is the spot-check before declaring S6 done.",
+        "S5 and S6 are file-overlapping (both modify device-sync.ts) but functionally independent. They can ship in either order or together — coordinate with the S5 architect to avoid merge churn.",
+        "Adversarial-input defense: a malformed kind-445 (signed but undecryptable forever) parks once, retries up to MAX_RETRIES per epoch, then sits until the 24h TTL prune evicts it. Per-call cost is negligible (parsing bails out fast at the still-unreadable branch — spec.md § Solution B trade-off paragraph)."
+      ],
+      "status": "done"
+    },
+    {
+      "id": "S7",
+      "name": "f2-regression-test",
+      "title": "F2 regression test",
+      "story_order": 7,
+      "decision_gate": false,
+      "description": "Create `e2e/tests/mls-live-delivery.spec.ts` with a single test that deterministically exercises the F2 sequence: A creates group, A invites B, A's auto-invite scan fires (forced via new `__notestrTestArmAutoInvite` hook) producing a commit at epoch 2, A sends a task application message at epoch 2, B's subscription delivers commit + app-message in undefined order. Assert that B sees the task within 5 s (down from the 30-s envelope of existing tests). Add the `__notestrTestArmAutoInvite(siblingKpEvent: NostrEvent): Promise<void>` hook to `MarmotProvider`, declared in `src/types/notestr-test-hooks.d.ts`. Reverting Solution B locally during S6 implementation should make this test fail consistently — verified once and documented in report.md. ~120 LOC.",
+      "acceptance_criteria": [
+        "AC-REG-1",
+        "AC-REG-2",
+        "AC-REG-3",
+        "AC-REG-4",
+        "AC-REG-5",
+        "AC-REG-6",
+        "AC-VAL-3"
+      ],
+      "files_to_create": [
+        "e2e/tests/mls-live-delivery.spec.ts"
+      ],
+      "files_to_modify": [
+        "src/marmot/client.tsx",
+        "src/types/notestr-test-hooks.d.ts"
+      ],
+      "depends_on": [
+        "S6"
+      ],
+      "scope_notes": [
+        "BLOCKED on S6: S7 is the regression net specifically for Solution B's drain-on-ingest behaviour. If S6 was not authorized in the S4 decision (e.g. F2 didn't dominate), S7 may be deferred — architect confirms with team lead before scoping.",
+        "Test hook `__notestrTestArmAutoInvite`: declare signature in `src/types/notestr-test-hooks.d.ts` FIRST (project convention), then assign in `MarmotProvider` test-hook useEffect at ~client.tsx:419 alongside existing hooks (exploration § client.test_hooks_existing). Gated on `isTestRuntime()`.",
+        "Hook semantics: injects `siblingKpEvent` into the auto-invite scan as if it had been published by a sibling device, triggering the auto-invite commit flow on the next scan tick. Architect to confirm the auto-invite scan's structure — `nostr-skills:marmot` skill may help if uncertain about the auto-invite scan's signature.",
+        "Multi-context pattern: module-level `let contextA/B + pageA/B + skipMobile` (exploration § similar_features.multi_context_pattern). AC-REG-6 requires mobile-skip.",
+        "Quiesce idiom: use `quiesceFor()` from `e2e/fixtures/two-party.ts:334–366` — polls `__notestrTestTasks` until two consecutive snapshots 500ms apart are deep-equal. Suitable for the 5-second assertion (AC-REG-4).",
+        "Bunker identities: A and B private keys in `e2e/fixtures/auth-helper.ts:12` and `e2e/fixtures/auth-helper-b.ts` (exploration § similar_features.bunker_identities).",
+        "AC-REG-5 (revert verification): during S6 implementation, the architect reverts Solution B locally, confirms this test fails consistently, then re-applies Solution B. Documented in report.md as a one-line note. Do NOT commit the revert.",
+        "AC-VAL-3 (50 consecutive passes after S6): one-shot validation. Recorded in report.md."
+      ],
+      "status": "done"
+    },
+    {
+      "id": "S8",
+      "name": "doc-and-retry-config",
+      "title": "Documentation and retry config + cross-cutting closeout",
+      "story_order": 8,
+      "decision_gate": false,
+      "description": "Add a top-level `MLS receive pipeline (consumer-side)` section to `docs/task-protocol.md` describing the subscribe-first ordering, retry-trigger contract (epoch advance OR ingest activity), and the trace hook + build flag. Reference this epic by name. Update `playwright.config.ts` retries: `process.env.NEXT_PUBLIC_E2E_TRACE_MLS === \"1\" ? 0 : 1` (gated on trace flag, NOT on `CI` — exploration § playwright_config notes today's gating is on CI). Run `make e2e` ten consecutive times locally to satisfy AC-X-CI-1 (recast per GAP-3). File a follow-up tracker for dropping retries to 0 unconditionally after 50 consecutive clean local runs (AC-DOC-4). Also closes out the cross-cutting `AC-X-NO-*` invariants and AC-X-RELAY-INDEPENDENCE-1 by review at this stage. Optionally run AC-VAL-5 (one-shot regression confirmation by re-applying the deleted `_relayReset` fixture locally and reverting via `git restore` without commit).",
+      "acceptance_criteria": [
+        "AC-DOC-1",
+        "AC-DOC-2",
+        "AC-DOC-3",
+        "AC-DOC-4",
+        "AC-X-NO-NDK-CHANGE-1",
+        "AC-X-NO-MARMOT-CHANGE-1",
+        "AC-X-NO-RELAY-CHANGE-1",
+        "AC-X-NO-TEST-WEAKEN-1",
+        "AC-X-CI-1",
+        "AC-X-PROD-1",
+        "AC-X-RELAY-INDEPENDENCE-1",
+        "AC-VAL-4",
+        "AC-VAL-5"
+      ],
+      "files_to_create": [],
+      "files_to_modify": [
+        "docs/task-protocol.md",
+        "playwright.config.ts",
+        "specs/epic-mls-live-delivery-race/report.md"
+      ],
+      "depends_on": [
+        "S5",
+        "S6"
+      ],
+      "scope_notes": [
+        "GAP-3 RESOLUTION (BAKED IN): no CI exists in this repo (no .github/workflows/, no other CI config — exploration § ci_status). 'AC-X-CI-1: 10 consecutive CI runs' is RECAST as '10 consecutive local `make e2e` runs'. 'AC-DOC-4: 50 consecutive CI runs' is RECAST as '50 consecutive local runs'. The architect should reword the AC text in the implementation plan and report.md, but NOT silently rewrite acceptance-criteria.md. Report.md captures the actual run conditions (host, date, total run count).",
+        "AC-DOC-3 retries gating: today's gate is `process.env.CI`, change to `process.env.NEXT_PUBLIC_E2E_TRACE_MLS === \"1\" ? 0 : 1` so that a failure under the trace flag pins a trace on the first run, while normal runs still get 1 retry to absorb residual unrelated flake.",
+        "AC-DOC-4 follow-up: file as either a new spec stub in `specs/` or as a TODO in report.md — architect picks per project convention. The follow-up is to drop retries to 0 unconditionally after 50 consecutive clean runs.",
+        "Cross-cutting closeout (AC-X-NO-NDK-CHANGE-1, AC-X-NO-MARMOT-CHANGE-1, AC-X-NO-RELAY-CHANGE-1, AC-X-NO-TEST-WEAKEN-1, AC-X-RELAY-INDEPENDENCE-1): verifier reviews the entire epic's diff (S1+S2+S5+S6+S7+S8) and confirms no changes to node_modules/@nostr-dev-kit/ndk, node_modules/@internet-privacy/marmot-ts, docker-compose.e2e.yml, strfry.conf, or to existing failing-cluster test timeouts/assertions. No new fixture resets or asserts on relay state.",
+        "AC-X-CI-1 (recast): 10 consecutive local `make e2e` runs (chromium + Mobile Chrome + Mobile Safari) all pass with `playwright.config.ts` retries=1. Recorded in report.md.",
+        "AC-X-PROD-1 (advisory): production-bundle size growth ≤ a few KB compressed. Spot-check via `make build` size comparison if convenient. Not a merge gate.",
+        "AC-VAL-4 (post-rollout, one week later): query CI for retry counts of `multi-user.spec.ts:145` and `three-party.spec.ts:79`. EXPECTATION: ≤2 across the week. PER GAP-3, recast as 'inspect local run logs over the next observation window' — but since no CI exists, this AC may need reframing to a 'when CI lands' condition. Architect documents disposition in report.md.",
+        "AC-VAL-5 (one-shot regression confirmation): reintroduce the deleted `_relayReset` fixture locally (do NOT commit), run `make e2e` 10 times, compare failure rate to post-S5/S6 baseline. Revert via `git restore` (no commit). Outcome in report.md.",
+        "Doc section in `docs/task-protocol.md` references this epic by name (AC-DOC-2). Per CLAUDE.md project convention, when working on task state/datamodel changes, check whether the protocol doc needs updating — this story is the explicit doc update.",
+        "S8 is the final integration gate. After S8 passes, the epic is closeable.",
+        "BLOCKED on both S5 and S6 (not on S7 — but architect should sequence S7 before S8's cross-cutting validation runs to confirm nothing regressed)."
+      ],
+      "status": "done"
+    },
+    {
+      "id": "S9",
+      "name": "obsolete-logging-cleanup",
+      "title": "Cleanup of obsolete logging (optional)",
+      "story_order": 9,
+      "decision_gate": false,
+      "description": "Remove the `console.debug(\"[mls-receive:...]\")` calls superseded by the structured trace from S2, where they don't add diagnostic value beyond what the trace provides. Retain `console.debug` calls that carry information not in the trace (e.g. catch-block error messages). No production logging is added beyond what existed pre-epic. ~30 LOC delta. Optional; can be folded into S2 if convenient.",
+      "acceptance_criteria": [
+        "AC-CLEAN-1",
+        "AC-CLEAN-2",
+        "AC-CLEAN-3"
+      ],
+      "files_to_create": [],
+      "files_to_modify": [
+        "src/marmot/device-sync.ts",
+        "src/store/task-store.tsx"
+      ],
+      "depends_on": [
+        "S2"
+      ],
+      "scope_notes": [
+        "Optional cleanup. Only depends on S2 (trace hooks landed); can run any time after S2 merges. Architect picks ordering — if folded into S2, this story is dropped from the queue.",
+        "Categories to supersede (exploration § similar_features.log_categories_to_supersede_in_s9):\n  - [mls-receive:ingest-result]\n  - [mls-receive:retry-on-epoch]\n  - [mls-receive:retry-failed]\n  - [mls-receive:live-in]\n  - [mls-receive:sync-start]\n  - [mls-receive:app-msg-emit]\n  - [mls-receive:state-changed]\n  - [mls-receive:task-store-in]",
+        "AC-CLEAN-2 retention: catch-block error messages whose info is not captured in trace events stay. AC-CLEAN-3: no NEW production logging — only deletions of obsolete debug lines.",
+        "Per spec.md § Failure modes F3 paragraph: `[mls-receive:task-store-in]` log lines are explicitly NOT authoritative for classification (the trace events are). Removing them is in-scope here."
+      ],
+      "status": "done"
+    }
+  ],
+  "ac_coverage": {
+    "total_acs": 70,
+    "covered_acs": 70,
+    "by_section": {
+      "S1": [
+        "AC-TRACE-1",
+        "AC-TRACE-2",
+        "AC-TRACE-3",
+        "AC-TRACE-4",
+        "AC-TRACE-5"
+      ],
+      "S2": [
+        "AC-HOOK-1",
+        "AC-HOOK-2",
+        "AC-HOOK-3",
+        "AC-HOOK-4",
+        "AC-HOOK-5",
+        "AC-HOOK-6",
+        "AC-HOOK-7",
+        "AC-HOOK-8",
+        "AC-HOOK-9",
+        "AC-HOOK-10"
+      ],
+      "S3": [
+        "AC-DIAG-1",
+        "AC-DIAG-2",
+        "AC-DIAG-3",
+        "AC-DIAG-3a",
+        "AC-DIAG-3b",
+        "AC-DIAG-4",
+        "AC-DIAG-5",
+        "AC-DIAG-6"
+      ],
+      "S4": [
+        "AC-REPORT-1",
+        "AC-REPORT-2",
+        "AC-REPORT-2a",
+        "AC-REPORT-3",
+        "AC-VAL-1"
+      ],
+      "S5": [
+        "AC-A-1",
+        "AC-A-1a",
+        "AC-A-1b",
+        "AC-A-2",
+        "AC-A-3",
+        "AC-A-4",
+        "AC-A-5",
+        "AC-A-6",
+        "AC-A-7",
+        "AC-VAL-2"
+      ],
+      "S6": [
+        "AC-B-1",
+        "AC-B-2",
+        "AC-B-2a",
+        "AC-B-3",
+        "AC-B-4",
+        "AC-B-5",
+        "AC-B-6",
+        "AC-B-7",
+        "AC-B-8"
+      ],
+      "S7": [
+        "AC-REG-1",
+        "AC-REG-2",
+        "AC-REG-3",
+        "AC-REG-4",
+        "AC-REG-5",
+        "AC-REG-6",
+        "AC-VAL-3"
+      ],
+      "S8": [
+        "AC-DOC-1",
+        "AC-DOC-2",
+        "AC-DOC-3",
+        "AC-DOC-4",
+        "AC-X-NO-NDK-CHANGE-1",
+        "AC-X-NO-MARMOT-CHANGE-1",
+        "AC-X-NO-RELAY-CHANGE-1",
+        "AC-X-NO-TEST-WEAKEN-1",
+        "AC-X-CI-1",
+        "AC-X-PROD-1",
+        "AC-X-RELAY-INDEPENDENCE-1",
+        "AC-VAL-4",
+        "AC-VAL-5"
+      ],
+      "S9": [
+        "AC-CLEAN-1",
+        "AC-CLEAN-2",
+        "AC-CLEAN-3"
+      ]
+    },
+    "orphaned_acs": [],
+    "notes": [
+      "AC-VAL-1 placed on S4 (the report story where classifier stability is observed and recorded).",
+      "AC-VAL-2 placed on S5 (advisory netem socket-delay check during S5 implementation).",
+      "AC-VAL-3 placed on S7 (50 consecutive passes of the regression test after S6 ships).",
+      "AC-VAL-4 and AC-VAL-5 placed on S8 (post-rollout and one-shot relay-reset regression confirmation; both are cross-cutting closeouts).",
+      "All AC-X-* (cross-cutting) ACs placed on S8 as the final integration gate, except AC-X-CI-1 which was already specified for S8 by the team-lead instructions. Rationale: by S8, the diff is fully assembled and all NO-CHANGE invariants can be verified in one review pass."
+    ]
+  },
+  "decision_gate_protocol": {
+    "story": "S4",
+    "rule": "S4 completing does NOT auto-unblock S5/S6/S7/S8/S9. After S4's report.md is written, the team lead MUST surface it to the user. The user reviews the F-class breakdown and explicitly authorizes the next phase. If F3 dominates (≥50% across three runs AND classifier `unknown` rate ≤20%), the epic terminates after S4 and a separate spec is filed for the dominant F3 subclass (per AC-REPORT-2a).",
+    "valid_outcomes": [
+      "F1 dominates → ship S5; consider S6 only if F2 also non-trivial",
+      "F2 dominates → ship S6 + S7; consider S5 only if F1 also non-trivial",
+      "F1 and F2 both non-trivial → ship both S5 and S6 (file-overlapping but functionally independent)",
+      "F3 dominates AND classifier unknown ≤20% → terminate epic, file follow-up spec",
+      "F3 dominates BUT classifier unknown >20% → improve classifier first; do not terminate",
+      "Neither dominates / unknown high → improve S3 classifier; rerun S4"
+    ]
+  },
+  "gap_resolutions_baked_in": {
+    "GAP-1": {
+      "story": "S2",
+      "resolution": "Use `rumor.id` as the canonical correlator throughout. Trace event field name `taskEventId` may stay in the TraceEvent union but is populated from rumor.id. TaskEvent type is NOT modified.",
+      "spec_ac_wording_to_revise": "AC-HOOK-9, AC-HOOK-10, AC-DIAG-3a — references to `TaskEvent.id` should be read as `rumor.id` by the architect. Do not silently rewrite acceptance-criteria.md; surface in implementation plan."
+    },
+    "GAP-2": {
+      "story": "S2",
+      "resolution": "Sender-side own-replay. Track Map<rumorId, {dispatchedAt, ...}> in device-sync.ts at dispatch time. When ingestGroupEventsRaw yields a processed result whose decrypted rumor.id matches, emit publish-task at that moment with both rumorId and the kind-445 eventId.",
+      "tradeoff": "publish-task lags by one round-trip (sender's own subscription replay), but the bridge is reliable."
+    },
+    "GAP-3": {
+      "story": "S8 (and referenced from S4)",
+      "resolution": "Recast all 'CI runs' in ACs as 'local consecutive `make e2e` runs'. Document run conditions in report.md."
+    },
+    "GAP-4": {
+      "story": "S3",
+      "resolution": "Keep DIAG=1 gate. Add NEXT_PUBLIC_E2E_TRACE_MLS=1 as a second, independent gate for trace dumps. Reword AC-DIAG-1 from 'no longer fixme-marked' to 'kept under DIAG=1 gate; runs with full trace capture when both DIAG=1 and NEXT_PUBLIC_E2E_TRACE_MLS=1 are set'."
+    },
+    "GAP-5": {
+      "story": "S5",
+      "resolution": "Informational only. The 60s overlap covers macOS sub-second clock skew concerns by 60000x margin (Design Decision 3). No action."
+    }
+  }
+}

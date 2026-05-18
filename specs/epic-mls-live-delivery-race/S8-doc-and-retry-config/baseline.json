@@ -1,0 +1,12 @@
+{
+  "captured_at": "2026-05-18",
+  "vitest": {
+    "test_files": 13,
+    "tests": 105,
+    "status": "all_passing"
+  },
+  "tsc": {
+    "exit_code": 0,
+    "status": "clean"
+  }
+}

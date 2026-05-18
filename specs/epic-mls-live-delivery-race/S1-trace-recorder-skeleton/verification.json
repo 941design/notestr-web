@@ -1,0 +1,130 @@
+{
+  "story_id": "S1",
+  "questions": [
+    {
+      "id": "Q1",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-TRACE-1",
+      "question": "Does src/marmot/mls-trace.ts exist and export `MlsTrace` (interface), `TraceEvent` (discriminated union), and a default no-op implementation as a value (e.g. `mlsTrace` or default export) consumable from other modules?",
+      "severity": 9
+    },
+    {
+      "id": "Q2",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-TRACE-2",
+      "question": "When `process.env.NEXT_PUBLIC_E2E_TRACE_MLS !== '1'` at module load, are the resolved implementation's `record`, `dump`, and `clear` method bodies empty (or `dump` returns a frozen empty array) — verifiable by reading the source — with no allocation per call?",
+      "severity": 9
+    },
+    {
+      "id": "Q3",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-TRACE-3",
+      "question": "When `process.env.NEXT_PUBLIC_E2E_TRACE_MLS === '1'` at module load, does `record` push to an internal array, `dump` return a defensive copy (not the live reference), and `clear` empty the internal array?",
+      "severity": 9
+    },
+    {
+      "id": "Q4",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-TRACE-4",
+      "question": "Are ALL TraceEvent variants from spec.md § Trace event shape present in the union: req-start, req-event, req-eose, req-close, sub-start, sub-event, sub-close, ingest-call, ingest-result, queue-enqueue, queue-remove, queue-drain, epoch-change, publish-task, task-store-load-start, task-store-load-complete, task-store-recv, task-store-accepted, task-store-rejected, task-store-error — with the exact field names and discriminator literals from spec.md?",
+      "severity": 10
+    },
+    {
+      "id": "Q5",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-TRACE-5",
+      "question": "Does mls-trace.ts have ZERO runtime imports of `react`, `next`, `next/*`, `react-dom`, or any DOM API (window, document, navigator)? Static-only type imports of structural types (e.g. `Filter` from network types) are acceptable if they are `import type` only.",
+      "severity": 10
+    },
+    {
+      "id": "Q6",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Is the recording-vs-no-op selection performed once at module load (build-time DCE-friendly) — i.e. `const mlsTrace: MlsTrace = process.env.NEXT_PUBLIC_E2E_TRACE_MLS === '1' ? createRecordingTrace() : noopTrace;` — and NOT per-call inside record/dump/clear? This shape is required for webpack's DCE to remove the recording branch in production.",
+      "severity": 8
+    },
+    {
+      "id": "Q7",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Is the `Filter` type field in `req-start`/`sub-start` typed in a way that does NOT pull a heavy dependency into the trace module? Either `import type { Filter } from '@nostr-dev-kit/ndk'` (type-only, erased) or a structural local declaration. The trace dump must be JSON-safe (no Object refs); is this enforced at the call site (S2's responsibility) or documented in a comment in this module?",
+      "severity": 6
+    },
+    {
+      "id": "Q8",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the file follow the project's TypeScript strict-mode conventions: every union variant has `kind` as a literal string, every numeric/string/bigint field has an explicit type, no `any` introduced, and no `as` casts that bypass the discriminator? File length is in the ~80 LOC range stated in stories.json (i.e. not a sprawling implementation)?",
+      "severity": 7
+    },
+    {
+      "id": "Q9",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does `make test` (vitest run + verify-static-export.mjs) still pass after the S1 changes land? Does `npx tsc --noEmit` have zero errors? S1 is pure infrastructure and should not change any existing test count or behaviour.",
+      "severity": 9
+    },
+    {
+      "id": "Q10",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does the recording implementation avoid retaining references that could leak sensitive data at runtime (e.g. holding decrypted MLS event payloads or raw rumor content beyond what the TraceEvent union explicitly captures)? The recorder records only the discriminated TraceEvent variants — does the `record` method avoid storing or shallow-copying the caller's argument in a way that would retain unintended object references?",
+      "severity": 6
+    },
+    {
+      "id": "Q11",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-TRACE-4",
+      "question": "Does the `epoch` field in trace events that carry it (sub-event, ingest-call, ingest-result with epochBefore/epochAfter, epoch-change with from/to) use `string` (per spec.md § Trace event shape — bigint serialized as string for JSON safety), not `bigint` directly?",
+      "severity": 8
+    },
+    {
+      "id": "Q12",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Is the no-op default's `dump()` implementation a frozen empty array singleton (e.g. `Object.freeze([])`) so callers cannot mutate it back into a recording channel, OR a fresh empty array per call? Either is acceptable per spec; verify the chosen approach is explicit in code, not accidental.",
+      "severity": 5
+    },
+    {
+      "id": "Q13",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "The implementation casts `FROZEN_EMPTY` (typed `readonly TraceEvent[]`) to `TraceEvent[]` in the no-op `dump()` to satisfy the `MlsTrace.dump(): TraceEvent[]` return-type contract. This means a caller that calls `dump()` and pushes into the result would throw at runtime (frozen). Is that acceptable? Alternatives: (a) widen the interface to `readonly TraceEvent[]`, (b) return a fresh `[]` each time. Confirm the chosen trade-off (zero allocation vs. mutability surprise) is intentional.",
+      "severity": 4
+    },
+    {
+      "id": "Q14",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "question": "The recording impl's `dump()` uses `buffer.slice()` which is a shallow copy. TraceEvent objects in the buffer are still shared references with the caller's recorded payloads. Since TraceEvent variants only carry primitives (string/number) and shallow arrays of primitives (`eventIds: string[]`), this is safe. Confirm: is there any TraceEvent field that holds a non-primitive object (`Filter` is `applesauce-core/helpers/filter` — a structural object). Are call sites in S2 expected to pass a structural copy of the filter, per the comment in the file header?",
+      "severity": 5
+    },
+    {
+      "id": "Q15",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "The spec.md TraceEvent shape uses `epoch: string` but the underlying group state is `bigint` (group.state.groupContext.epoch). S2 will need to call `.toString()` at the trace site. Is this contract clear from the type signature alone (no comment needed in mls-trace.ts), or should mls-trace.ts carry a one-line comment that `epoch` is the bigint serialized to string?",
+      "severity": 4
+    },
+    {
+      "id": "Q16",
+      "phase": "post-impl",
+      "category": "SECURITY",
+      "question": "When `NEXT_PUBLIC_E2E_TRACE_MLS=1` is set in a non-test runtime (a production user flips a build flag locally — extremely unlikely but possible), the recording trace accumulates without bound until `clear()` is called. Should the recording impl have a soft cap (e.g. 100k entries) to prevent OOM in pathological cases, or is the build-time gate sufficient defence? AC-HOOK-8 says trace size is advisory only, not a merge gate — likely the answer is 'gate is sufficient', but confirm.",
+      "severity": 3
+    },
+    {
+      "id": "Q17",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "S1 ships without a colocated `mls-trace.test.ts`. Rationale: AC-TRACE-2 / AC-TRACE-3 contracts are source-level (verifiable by reading the file), and the recording impl is exercised end-to-end by S2/S3. Is this acceptable for the skeleton, or should a minimal vitest exist to lock the recording-impl contract before S2 inlines call sites that depend on `dump()` returning a defensive copy?",
+      "severity": 5
+    }
+  ]
+}

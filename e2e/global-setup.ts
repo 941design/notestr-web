@@ -124,6 +124,13 @@ export default async function globalSetup() {
         NODE_ENV: 'test',
         NEXT_PUBLIC_E2E: '1',
         NEXT_PUBLIC_RELAYS: 'ws://localhost:7777',
+        // Explicit pass-through of the MLS trace flag so the build-time
+        // gate in src/marmot/mls-trace.ts and the install-block in
+        // MarmotProvider see the shell-set value clearly. The implicit
+        // `...process.env` spread above would also work, but explicit
+        // is the project convention (see exploration §
+        // next_public_env_propagation).
+        NEXT_PUBLIC_E2E_TRACE_MLS: process.env.NEXT_PUBLIC_E2E_TRACE_MLS ?? '',
       },
     });
     build.on('exit', (code) => {

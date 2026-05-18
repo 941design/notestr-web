@@ -1,0 +1,36 @@
+{
+  "module_name": "marmot.client (extension) + e2e.mls-live-delivery",
+  "purpose": "Add the __notestrTestArmAutoInvite window hook to MarmotProvider and a deterministic F2 regression e2e test that exercises the commit+app-message race via that hook.",
+  "public_api": [
+    {
+      "name": "__notestrTestArmAutoInvite",
+      "signature": "(siblingKpEvent: NostrEvent) => Promise<void>",
+      "description": "Test-only window hook installed by MarmotProvider when isTestRuntime() is true. Injects siblingKpEvent as if discovered by the auto-invite scan, triggering inviteByKeyPackageEvent on all loaded groups where the current user is admin and the KP is not already a leaf. Gated on isTestRuntime(). Deleted on MarmotProvider unmount."
+    }
+  ],
+  "private_files": [
+    "e2e/tests/mls-live-delivery.spec.ts"
+  ],
+  "owned_data": [],
+  "dependencies_allowed": [
+    "marmot.device-sync (groupHasKeyPackageLeaf, isAdmin via marmot-ts)",
+    "@nostr-dev-kit/ndk (NostrEvent type)",
+    "@internet-privacy/marmot-ts (isAdmin, getKeyPackageNostrPubkey)",
+    "e2e/fixtures/auth-helper.ts",
+    "e2e/fixtures/auth-helper-b.ts",
+    "e2e/fixtures/cleanup.ts",
+    "e2e/fixtures/two-party.ts (quiesceFor)"
+  ],
+  "dependencies_forbidden": [
+    "src/marmot/device-sync.ts (no modification)",
+    "src/marmot/network.ts (no modification)",
+    "src/store/task-store.tsx (no modification)",
+    "other e2e test files (no modification)"
+  ],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "e2e/tests/mls-live-delivery.spec.ts: 'F2 regression — auto-invite race'"
+  ]
+}

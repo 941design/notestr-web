@@ -1,0 +1,85 @@
+{
+  "story_id": "S6",
+  "status": "done",
+  "final_outcome": "accepted_with_caveats",
+  "started_at": "2026-05-18T00:00:00Z",
+  "completed_at": "2026-05-18T00:00:00Z",
+  "implemented_files_modified": [
+    "src/marmot/device-sync.ts",
+    "src/marmot/device-sync.test.ts"
+  ],
+  "implemented_files_created": [
+    "specs/epic-mls-live-delivery-race/S6-solution-b-drain-on-ingest/architecture.json",
+    "specs/epic-mls-live-delivery-race/S6-solution-b-drain-on-ingest/baseline.json",
+    "specs/epic-mls-live-delivery-race/S6-solution-b-drain-on-ingest/result.json"
+  ],
+  "test_count_delta": {
+    "baseline_files": 13,
+    "final_files": 13,
+    "baseline_tests": 102,
+    "final_tests": 105,
+    "delta": 3
+  },
+  "tsc_status_final": "0",
+  "verification_rounds": 1,
+  "ac_coverage": [
+    {
+      "ac_id": "AC-B-1",
+      "status": "implemented",
+      "evidence": "The drain block at `ingestGroupEventsRaw` (after `await addSyncedGroupEventIds(...)`) fires only when `processed.size > 0` (line 708 guard). It calls `retryQueue.snapshot()` — using the existing `retryQueue` variable from the same function — and enters the drain via `void ingestGroupEvents(group, fresh)` (lock-protected path). Sequence: (a) `processed.size > 0` guard, (b) `addSyncedGroupEventIds(...)` persists first, (c) drain calls `ingestGroupEvents` not `ingestGroupEventsRaw` directly."
+    },
+    {
+      "ac_id": "AC-B-2",
+      "status": "implemented",
+      "evidence": "`const retryAttempts = new Map<string, Map<string, number>>()` declared inside the effect closure alongside the other per-group state maps (lines ~560). `const MAX_RETRIES_PER_EPOCH = 3` exported at module scope with a full JSDoc comment. Both are explicitly typed — no `any` or untyped Map construction. The exported helper `selectAndIncrementRetries` takes `Map<string, number>` and `number` parameters so the contract is statically checked."
+    },
+    {
+      "ac_id": "AC-B-2a",
+      "status": "implemented",
+      "evidence": "Inside `attachRetryOnEpochAdvance`'s `stateChanged` handler: (1) `lastEpoch.set(group.idStr, newEpoch)`, (2) `retryAttempts.get(group.idStr)?.clear()`, (3) `queue.prune()`, (4) existing epoch-advance drain. The `.clear()` call is explicitly placed before `queue.prune()` per the AC-B-2a requirement and carries a code comment explaining the ordering constraint."
+    },
+    {
+      "ac_id": "AC-B-3",
+      "status": "implemented",
+      "evidence": "`selectAndIncrementRetries` filters with `(groupAttempts.get(e.id) ?? 0) < MAX_RETRIES_PER_EPOCH`. Events at count=3 are excluded from `fresh`; they remain in the retry queue (only `ingestGroupEventsRaw`'s `retryQueue.remove()` call on `processed/rejected` results can remove them). Verified by AC-B-6 case 1 unit test."
+    },
+    {
+      "ac_id": "AC-B-4",
+      "status": "implemented",
+      "evidence": "The new drain block records `mlsTrace.record({ kind: 'queue-drain', trigger: 'ingest-activity', ... })`. The existing epoch-advance drain in `attachRetryOnEpochAdvance` continues to record `trigger: 'epoch-advance'` — unchanged by this story."
+    },
+    {
+      "ac_id": "AC-B-5",
+      "status": "implemented",
+      "evidence": "`refreshGroupSync` loop now calls `retryAttempts.delete(groupId)` immediately after `pendingRetry.delete(groupId)`. Single operation dropping the entire inner map. Prevents memory accumulation across group unload/reload cycles."
+    },
+    {
+      "ac_id": "AC-B-6",
+      "status": "implemented",
+      "evidence": "Three new test cases in `src/marmot/device-sync.test.ts` under `describe('AC-B-6')`. They exercise `selectAndIncrementRetries` (the actual function called by the drain block) and `MAX_RETRIES_PER_EPOCH`. Case 1: 3 retries, 4th does not retry (counter stays at cap). Case 2: epoch reset — groupAttempts.clear() restores eligibility. Case 3: per-group keying via independent Map instances; retryAttempts.delete(groupA) does not affect groupB. All 3 pass. Deviation from 'ingest-queue.test.ts' noted in architecture.json — retryAttempts lives in device-sync.ts, not ingest-queue.ts."
+    },
+    {
+      "ac_id": "AC-B-7",
+      "status": "pending_validation",
+      "evidence": "Pending re-run of S3 harness across 30 runs after S6 merges with S5. Not verifiable at implementation time."
+    },
+    {
+      "ac_id": "AC-B-8",
+      "status": "pending_validation",
+      "evidence": "Pending 10 consecutive local runs of three-party.spec.ts:79. Not verifiable at implementation time (requires ephemeral relay up)."
+    }
+  ],
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "`retryQueue` was already declared as a `const` at the top of `ingestGroupEventsRaw` (for the parking path in the for-loop body), making it a name collision when the drain block tried to redeclare it. TypeScript caught this as TS2451 on the first tsc run. The fix was trivial (remove the redundant re-declaration in the new block), but it surfaced that the spec's Solution B code sketch showed `const retryQueue = getPendingRetryQueue(...)` at the new insertion point without accounting for the pre-existing binding — a minor spec/code-sketch inconsistency that the architect must catch at implementation time.",
+    "surprised_by": "",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  },
+  "caveats": [
+    "VQ-S6-008/009/017 PARTIAL: AC-B-7 (30-run F2-zero), AC-B-8 (10-run three-party check), trace-chain inspection — all deferred to post-merge e2e re-run"
+  ]
+}

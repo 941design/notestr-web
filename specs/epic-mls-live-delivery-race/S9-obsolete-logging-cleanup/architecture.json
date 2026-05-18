@@ -1,0 +1,19 @@
+{
+  "module_name": "marmot.device-sync + store.task-store + marmot.client",
+  "purpose": "Remove console.debug calls whose information is already captured by structured MlsTrace events (S1/S2), while retaining catch-block diagnostics and any log carrying non-trace information.",
+  "public_api": [],
+  "private_files": [
+    "src/marmot/device-sync.ts",
+    "src/store/task-store.tsx",
+    "src/marmot/client.tsx"
+  ],
+  "owned_data": [],
+  "dependencies_allowed": [],
+  "dependencies_forbidden": [],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "npx vitest run"
+  ]
+}

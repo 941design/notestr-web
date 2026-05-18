@@ -16,6 +16,9 @@ import type {
   Unsubscribable,
 } from "@internet-privacy/marmot-ts";
 
+import { mlsTrace } from "./mls-trace";
+import { consumeExpectedPublishForKind445 } from "./device-sync";
+
 /**
  * Adapts an NDK instance to the NostrNetworkInterface required by MarmotClient.
  *
@@ -46,6 +49,14 @@ export class NdkNetworkAdapter implements NostrNetworkInterface {
     relays: string[],
     event: NostrEvent,
   ): Promise<Record<string, PublishResponse>> {
+    // GAP-2 sender-side `publish-task` bridge: when marmot-ts asks us to
+    // publish a kind-445, this is the moment we have BOTH the relay
+    // event id (`event.id`) and — via the per-hTag FIFO populated by
+    // task-store.tsx:dispatch — the originating rumor.id. The consumer
+    // is inert (early-returns) when the event isn't kind-445 or no
+    // expectation is registered.
+    consumeExpectedPublishForKind445(event);
+
     const ndkEvent = new NDKEvent(this.ndk, event);
     const relaySet = NDKRelaySet.fromRelayUrls(relays, this.ndk);
 
@@ -97,6 +108,17 @@ export class NdkNetworkAdapter implements NostrNetworkInterface {
       : [filters as NDKFilter];
     const relaySet = NDKRelaySet.fromRelayUrls(relays, this.ndk);
 
+    const reqId = crypto.randomUUID();
+    const tracedFilter: Filter = (Array.isArray(filters) ? filters[0] : filters) as Filter;
+    const tracedRelay = relays[0] ?? "";
+    mlsTrace.record({
+      kind: "req-start",
+      t: Date.now(),
+      relay: tracedRelay,
+      filter: tracedFilter,
+      reqId,
+    });
+
     return new Promise<NostrEvent[]>((resolve) => {
       const events: NostrEvent[] = [];
 
@@ -107,10 +129,24 @@ export class NdkNetworkAdapter implements NostrNetworkInterface {
       );
 
       sub.on("event", (ndkEvent: NDKEvent) => {
-        events.push(ndkEvent.rawEvent() as NostrEvent);
+        const raw = ndkEvent.rawEvent() as NostrEvent;
+        events.push(raw);
+        mlsTrace.record({
+          kind: "req-event",
+          t: Date.now(),
+          reqId,
+          eventId: raw.id,
+          createdAt: raw.created_at ?? 0,
+        });
       });
 
       sub.on("eose", () => {
+        mlsTrace.record({
+          kind: "req-eose",
+          t: Date.now(),
+          reqId,
+          eventCount: events.length,
+        });
         resolve(events);
       });
 
@@ -122,6 +158,11 @@ export class NdkNetworkAdapter implements NostrNetworkInterface {
 
       sub.on("close", () => {
         clearTimeout(timeout);
+        mlsTrace.record({
+          kind: "req-close",
+          t: Date.now(),
+          reqId,
+        });
       });
     });
   }
@@ -141,9 +182,20 @@ export class NdkNetworkAdapter implements NostrNetworkInterface {
       ? (filters as NDKFilter[])
       : [filters as NDKFilter];
     const relaySet = NDKRelaySet.fromRelayUrls(relays, this.ndk);
+    const tracedFilter: Filter = (Array.isArray(filters) ? filters[0] : filters) as Filter;
+    const tracedRelay = relays[0] ?? "";
 
     return {
       subscribe: (observer: Partial<Observer<NostrEvent>>): Unsubscribable => {
+        const subId = crypto.randomUUID();
+        mlsTrace.record({
+          kind: "sub-start",
+          t: Date.now(),
+          relay: tracedRelay,
+          filter: tracedFilter,
+          subId,
+        });
+
         const sub: NDKSubscription = this.ndk.subscribe(
           ndkFilters,
           { closeOnEose: false },
@@ -152,6 +204,10 @@ export class NdkNetworkAdapter implements NostrNetworkInterface {
 
         sub.on("event", (ndkEvent: NDKEvent) => {
           try {
+            // Per AC-HOOK-5: `sub-event` is emitted by device-sync's
+            // subscription.next callback (where `group.state.groupContext.epoch`
+            // is reachable), NOT here. The adapter only owns `sub-start` /
+            // `sub-close` because it has no group context.
             observer.next?.(ndkEvent.rawEvent() as NostrEvent);
           } catch (err) {
             observer.error?.(err);
@@ -163,6 +219,11 @@ export class NdkNetworkAdapter implements NostrNetworkInterface {
         });
 
         sub.on("close", () => {
+          mlsTrace.record({
+            kind: "sub-close",
+            t: Date.now(),
+            subId,
+          });
           observer.complete?.();
         });
 

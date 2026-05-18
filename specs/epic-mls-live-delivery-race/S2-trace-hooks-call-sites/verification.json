@@ -1,0 +1,246 @@
+{
+  "story_id": "S2",
+  "questions": [
+    {
+      "id": "Q1",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-HOOK-1",
+      "question": "Does `device-sync.ts:syncGroup` record `req-start`/`req-eose`/`req-close` for the historical `client.network.request` call, AND `sub-start`/`sub-close` for the persistent `client.network.subscription` call? Note: the network-side req-* and sub-start/sub-close are emitted by `network.ts` (per AC-HOOK-4/5), so AC-HOOK-1's contract is that the syncGroup callsite is what triggers those network calls — the trace ordering must show the historical-fetch req-* events bracketing syncGroup's `await client.network.request(...)` line, and the sub-* events bracketing the `subscribe()` lifetime.",
+      "severity": 9
+    },
+    {
+      "id": "Q2",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-HOOK-2",
+      "question": "Does `ingestGroupEventsRaw` record exactly one `ingest-call` event before the `for await` loop (with `eventIds` listing the pending events and `epoch` being the group's current epoch as a string), and exactly one `ingest-result` per yielded result from `group.ingest(events)` with `result` set to one of `processed|skipped|rejected|unreadable`, `epochBefore` captured before the result is observed and `epochAfter` captured after?",
+      "severity": 9
+    },
+    {
+      "id": "Q3",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-HOOK-3",
+      "question": "Does `attachRetryOnEpochAdvance`'s stateChanged handler record an `epoch-change` event on every firing where `newEpoch > prev` (with `from` and `to` as bigint-toString strings), AND a `queue-drain` event with `trigger: \"epoch-advance\"` and the snapshot length when the queue has entries to drain?",
+      "severity": 9
+    },
+    {
+      "id": "Q4",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-HOOK-4",
+      "question": "In `network.ts:request`: does the adapter record `req-start` BEFORE opening the NDK subscription (with a structurally-copied filter, the relay URL, and a unique `reqId` from `crypto.randomUUID()`), one `req-event` per `event` callback, exactly one `req-eose` on the `eose` callback (with `eventCount`), and `req-close` on the `close` callback?",
+      "severity": 9
+    },
+    {
+      "id": "Q5",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-HOOK-5",
+      "question": "In `network.ts:subscription`: does the adapter record `sub-start` on subscribe (with structurally-copied filter, relay URL, and `subId` from `crypto.randomUUID()`) and `sub-close` on close? Note per exploration § network.s2_hooks: `sub-event` is emitted by device-sync.ts's subscription.next callback (NOT by the network adapter), because only device-sync has access to `group.state.groupContext.epoch` for the trace's `epoch` field.",
+      "severity": 9
+    },
+    {
+      "id": "Q6",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-HOOK-6",
+      "question": "When `process.env.NEXT_PUBLIC_E2E_TRACE_MLS === \"1\"` AND `isTestRuntime()`, does `MarmotProvider` install `window.__notestrTestMlsTrace = () => mlsTrace.dump()` (returning a snapshot of the trace buffer) inside a useEffect that cleans up with `delete window.__notestrTestMlsTrace`? When the env flag is unset at build time, is the installation block dead-code-eliminated (verifiable by reading client.tsx — the install block must be guarded by the same build-time check or by referring to the no-op `mlsTrace` whose `dump()` returns the frozen empty array)?",
+      "severity": 9
+    },
+    {
+      "id": "Q7",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-HOOK-7",
+      "question": "When `NEXT_PUBLIC_E2E_TRACE_MLS` is unset at build time, is the resolved `MlsTrace` implementation the no-op default exported by mls-trace.ts (verifiable from S1's source), AND is the `__notestrTestMlsTrace` window-hook installation block in `MarmotProvider` gated by the same build-time check `process.env.NEXT_PUBLIC_E2E_TRACE_MLS === \"1\"` so the install block is dead code? Production-call cost at every trace site is one empty function invocation. (The contract is source-level shape, not a bundle grep — minification mangles names.)",
+      "severity": 9
+    },
+    {
+      "id": "Q8",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-HOOK-8",
+      "question": "AC-HOOK-8 is advisory (≤1KB per event, ≤1MB on a 30s run, spot-measured during S3, NOT a merge gate). Does the implementation document this expectation in a code comment near the trace call sites, and does no individual TraceEvent variant materially exceed 1KB when serialized (the largest variant is `req-start`/`sub-start` carrying `filter` — the production filter shape `{kinds:[445], \"#h\":[<32-byte hex>]}` is far below the budget)?",
+      "severity": 4
+    },
+    {
+      "id": "Q9",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-HOOK-9",
+      "question": "Per GAP-2 (sender-side own-replay): does the sender's `task-store.tsx:dispatch` (or a hook in device-sync.ts) maintain a `Map<rumorId, dispatchedAt|...>` populated at dispatch time, AND when `ingestGroupEventsRaw` yields a `processed` result whose decrypted rumor.id matches a tracked entry, emit a `publish-task` trace event with shape `{ kind: \"publish-task\", t, groupId, taskEventId, rumorId, eventId, createdAt }`? Per GAP-1 (rumor.id is the canonical correlator): is `taskEventId` populated from `rumor.id` (NOT from a non-existent TaskEvent.id field)?",
+      "severity": 9
+    },
+    {
+      "id": "Q10",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-HOOK-10",
+      "question": "Does `task-store.tsx` emit `task-store-load-start` at the top of the load-effect's `load()` function, `task-store-load-complete` immediately before `setState(restored)` with `restoredCount: restored.size`, `task-store-recv` as the first line inside `handleApplicationMessage` AFTER `deserializeApplicationData` succeeds and BEFORE the kind check, `task-store-accepted` immediately before `setState(nextState)` with `taskEventId: rumor.id` (per GAP-1), `task-store-rejected` when the early return at the kind check fires (with `reason: \"wrong-kind\"`), and `task-store-error` inside the catch (with `reason: \"deserialize-throw\"` if `deserializeApplicationData` threw — `rumorId: null` in that case — or `\"apply-throw\"` for other paths)?",
+      "severity": 10
+    },
+    {
+      "id": "Q11",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Are filters in `req-start`/`sub-start` recorded as a structural copy (no Object refs that point back at the caller's mutable filter), per spec.md § Trace event shape? S1's recording impl JSON-clones on record, so even if the call site passes the live ref the buffered entry is safe — but the call site should still pass a structural copy or rely on S1's clone? Pick one (preferred is to rely on S1's clone since changing the contract here would be redundant) and document the reasoning.",
+      "severity": 6
+    },
+    {
+      "id": "Q12",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does the `__notestrTestMlsTrace` hook signature added to `src/types/notestr-test-hooks.d.ts` declare `() => readonly TraceEvent[]` (matching S1's MlsTrace.dump() return type)? Does the type registry import `TraceEvent` from `src/marmot/mls-trace.ts` via `import type` so it stays a pure declaration with no runtime cost?",
+      "severity": 7
+    },
+    {
+      "id": "Q13",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "GAP-2 sender-replay tracker: does the `Map<rumorId, ...>` live in device-sync.ts (so it can be consulted from inside `ingestGroupEventsRaw` where decrypted rumors are observed) or in task-store.tsx (so dispatch populates it)? Per the GAP-2 resolution baked into stories.json: the map should live in device-sync (the decryption/own-echo observation site). What's the API surface — does device-sync export a setter (e.g. `markPublishedRumor(rumorId, taskEventId, dispatchedAt)`) consumed by task-store.tsx:dispatch? Is it reset on group teardown (`refreshGroupSync`)?",
+      "severity": 8
+    },
+    {
+      "id": "Q14",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does `e2e/global-setup.ts:globalSetup` add an explicit `NEXT_PUBLIC_E2E_TRACE_MLS: process.env.NEXT_PUBLIC_E2E_TRACE_MLS ?? \"\"` (or equivalent) in the `next build` env block at line 122-128? Implicit pass-through via `...process.env` works, but explicit set is the project convention per exploration § next_public_env_propagation. The default value when unset must NOT be `\"1\"` — only explicit `1` from the shell should enable tracing.",
+      "severity": 7
+    },
+    {
+      "id": "Q15",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the implementation respect the project's TypeScript strict-mode conventions: no new `any` introduced, no `as unknown as ...` casts to bypass type checks, all new variables explicitly typed, all new helper functions have explicit return types? File-line-range estimate per stories.json is ~180 LOC across 6 files — verify the actual delta is in that range and not sprawling.",
+      "severity": 7
+    },
+    {
+      "id": "Q16",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the implementation NOT collapse the two existing applicationMessage listeners in device-sync.ts (lines 472-495, persistence) and task-store.tsx (lines 69-99, React state)? The split is documented at task-store.tsx:87 and is load-bearing — F3 classification per AC-DIAG-3b consumes the task-store-* events from the React-state listener only. Trace hooks must be added to BOTH listeners separately (with possibly different shapes), not merged.",
+      "severity": 8
+    },
+    {
+      "id": "Q17",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does `make test` (vitest run + verify-static-export.mjs) still pass after S2 changes? Does `npx tsc --noEmit` have zero errors? S2 is pure instrumentation gated on the build-time flag — production behaviour is invariant, so unit-test count and pass/fail must match baseline (84 tests).",
+      "severity": 9
+    },
+    {
+      "id": "Q18",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Are existing tests in src/marmot/device-sync.test.ts and the colocated tests for network.ts/task-store.tsx (if present) NOT broken by the new trace calls? The trace recorder's no-op default has zero side effects when the build flag is unset, so vitest (which runs without NEXT_PUBLIC_E2E_TRACE_MLS) should see identical behaviour.",
+      "severity": 8
+    },
+    {
+      "id": "Q19",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Do the trace events leak any sensitive data when the flag IS set? Specifically: does `task-store-accepted` carry the rumor's content/payload (which would include task description text, potentially user PII), or only metadata (rumorId, taskEventId, groupId)? The TraceEvent union from S1 shows only metadata fields — verify call sites do not extend or annotate events with rumor content. Same check for `ingest-result` (only result.kind and event.id, no decrypted payload).",
+      "severity": 7
+    },
+    {
+      "id": "Q20",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does the build-time gate prevent `__notestrTestMlsTrace` from leaking to non-test pages even in test runtime? AC-HOOK-6 requires the install block to be gated on BOTH `isTestRuntime()` AND `process.env.NEXT_PUBLIC_E2E_TRACE_MLS === \"1\"`. The hook should NOT install when only one of the two is true, so a user who happens to be on a build with NEXT_PUBLIC_E2E_TRACE_MLS=1 but is in production (not test) sees no test-hook surface.",
+      "severity": 6
+    },
+    {
+      "id": "Q21",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "superseded_by": "Q27",
+      "verifier_verdict_round_1": "NO — bridge unreachable: marmot-ts intentionally suppresses self-echo at marmot-group.js:793 (#sentEventIds.delete → kind:'skipped', reason:'self-echo'), so the sender's own kind-445 never yields 'processed' and applicationMessage never fires. Even without that, EventEmitter3 emits AFTER yield, making the lastIngestRumorId read off-by-one. Bridge replaced with publish-path approach (see Q27).",
+      "question": "GAP-2 bridge correctness (RECEIVE-PATH ATTEMPT, supersededby Q27): `publishedRumorTracker` is a module-scoped Map living at the top of device-sync.ts (above `useDeviceSync`). `markPublishedRumor` is called by `task-store.tsx:dispatch` BEFORE `sendApplicationRumor`. The kind-445 round-trips via the sender's own subscription and is processed by `ingestGroupEventsRaw`. ts-mls fires `applicationMessage` synchronously during `group.ingest()` (writing the rumor.id into the per-group `lastIngestRumorId` Map), then yields the `processed` result with the kind-445 NostrEvent — at which point the for-await loop reads/clears `lastIngestRumorId` and looks up `publishedRumorTracker[rumorId]` to emit `publish-task` with both ids. Is this timing correct? Would two concurrent ingest calls on different groups (locked by `ingestLock` per-group) interfere? The bridge is per-group, the lock is per-group, so cross-group interference is impossible — confirm.",
+      "severity": 7
+    },
+    {
+      "id": "Q27",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "supersedes": "Q21",
+      "question": "GAP-2 bridge correctness (PUBLISH-PATH IMPLEMENTATION, replaces Q21 after the verifier discovered marmot-ts self-echo suppression): `expectedPublishByHTag` is a module-scoped `Map<hTag, ExpectedPublish[]>` (a per-hTag FIFO) at the top of device-sync.ts. `task-store.tsx:dispatch` computes `hTag = getNostrGroupIdHex(group.state)` and calls `enqueueExpectedPublish(hTag, rumor.id, groupId, rumor.id)` BEFORE `group.sendApplicationRumor(rumor)`. marmot-ts's `MarmotGroup.sendApplicationRumor` (marmot-group.js:400) then calls `this.network.publish(relays, applicationEvent)` where `applicationEvent.kind === 445` and `applicationEvent.id` is the kind-445 relay event id. `NdkNetworkAdapter.publish` (network.ts) calls `consumeExpectedPublishForKind445(event)` as the FIRST line of its body. The consumer extracts the `#h` tag from the event, dequeues the front of `expectedPublishByHTag.get(hTag)`, and emits `publish-task` joining `rumorId` ↔ kind-445 `eventId`. Per-group ordering is preserved because marmot-ts serializes `sendApplicationRumor` per group (it advances MLS state). Concurrent dispatches across DIFFERENT groups go to different hTag FIFOs, so no cross-group interference. Cleanup: `clearExpectedPublishesForHTag(hTag)` is called from `refreshGroupSync` on group teardown using the still-held `entry.group` reference. Confirm: (a) the `consumeExpectedPublishForKind445` import in network.ts does NOT introduce a circular dependency (device-sync does not import from network); (b) the publish path is the only site marmot-ts emits its own kind-445s — verified by reading marmot-group.js:400.",
+      "severity": 8
+    },
+    {
+      "id": "Q22",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "superseded_by": "Q28",
+      "question": "`publishedRumorTracker` is module-scoped. If a group is removed (e.g. the user is removed via per-leaf-remove and the group teardown runs in `refreshGroupSync`), the corresponding entries are cleared via `clearPublishedRumorsForGroup(groupId)`. But `publishedRumorTracker` survives across `MarmotProvider` unmount/remount cycles in non-test runs. Is this acceptable for a module that's gated to test-only paths? The recording trace itself is gated on the build flag, so under normal operation `publishedRumorTracker` accumulates entries that nobody ever reads — until the next dispatch/group-teardown clears them. Memory footprint is bounded by published-but-unprocessed rumors (very small in practice). Confirm this is fine, or suggest a soft cap.",
+      "severity": 4
+    },
+    {
+      "id": "Q28",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "supersedes": "Q22",
+      "verifier_verdict_round_1.1_codex": "Originally accepted as 'leave as-is, detectable by timestamp skew' — codex elevated to HIGH because S3's classifier is automated and won't read timestamps. Resolved by Q30's removeExpectedPublishByRumorId in dispatch's catch.",
+      "question": "`expectedPublishByHTag` is the new module-scoped Map<hTag, ExpectedPublish[]>. Each `enqueueExpectedPublish` is paired with one `consumeExpectedPublishForKind445` (which dequeues the front and emits the trace). Under normal flow the FIFO drains synchronously when marmot-ts's `sendApplicationRumor` calls `network.publish` (right after the dispatch's `enqueueExpectedPublish` returned). Pathological case: if `sendApplicationRumor` throws BEFORE the publish call (e.g. ts-mls state error), the entry stays parked in the FIFO. Cleanup paths: (a) `clearExpectedPublishesForHTag(hTag)` is called from `refreshGroupSync` on group teardown; (b) the next successful publish on the same hTag will dequeue the stale entry first and emit a `publish-task` for the WRONG kind-445. Is this acceptable? The pathological case is rare (marmot-ts state errors are caught upstream). The mismatch surface is small and the trace is diagnostic-only. Add a soft cap or TTL? Recommendation: leave as-is; the diagnostic harness is the only consumer and a stale `publish-task` is detectable by timestamp skew.",
+      "severity": 5
+    },
+    {
+      "id": "Q29",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "Per-group dispatch publish mutex (round 1.1 — addresses codex HIGH 1): task-store.tsx now serializes concurrent dispatches on the same group via a module-scoped `dispatchPublishLock: Map<groupId, Promise<void>>` (chain-promise pattern, mirroring `device-sync.ts:ingestLock`). The mutex brackets ONLY the `if (group)` publish block — the optimistic local setState and the IDB persistence (appendEvent) run BEFORE the lock is acquired. So per-group ordering of the trace bridge (enqueue → sendApplicationRumor → consume) is now serialized: dispatch1's window fully completes before dispatch2's enqueue. Cross-group dispatches still proceed in parallel (different lock keys). Under failure (sendApplicationRumor throws), the inner finally `release()`s the lock so the next dispatch isn't permanently blocked. Map-cleanup: when the chain becomes the tail and resolves, the entry is dropped from `dispatchPublishLock` (no unbounded growth). Confirm: (a) the mutex addresses HIGH 1 (overlapping enqueue/publish on same hTag); (b) it does not affect non-publish work (local state/persistence run unblocked); (c) cleanup is correct under churn.",
+      "severity": 8
+    },
+    {
+      "id": "Q30",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "verifier_verdict_round_2_codex": "Codex elevated the residual pathological case from acceptable noise to HIGH because (a) AC-DIAG-3a makes publish-task an authoritative bridge, (b) AC-VAL-1's stability check can be deterministically wrong if the same dispatch races the same createCommit, (c) S4 is a decision gate so a wrong F-class verdict misroutes the epic. Resolved in round 2 by deferring the dequeue/emit to endDispatchPublishWindow and emitting only when count===1 (see Q31).",
+      "question": "Cleanup-on-throw + window scoping (round 1.1 — addresses codex HIGH 2 and finding (3)): (1) HIGH 2 fix — task-store.tsx:dispatch's catch around sendApplicationRumor now calls `removeExpectedPublishByRumorId(hTag, rumor.id)` before the existing error-handling code. The new export scans the per-hTag FIFO for the matching rumorId and splices it out (O(n), n≤1 in practice with the mutex from Q29). (2) Finding (3) — confirmed: marmot-ts publishes kind-445 events from FOUR sites (commits, proposals, application messages, commits-with-welcomes — all GROUP_EVENT_KIND=445 per protocol.js:43). To prevent commit/proposal publishes from auto-invite paths from dequeueing OUR application-rumor entry, `consumeExpectedPublishForKind445` now also gates on a per-hTag `dispatchPublishInFlightByHTag` counter, incremented by `beginDispatchPublishWindow(hTag)` BEFORE the try/sendApplicationRumor block and decremented by `endDispatchPublishWindow(hTag)` in the finally. This scopes the consumer to fire only while OUR dispatch's `sendApplicationRumor` is on the stack — kind-445 publishes from createCommit paths outside that window do NOT consume our entry. The pathological case (auto-invite's commit publish interleaves into our await chain WHILE our window counter is up) still mis-correlates, acknowledged in code comments at the `dispatchPublishInFlightByHTag` declaration. Acceptable for the failing-cluster diagnostic. Confirm: (a) HIGH 2 fix is correct; (b) window scoping closes the common case for finding (3); (c) the residual pathological case is acknowledged in code comments.",
+      "severity": 8
+    },
+    {
+      "id": "Q31",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "Round-2 disambiguation via deferred dequeue (replaces Q30's pathological-case acceptance after codex's elevation). `consumeExpectedPublishForKind445` no longer dequeues immediately. Instead it counts kind-445 events seen during a window via `windowKind445State: Map<hTag, {count, firstEvent}>`, capturing the first event tentatively. The dequeue + `publish-task` emit is deferred to `endDispatchPublishWindow`, which decides based on count: (a) count===1 → emit `publish-task` with the captured firstEvent (unambiguous: the per-group dispatch mutex guarantees no other dispatch is in flight on this hTag, and our publish is awaited inside the window so it WILL fire before endDispatchPublishWindow runs in the finally — therefore the one event observed IS our publish); (b) count>1 → emit nothing AND drop the parked FIFO entry (auto-invite's commit interleaved; we cannot tell which event was ours; better to lose the publish-task than emit a wrong correlation; S3 classifies the affected test as `unknown` per AC-DIAG-3 / AC-REPORT-3); (c) count===0 → leave the entry parked (the dispatch's catch already called removeExpectedPublishByRumorId for failed publishes; this branch is defensive). Confirm: (a) the case-1 logic correctly assumes our publish always fires within the window (because sendApplicationRumor is awaited inside the window and the publish call is a synchronous `consume(event) → await ndk.publish(...)` chain — the `consume` part fires synchronously before any await yields control); (b) the case-2 drop prevents poisoning the next dispatch on the same hTag; (c) `clearExpectedPublishesForHTag` (group teardown) also clears `windowKind445State`. Five new colocated tests in src/marmot/device-sync.test.ts cover all four cases plus the `removeExpectedPublishByRumorId` regression scenario.",
+      "severity": 9
+    },
+    {
+      "id": "Q32",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "Post-consume publish-failure regression (round 3 — codex flagged a HIGH that was a misread of the existing `&& front` guard at endDispatchPublishWindow:217). Codex claimed: when consume captures count=1 + firstEvent at the START of network.publish and the publish then rejects (timeout / no relay ack via marmot-ts hasAck check), the dispatch's catch removes the FIFO entry but the count===1 branch still emits a publish-task with the failed event id. The actual control flow: (1) consume runs at network.publish entry, sets count=1, captures firstEvent; (2) await ndk.publish rejects → marmot-ts hasAck throws; (3) dispatch's catch calls removeExpectedPublishByRumorId(hTag, rumor.id), splicing the entry out of the FIFO and (because it was the only entry per the per-group mutex) deleting the hTag entry from expectedPublishByHTag; (4) dispatch's finally runs endDispatchPublishWindow; (5) state.count===1 AND state.firstEvent are both truthy, but `front = queue?.[0]` is undefined because the FIFO was just emptied by the catch. The count===1 branch is gated on `&& front` (line 217) — falsy → no emit. The count>1 branch is also gated on `&& front` (line 236) — also falsy → no emit. Net: zero publish-task records. The `front` guard already provides the required `publishSucceeded`-equivalent semantics. New 6th colocated test in device-sync.test.ts asserts this contract empirically: enqueue → begin → consume → removeExpectedPublishByRumorId → end → publishTaskRecords.length === 0. Test passes (12 files / 90 tests).",
+      "severity": 7
+    },
+    {
+      "id": "Q23",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "question": "The `task-store-error` event in task-store.tsx is emitted from TWO sites: (a) the catch around `deserializeApplicationData` (with `rumorId: null`, `reason: \"deserialize-throw\"`); (b) the catch around `JSON.parse + applyEvent` (with `rumorId: rumor.id`, `reason: \"apply-throw\"`). Was the original handler refactored from a single catch into a try/catch-around-deserialize plus a try/catch-around-apply to enable distinguishing F3b subclasses? Confirm this matches AC-HOOK-10's wording (\"`reason` is `\"deserialize-throw\"` if `deserializeApplicationData` threw (rumorId is null in that case) or `\"apply-throw\"` for other paths\").",
+      "severity": 7
+    },
+    {
+      "id": "Q24",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "question": "LOC delta for S2 is ~327 lines added across 6 files (vs the ~180 LOC stories.json estimate). The overage comes from: (1) GAP-2 bridge plumbing (publishedRumorTracker + markPublishedRumor + clearPublishedRumorsForGroup + lastIngestRumorId Map + per-group consume-and-clear in the for-await loop) — ~50 LOC; (2) explicit error-path split in task-store.tsx for AC-HOOK-10's deserialize/apply distinction — ~30 LOC; (3) header doc-comments documenting GAP-1/GAP-2 baked-in resolutions — ~30 LOC. None of this is gold-plating; all is mandated by ACs or by the GAP resolutions in stories.json. Confirm acceptable.",
+      "severity": 4
+    },
+    {
+      "id": "Q25",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "Existing unit tests still pass without modification (84/84 from baseline). The trace recorder's no-op default has zero side effects when NEXT_PUBLIC_E2E_TRACE_MLS is unset (default in vitest), so the new `mlsTrace.record(...)` calls are no-ops in the test runtime. Verified by reading the tests' module imports — none of them set NEXT_PUBLIC_E2E_TRACE_MLS.",
+      "severity": 8
+    },
+    {
+      "id": "Q26",
+      "phase": "post-impl",
+      "category": "SECURITY",
+      "question": "Reviewing the trace event field contents: `task-store-error` carries `message: err.message` which can be an arbitrary thrown error string. In the `apply-throw` path the error could come from JSON.parse (carrying a fragment of the rumor content) or from applyEvent (carrying TaskEvent shape details). Is exposing this in the trace dump acceptable? The trace is gated on the build flag, only enabled in e2e diagnostic runs, and the rumor content is task-text which is already accessible to the user — no sensitive credential surface. Confirm this is acceptable for the diagnostic harness use case.",
+      "severity": 5
+    }
+  ]
+}

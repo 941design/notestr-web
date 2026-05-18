@@ -1,0 +1,256 @@
+{
+  "generated_at": "2026-05-01T00:00:00Z",
+  "focuses": ["architecture", "similar-features", "testing-and-conventions"],
+
+  "architecture": {
+    "device_sync": {
+      "file": "src/marmot/device-sync.ts",
+      "entry_point": "useDeviceSync (React hook, line ~140)",
+      "owns": "MLS receive pipeline for task data: kind-445 subscription, ingest, retry queue, IDB persistence (separate listener), Welcome join, auto-invite, snapshot fetch/publish",
+      "effect_scoped_state": {
+        "groupSubs": "Map<string, Unsubscribable> — one live NDK sub per group",
+        "syncedEventIds": "Map<string, Set<string>> — dedup guard (event ids already fed to ingest)",
+        "pendingRetry": "Map<string, PendingRetryQueue> — parked unreadable events per group",
+        "ingestLock": "Map<string, Promise<void>> — per-group mutex serialising concurrent ingestGroupEventsRaw calls",
+        "lastEpoch": "Map<string, bigint> — epoch at last stateChanged trigger",
+        "joinBarrier": "Promise<void> | null — blocks syncGroup while joinFromWelcome in flight"
+      },
+      "refs": {
+        "appMsgHandlersRef": "Map<groupId, {group, handler}> — applicationMessage handlers across re-renders",
+        "stateChangeHandlersRef": "Map<groupId, {group, handler}> — epoch-advance handlers"
+      },
+      "key_lines": {
+        "syncGroup": "497-551",
+        "ingestGroupEventsRaw": "352-430",
+        "attachRetryOnEpochAdvance": "432-468",
+        "attachAppMsgListener": "470-495 (PERSISTENCE listener — distinct from task-store's UI listener)",
+        "refreshGroupSync": "553-581"
+      },
+      "s5_replacement_target": "device-sync.ts lines 514-525 (request+ingest block) and 529-550 (subscription+set block). Lines 511-513 (relaysForGroup, hTag, filter) stay; filter becomes a function (since?) => Filter. Add closure-local: t0, OVERLAP_SECONDS=60, liveBuffer, cutoverComplete. groupSubs.set / subs.push move BEFORE the request() call.",
+      "s6_insertion_points": {
+        "module_state": "Add inside effect closure (~line 281-295): retryAttempts: Map<string, Map<string, number>>, MAX_RETRIES = 3",
+        "drain_block": "Insert after addSyncedGroupEventIds(...) call (~line 406) inside ingestGroupEventsRaw — full snippet in spec.md § Solution B",
+        "epoch_reset": "Inside attachRetryOnEpochAdvance handler, after lastEpoch.set(...) (~line 439) and before queue.prune(): retryAttempts.get(group.idStr)?.clear()",
+        "teardown": "In refreshGroupSync teardown loop alongside pendingRetry.delete (~line 564): retryAttempts.delete(groupId)"
+      }
+    },
+
+    "network": {
+      "file": "src/marmot/network.ts",
+      "owns": "NdkNetworkAdapter — stateless NDK→NostrNetworkInterface adapter",
+      "ndk_caveats": [
+        "request() uses {closeOnEose:true} — closed sub leaves NDK seen-events cache populated; second sub for same filter may dedupe (F1 sub-cause)",
+        "subscription() uses {closeOnEose:false} — EOSE is no-op",
+        "request() has 15s safety timeout; publish() has 10s timeout (NDK waits indefinitely on relay OK without it)",
+        "no clean disconnect — code drops the reference (client.tsx:412)",
+        "no cacheAdapter or enableOutboxModel configured anywhere"
+      ],
+      "s2_hooks": {
+        "request": "req-start before this.ndk.subscribe (~103); req-event in event handler (~109); req-eose on eose handler (~113); req-close on close (~123). reqId = crypto.randomUUID()",
+        "subscription": "sub-start before this.ndk.subscribe (~147); sub-event in event handler (~153) — but adapter has no group epoch; emit sub-event in DEVICE-SYNC's subscription.next callback instead (it has group.state.groupContext.epoch). sub-close on close (~165)"
+      }
+    },
+
+    "ingest_queue": {
+      "file": "src/marmot/ingest-queue.ts",
+      "shape": "Pure factory createPendingRetryQueue() returns closure over Map<eventId, PendingEntry>. FIFO via Map insertion order. Bounded (200), TTL (24h). Already has 12 unit tests (enqueue/dedupe/FIFO/remove/snapshot/cap-eviction/TTL/fallback-clock/validation).",
+      "ttl_quirk": "Age computed from event.created_at when within ±1y of now; otherwise falls back to local queuedAt timestamp (handles clock-skewed events).",
+      "s6_relationship": "retryAttempts (S6) lives in device-sync, NOT in ingest-queue. The queue does not know about retry counts. S6 calls retryQueue.snapshot() then filters externally."
+    },
+
+    "task_store": {
+      "file": "src/store/task-store.tsx",
+      "owns": "UI-facing consumer of decrypted task data. Two effects: load (49-66) and applicationMessage listener (69-99). dispatch (101+) writes locally + persists + sends to MLS group.",
+      "f3d_race": "Load effect calls loadEvents(groupId) async; on resolve setState(restored). Listener does setState(applyEvent(stateRef.current, taskEvent)) on live event. If live event arrives while load pending, late setState(restored) overwrites the live update — restored may not include live event because device-sync's persistence listener writes are async.",
+      "two_listeners": "device-sync.ts:475-494 PERSISTS to IDB regardless of UI mount. task-store.tsx:72-98 updates REACT STATE. Comment at task-store.tsx:87 documents the split — must NOT be collapsed.",
+      "s2_hooks": {
+        "task-store-load-start": "top of load() (~52)",
+        "task-store-load-complete": "before setState(restored) (~55) — include restoredCount: restored.size",
+        "task-store-recv": "AFTER deserializeApplicationData succeeds (~74) — needs rumor.id",
+        "task-store-rejected": "after rumor.kind !== TASK_EVENT_KIND check (~81) — reason: 'wrong-kind'",
+        "task-store-accepted": "before setState(applyEvent(...)) (~84) — but TaskEvent has NO id field, only type — needs correlator decision",
+        "task-store-error": "in catch (~89) — reason: deserialize-throw or apply-throw"
+      }
+    },
+
+    "client": {
+      "file": "src/marmot/client.tsx",
+      "owns": "MarmotProvider. NDK init, MarmotClient construction, KP lifecycle, all window.__notestr* test hooks (419-543).",
+      "test_hooks_existing": [
+        "__notestrTestGroups", "__notestrTestPubkey", "__notestrTestSentRumors",
+        "__notestrTestResetSentRumors", "__notestrTestNetworkRequest",
+        "__notestrTestForgetLeaf", "__notestrTestPubkeyLeafIndexes",
+        "__notestrTestInspectGroupEvent (fetch+double-ingest, returns epoch)",
+        "__notestrTestDispatchTaskEvent", "__notestrTestTasks", "__notestrTestPersistedTaskEvents",
+        "__notestrTestArmPublishFailure"
+      ],
+      "type_registry": "src/types/notestr-test-hooks.d.ts — authoritative ambient Window interface. Add new hooks here FIRST.",
+      "s2_window_hook": "__notestrTestMlsTrace = () => mlsTrace.dump() — install in test-hook useEffect at ~419 alongside existing hooks, gated on isTestRuntime() && NEXT_PUBLIC_E2E_TRACE_MLS === '1'"
+    }
+  },
+
+  "similar_features": {
+    "build_flag_pattern": {
+      "name": "isTestRuntime()",
+      "definition": "process.env.NEXT_PUBLIC_E2E === '1' || process.env.NODE_ENV === 'test'",
+      "defined_locally_at": ["src/marmot/client.tsx:38", "src/store/task-store.tsx:18", "src/marmot/storage.ts:91 (inline)"],
+      "dce_property": "NEXT_PUBLIC_E2E baked at Next build time; webpack DCE removes branches where isTestRuntime() is statically false in prod",
+      "for_trace_flag": "Use the same pattern: check NEXT_PUBLIC_E2E_TRACE_MLS === '1' at module-load. The mls-trace.ts module's no-op-default-vs-recording-impl gate is a build-time inline."
+    },
+    "test_hook_install_pattern": "Inside a useEffect with isTestRuntime() guard: assign window.__notestr* = ...; cleanup with delete window.__notestr*. Effect dep = [state.client] in client.tsx, fires when client becomes non-null.",
+    "diagnostic_skeleton": {
+      "file": "e2e/tests/multi-user-diag.spec.ts",
+      "current_gating": "process.env.DIAG === '1' (test.skip(!DIAG)) — NOT test.fixme as the spec said",
+      "structure": "Single test 'run triangulation' inside describe.serial; calls readEpoch() helper; reads sentRumors/persistedB/tasksB; logs via console.log only — no file output",
+      "always_passes": "expect(true).toBe(true) at end — diagnostic output IS the deliverable"
+    },
+    "multi_context_pattern": "Module-level let contextA/B/C + pageA/B/C + skipMobile. test.beforeAll allocates via browser.newContext + context.newPage. Used in multi-user.spec.ts, three-party.spec.ts, multi-user-diag.spec.ts.",
+    "bunker_identities": {
+      "A": "private key 7d556f5a... in e2e/fixtures/auth-helper.ts:12",
+      "B": "private key 645b5c22... in e2e/fixtures/auth-helper-b.ts (also in ndk-client.ts)",
+      "C": "private key 8b7561c7... in e2e/fixtures/auth-helper-c.ts",
+      "spawn": "global-setup.ts:139-174 spawns three Node processes; PIDs in e2e/.state.json"
+    },
+    "quiesce_pattern": "two-party.ts:334-366 quiesceFor() polls __notestrTestTasks until two consecutive snapshots 500ms apart are deep-equal. S7's regression test should use this idiom for the 5s assertion.",
+    "fs_write_in_test_pattern": "e2e/tests/viewport-audit.spec.ts:41-123 uses fs.writeFileSync from inside test body — closest precedent for S3's per-failure JSON dumps to e2e/.triage/",
+    "since_filter_pattern": "ndk-subscriber.ts:65-77 auto-injects since: now() unless filter has since or ids. NO production code in src/ uses since today — Solution A is the first.",
+    "ingest_lock": "device-sync.ts:410-430 — per-group promise chain mutex. S6's drain (void ingestGroupEvents(group, fresh)) goes through this lock — preserves serialisation guarantee.",
+    "log_categories_to_supersede_in_s9": [
+      "[mls-receive:ingest-result]",
+      "[mls-receive:retry-on-epoch]",
+      "[mls-receive:retry-failed]",
+      "[mls-receive:live-in]",
+      "[mls-receive:sync-start]",
+      "[mls-receive:app-msg-emit]",
+      "[mls-receive:state-changed]",
+      "[mls-receive:task-store-in]"
+    ]
+  },
+
+  "testing_and_conventions": {
+    "canonical_commands": {
+      "install": "make node_modules (writes platform stamp)",
+      "build": "make build",
+      "unit_tests": "make test (runs vitest run + verify-static-export.mjs)",
+      "property_tests": "FAST_CHECK_NUM_RUNS=10000 make test-property",
+      "e2e": "make e2e (calls e2e-up + npx playwright test; does NOT tear down relay after)",
+      "single_e2e": "make e2e-up && npx playwright test e2e/tests/<file>.spec.ts",
+      "grep_e2e": "make e2e-up && npx playwright test --grep '<pattern>'",
+      "e2e_relay_up": "make e2e-up",
+      "e2e_relay_down": "make e2e-down (wipes tmpfs DB)"
+    },
+    "platform_stamp_critical": "Makefile:27-39 — node_modules/.platform stores uname -sm. Mismatched stamp forces .PHONY rebuild on next make. Bypassing make (raw npm install) skips stamp write — breaks subsequent platform switches. ARCHITECT/VERIFIER MUST USE make, not npm/npx directly.",
+    "playwright_config": {
+      "file": "playwright.config.ts",
+      "projects": ["chromium (Desktop Chrome)", "Mobile Chrome (Pixel 5)", "Mobile Safari (iPhone 12)"],
+      "workers": 1,
+      "fullyParallel": false,
+      "retries_today": "0 locally, 1 on CI (process.env.CI)",
+      "trace": "on-first-retry",
+      "global_setup": "e2e/global-setup.ts (build + 3 bunkers + serve on port 3100)",
+      "output_dirs": "test-results/ (gitignored, built-in trace zip), playwright-report/ — neither collides with e2e/.triage/"
+    },
+    "next_public_env_propagation": "global-setup.ts:118-134 spreads ...process.env then sets NEXT_PUBLIC_E2E='1', NEXT_PUBLIC_RELAYS='ws://localhost:7777'. Shell-set NEXT_PUBLIC_E2E_TRACE_MLS=1 will reach the build via the spread, but ARCHITECT SHOULD ADD EXPLICIT PASS-THROUGH for clarity.",
+    "vitest_config": {
+      "environment": "node",
+      "include": "src/**/*.test.ts and src/**/*.test.tsx (colocated)",
+      "globals": "false (explicit imports required)"
+    },
+    "fake_timers": "Standard pattern: beforeEach(vi.useFakeTimers + vi.setSystemTime(fixed)) / afterEach(vi.useRealTimers). Used in ingest-queue.test.ts:21-27.",
+    "lint_status": "NO lint tooling. No ESLint, Biome, or Prettier. TypeScript strict mode is the only static gate.",
+    "ci_status": "NO CI exists. No .github/workflows/, no other CI config. AC-X-CI-1 (10 consecutive CI runs) must be RECAST as 10 consecutive local 'make e2e' runs.",
+    "docker_relay": {
+      "service": "strfry on port 7777",
+      "config": "docker-compose.e2e.yml + strfry.conf",
+      "wait_for_relay": "NONE — Makefile assumes relay is ready by the time global-setup completes the build (~60s)",
+      "wipe": "make e2e-down -v wipes tmpfs DB"
+    },
+    "relay_url_hardcoded_locations": "ws://localhost:7777 in 8+ fixture files — no env indirection. Tests connecting directly via NDK do not poll/retry availability.",
+    "git_hooks": "NONE — no husky, no lefthook, .git/hooks/ contains only .sample files",
+    "playwright_mcp_quirk": ".mcp.json pins --browser chromium (Linux dev host has no branded Chrome)"
+  },
+
+  "gaps_and_risks_for_implementer": [
+    {
+      "id": "GAP-1",
+      "summary": "TaskEvent has no id field — only type and content. Spec assumes 'taskEventId = TaskEvent.id'.",
+      "where": "src/store/task-events.ts (TaskEvent definition); referenced in spec.md TraceEvent shape (publish-task, task-store-accepted) and AC-DIAG-3a.",
+      "options": [
+        "(a) Add an id field to TaskEvent (changes serialization, affects task-reducer and persistence).",
+        "(b) Use a content hash as the correlator — sha256(JSON.stringify(taskEvent)) computed at dispatch and re-derivable at receive.",
+        "(c) Use the rumor.id as the canonical correlator throughout, drop taskEventId from trace shape."
+      ],
+      "recommendation": "Option (c) is cheapest — rumor.id is unique per send (rumor includes pubkey+createdAt+content) and is already known at every emit point. Replace 'taskEventId' field references in spec/ACs with rumorId. Architect to confirm before S2 implementation.",
+      "blocks": ["S2 (AC-HOOK-9, AC-HOOK-10)", "S3 (AC-DIAG-3a identity mapping)"]
+    },
+    {
+      "id": "GAP-2",
+      "summary": "sendApplicationRumor does not return the kind-445 relay event id. The publish-task trace event needs to bridge rumorId → kind-445 eventId, but marmot-ts wraps the publish internally.",
+      "where": "task-store.tsx:dispatch (~138) calls group.sendApplicationRumor(rumor) — no return value carrying kind-445 id.",
+      "options": [
+        "(a) Patch marmot-ts to return the kind-445 event id from sendApplicationRumor (out of epic scope per AC-X-NO-MARMOT-CHANGE-1).",
+        "(b) Sender's own subscription replay: when device-sync.ts sees a kind-445 in sub-event whose decryption yields a rumor we just sent, emit publish-task at THAT moment. Means publish-task lags by one round-trip but the bridge is reliable.",
+        "(c) Store rumorId in a sender-side WeakSet/Map at dispatch time; correlate inside ingestGroupEventsRaw when a matching rumor decrypts on the sender's own page.",
+        "(d) Compute the kind-445 event id deterministically from the wrapper inputs at dispatch time (requires inspecting marmot-ts internals)."
+      ],
+      "recommendation": "Option (c) is cleanest. Track Map<rumorId, {taskEventId, dispatchedAt}> in device-sync.ts; when ingest yields a processed result whose rumor.id matches, emit publish-task with both ids. The architect should confirm this approach early in S2.",
+      "blocks": ["S2 (AC-HOOK-9 publish-task)", "S3 (AC-DIAG-3a → cross-context lookup)"]
+    },
+    {
+      "id": "GAP-3",
+      "summary": "Spec and ACs reference CI extensively (AC-X-CI-1, AC-DOC-3, AC-DOC-4) but no CI infrastructure exists in this repo.",
+      "where": "playwright.config.ts retries gates on process.env.CI today; AC-X-CI-1 says '10 consecutive CI runs'; AC-DOC-4 says '50 consecutive CI runs'.",
+      "options": [
+        "(a) Recast all 'CI runs' as 'local make e2e runs'. Acceptance becomes time-on-machine, not pipeline.",
+        "(b) Stand up minimal GitHub Actions CI (out of epic scope; would need its own spec).",
+        "(c) Document the gap and accept that AC-X-CI-1 / AC-DOC-4 are satisfied by local runs in the report.md."
+      ],
+      "recommendation": "Option (c) for this epic; architect updates AC language to 'local consecutive runs' and the report.md captures the actual run count. Filing a separate spec for CI is out of scope.",
+      "blocks": ["S4 reporting wording", "S8 retry config wording", "AC-X-CI-1 closeout"]
+    },
+    {
+      "id": "GAP-4",
+      "summary": "multi-user-diag.spec.ts is gated by DIAG=1 (env var skip), not test.fixme as the spec wrote.",
+      "where": "e2e/tests/multi-user-diag.spec.ts:35 — process.env.DIAG === '1' check inside test body.",
+      "options": [
+        "(a) S3's harness builds on the existing DIAG=1 gate — adds NEXT_PUBLIC_E2E_TRACE_MLS=1 as a second gate (so trace dumps only happen when both are set).",
+        "(b) Replace the DIAG gate with NEXT_PUBLIC_E2E_TRACE_MLS as the only gate.",
+        "(c) Keep DIAG gate as 'should this test run at all' and use NEXT_PUBLIC_E2E_TRACE_MLS as 'should it dump traces.'"
+      ],
+      "recommendation": "Option (c) preserves existing behavior — the diagnostic test is opt-in (DIAG=1) and additionally can dump traces if NEXT_PUBLIC_E2E_TRACE_MLS=1. AC-DIAG-1 wording 'no longer fixme-marked' should be reworded to 'kept under DIAG=1 gate; runs with full trace capture when both DIAG=1 and NEXT_PUBLIC_E2E_TRACE_MLS=1'.",
+      "blocks": ["S3 (AC-DIAG-1, AC-DIAG-4)"]
+    },
+    {
+      "id": "GAP-5",
+      "summary": "S5's Solution A uses since-bridge in production code; ndk-subscriber.ts already auto-injects since for tests but with a 'skip when filter.ids present' guard (sub-second clock skew on macOS). Production filter has #h, no ids — guard doesn't fire.",
+      "where": "device-sync.ts:syncGroup will become first src/ caller of since in production. ndk-subscriber.ts:65-77 documents the macOS sub-second concern.",
+      "recommendation": "60s overlap (Design Decision 3 in spec.md) covers macOS sub-second concern by 60000x margin. No action needed; flagging for the architect's awareness."
+    }
+  ],
+
+  "implementer_quick_reference": {
+    "build_one_liner": "make node_modules && make build",
+    "test_one_liner": "make test",
+    "e2e_one_liner": "make e2e-up && npx playwright test",
+    "e2e_with_trace": "make e2e-up && NEXT_PUBLIC_E2E_TRACE_MLS=1 DIAG=1 npx playwright test e2e/tests/multi-user-diag.spec.ts",
+    "type_check": "npx tsc --noEmit (no Make target — verifier should add this to gate)",
+    "files_to_create": [
+      "src/marmot/mls-trace.ts (S1)",
+      "src/marmot/ingest-queue.test.ts (S6 — file already exists, EXTEND with new cases per AC-B-6)",
+      "e2e/tests/mls-live-delivery.spec.ts (S7)",
+      "e2e/fixtures/mls-trace-classify.ts (S3)",
+      "specs/epic-mls-live-delivery-race/report.md (S4)"
+    ],
+    "files_to_modify": [
+      "src/marmot/device-sync.ts (S2, S5, S6)",
+      "src/marmot/network.ts (S2)",
+      "src/store/task-store.tsx (S2)",
+      "src/marmot/client.tsx (S2 — install __notestrTestMlsTrace hook)",
+      "src/types/notestr-test-hooks.d.ts (S2 — add hook signatures)",
+      "e2e/tests/multi-user-diag.spec.ts (S3 — extend, do not un-fixme)",
+      "e2e/global-setup.ts (S2 — explicit NEXT_PUBLIC_E2E_TRACE_MLS pass-through)",
+      "playwright.config.ts (S8)",
+      "docs/task-protocol.md (S8)"
+    ]
+  }
+}

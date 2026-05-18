@@ -1,0 +1,12 @@
+{
+  "story_id": "S7",
+  "captured_at": "2026-05-18T00:00:00Z",
+  "test_counts": {
+    "unit": 105,
+    "e2e": "not measured at baseline — e2e suite requires relay infrastructure"
+  },
+  "passing_tests": 105,
+  "failing_tests": 0,
+  "baseline_commit": "7b31ba163bf86961accb57d2f8949a12ebbef660",
+  "notes": "Unit test baseline captured via `make test`. E2E baseline not captured — the full suite requires a live relay and bunker process (`make e2e-up`). The S7 test file did not exist at baseline."
+}

@@ -1,0 +1,21 @@
+{
+  "story_id": "S3",
+  "captured_at": "2026-05-01T12:25:00Z",
+  "commands": {
+    "make_test": {
+      "exit_code": 0,
+      "passed": 90,
+      "failed": 0,
+      "skipped": 0,
+      "test_files": 12,
+      "notes": "vitest run + verify-static-export.mjs both green. 90 tests includes the 6 publish-task bridge cases shipped in S2 round-3."
+    },
+    "tsc": {
+      "exit_code": 0,
+      "errors": 0,
+      "notes": "Clean tsc. No new errors carried over from S2."
+    }
+  },
+  "scope": "S3 modifies e2e/tests/multi-user-diag.spec.ts (DIAG-gated; not part of `make e2e`'s default run) and creates e2e/fixtures/mls-trace-classify.ts + e2e/fixtures/mls-trace-classify.test.ts. The classifier is a pure module unit-tested via vitest; the harness extension only runs under both DIAG=1 AND NEXT_PUBLIC_E2E_TRACE_MLS=1. Production behaviour is invariant.",
+  "e2e_baseline_skipped_rationale": "S3 is the diagnostic story for the failing-cluster tests. Per the spec the failing cluster (multi-user.spec.ts:145/155/198, three-party.spec.ts:79/101/135) is the THING S3 is meant to classify. Running `make e2e` for baseline would (a) take ~12 min to capture a state we already know (these tests fail intermittently), (b) not detect any new regression S3 might introduce because S3 only adds a DIAG-gated harness and a pure module — no production-path changes. Architect verifies post-S3 that the classifier's unit tests pass and the harness compiles via tsc."
+}

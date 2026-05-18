@@ -1,0 +1,66 @@
+{
+  "epic_name": "mls-live-delivery-race",
+  "status": "done",
+  "phase": "COMPLETE",
+  "created_at": "2026-05-01T00:00:00Z",
+  "updated_at": "2026-05-18T14:00:00Z",
+  "completed_stories": [
+    "S1",
+    "S2",
+    "S3",
+    "S4",
+    "S5",
+    "S6",
+    "S7",
+    "S8",
+    "S9"
+  ],
+  "escalated_stories": [],
+  "phase_history": [
+    {
+      "phase": "SPEC_VALIDATED",
+      "timestamp": "2026-05-01T00:00:00Z",
+      "trigger": "validation_passed_via_two_review_rounds"
+    },
+    {
+      "phase": "IMPLEMENTATION",
+      "timestamp": "2026-05-01T07:54:00Z",
+      "trigger": "planner_complete_team_active_S1_done"
+    },
+    {
+      "phase": "RECONCILE",
+      "timestamp": "2026-05-18T12:48:00Z",
+      "trigger": "resume_after_pause_5_ACs_rewritten_per_GAP1_GAP4"
+    },
+    {
+      "phase": "IMPLEMENTATION",
+      "timestamp": "2026-05-18T12:50:00Z",
+      "trigger": "resuming_S3_verification_examiners_dispatched"
+    },
+    {
+      "phase": "IMPLEMENTATION",
+      "timestamp": "2026-05-18T12:58:00Z",
+      "trigger": "S3_accepted_with_caveats_3_PARTIALs_user_will_re-decide_at_S4"
+    },
+    {
+      "phase": "DECISION_GATE",
+      "timestamp": "2026-05-18T13:18:00Z",
+      "trigger": "S4_complete_report_md_written_but_S5_S6_fork_open"
+    },
+    {
+      "phase": "COMPLETE",
+      "timestamp": "2026-05-18T14:00:00Z",
+      "trigger": "all_9_stories_done_accepted_with_caveats"
+    }
+  ],
+  "notes": [
+    "Spec validated through two review rounds (item lists in spec.md and acceptance-criteria.md).",
+    "S4 is a decision gate per AC-REPORT-2a: epic terminates if F3 dominates (>=50% across 3 runs).",
+    "Story breakdown S1-S9 is pre-defined in spec.md - planner should respect rather than re-derive.",
+    "S1+S2 are pure infra and mergeable independently; S3+S4 are the diagnostic gate.",
+    "Lead must surface S4's report.md to user before architect proceeds to S5+.",
+    "2026-05-18 RESUME: RECONCILE adjudication rewrote AC-HOOK-9, AC-DIAG-1, AC-DIAG-2, AC-DIAG-3a, AC-DIAG-4 to match implemented mechanism (GAP-1 rumor.id correlator, GAP-4 two-flag gate, representative scenario rationale). Reconciliation.json and spec.md ## Amendments record the post-adjudication state. architecture.md authored from exploration.json.",
+    "2026-05-18 RESUME: S3 artifacts exist (baseline.json, verification.json, result.json) but architecture.json missing; S1/S2 also missing architecture.json - user chose force-continue. S3 result.json has status=in_progress, verification_rounds=0 - resume point is examiner spawn against existing impl.",
+    "2026-05-18 RESUME: working tree is dirty (14 modified/new files from S3 work) - user chose to continue on dirty tree. pre_existing_dirty_files baseline ([]) reflects epic-start state, not resume state."
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-05-18T00:00:00Z",
+  "test_files": 13,
+  "tests_passing": 102,
+  "tests_failing": 0,
+  "tsc_exit_code": 0,
+  "command": "npx vitest run"
+}

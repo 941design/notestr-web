@@ -1,0 +1,73 @@
+{
+  "story_id": "S9",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S9-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-CLEAN-1",
+      "question": "AC-CLEAN-1 requires that `console.debug` calls whose information is already captured by the structured trace (S2) are removed. The eight categories to supersede are: `[mls-receive:ingest-result]`, `[mls-receive:retry-on-epoch]`, `[mls-receive:retry-failed]`, `[mls-receive:live-in]`, `[mls-receive:sync-start]`, `[mls-receive:app-msg-emit]`, `[mls-receive:state-changed]`, and `[mls-receive:task-store-in]`. For each category: (a) confirm the corresponding structured trace event from S2 exists and carries the same information, and (b) show the diff lines where the `console.debug` call was removed. No category should be left with BOTH a trace event AND a `console.debug` emitting the same data.",
+      "severity": 8
+    },
+    {
+      "question_id": "VQ-S9-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-CLEAN-2",
+      "question": "AC-CLEAN-2 requires that `console.debug` calls carrying information NOT in the trace are retained. Identify every `console.debug` in `src/marmot/device-sync.ts` and `src/store/task-store.tsx` that remains after S9, and for each: state explicitly what information it carries that is absent from the structured trace. Examples from the spec: catch-block error messages with stack traces or raw error objects that the trace only records as `reason` strings. Show that none of the retained `console.debug` calls are pure duplicates of a trace event.",
+      "severity": 8
+    },
+    {
+      "question_id": "VQ-S9-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-CLEAN-3",
+      "question": "AC-CLEAN-3 requires that no production logging is ADDED beyond what existed pre-epic. S9 is a removal-only story. Show that the diff for `src/marmot/device-sync.ts` and `src/store/task-store.tsx` contains only deletions of `console.debug` lines — no new `console.log`, `console.warn`, `console.error`, or `console.debug` calls were introduced. Confirm the trace recorder itself is still gated on `NEXT_PUBLIC_E2E_TRACE_MLS=1` (unchanged from S2).",
+      "severity": 9
+    },
+    {
+      "question_id": "VQ-S9-004",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "S9's scope covers `src/marmot/device-sync.ts` and `src/store/task-store.tsx` only (per stories.json). Confirm no other file was modified. In particular: `src/marmot/mls-trace.ts` (the trace recorder) must be untouched, and `src/marmot/network.ts` must be untouched — network-side logging (if any) is out of S9's scope.",
+      "severity": 7
+    },
+    {
+      "question_id": "VQ-S9-005",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `marmot.device-sync` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? S9 only removes debug logging — does the removal reveal any hidden coupling? Specifically: are any of the removed `console.debug` calls referenced or expected by test assertions in existing test files? If so, removing them would be a scope violation (tests would fail).",
+      "severity": 7
+    },
+    {
+      "question_id": "VQ-S9-006",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does `npx tsc --noEmit` pass after S9? `console.debug` removal is syntactically safe, but confirm no type errors arise from removing calls that might have been part of expressions (e.g. `console.debug(result = ...)` side-effect patterns). In practice this would be unusual, but confirm.",
+      "severity": 6
+    },
+    {
+      "question_id": "VQ-S9-007",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does `make test` pass after S9? Confirm no existing unit tests assert on `console.debug` call counts or output content in `device-sync.ts` or `task-store.tsx`. The removal of `console.debug` calls must not break any spy/mock assertion in the test suite.",
+      "severity": 8
+    },
+    {
+      "question_id": "VQ-S9-008",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "S9 is a cleanup-only story (optional). The primary validation is that the removed `console.debug` calls are not needed for any diagnostic or debugging workflow that isn't already covered by the structured trace. Confirm: after S9, is it still possible to diagnose all four F-classes (F1/F2/F3a-d) using only the structured trace events from S2? If any F-class verdict required a `console.debug` line that was removed, the removal would be premature.",
+      "severity": 8
+    },
+    {
+      "question_id": "VQ-S9-009",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "Post-implementation check: run the S3 harness once under NEXT_PUBLIC_E2E_TRACE_MLS=1 after S9 lands. Confirm (a) the classifier still produces correct verdicts (no regression from the logging removal), and (b) the browser console output is visibly quieter (fewer `[mls-receive:...]` lines) — confirming the cleanup took effect.",
+      "severity": 6
+    }
+  ]
+}

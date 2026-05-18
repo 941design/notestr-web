@@ -2,6 +2,7 @@ import type { Rumor } from "applesauce-common/helpers/gift-wrap";
 import type { NostrEvent } from "applesauce-core/helpers/event";
 
 import type { Task, TaskEvent } from "@/store/task-events";
+import type { TraceEvent } from "@/marmot/mls-trace";
 
 declare global {
   interface Window {
@@ -50,6 +51,36 @@ declare global {
     __notestrTestForgetLeaf?: (groupId: string, leafIndex: number) => Promise<void>;
     /** Test-only: list MLS leaf indexes belonging to the given pubkey in the loaded group. */
     __notestrTestPubkeyLeafIndexes?: (groupId: string, pubkeyHex: string) => number[];
+    /**
+     * Test-only: dump the MLS receive-pipeline trace buffer.
+     *
+     * Installed by `MarmotProvider` only when both `isTestRuntime()` and
+     * `process.env.NEXT_PUBLIC_E2E_TRACE_MLS === "1"` are true at build
+     * time. Returns a defensive snapshot (per `MlsTrace.dump`'s contract:
+     * each entry is JSON-cloned, so consumer mutation cannot corrupt the
+     * recorder's internal buffer). Used by S3's diagnostic harness to
+     * classify F1/F2/F3 failures from the failing-cluster e2e tests.
+     */
+    __notestrTestMlsTrace?: () => readonly TraceEvent[];
+    /**
+     * Test-only: inject a synthetic sibling KeyPackage event into the
+     * auto-invite scan as if it had been discovered on the relay.
+     *
+     * Installed by `MarmotProvider` when `isTestRuntime()` is true.
+     * Calls `group.inviteByKeyPackageEvent(siblingKpEvent)` on every
+     * loaded group where the current user is admin and the key package
+     * is not already a leaf — the same path the live auto-invite scan
+     * takes. Used by S7's F2 regression test to force the commit+
+     * app-message race condition (welcome commit at epoch N+1 racing
+     * A's task application message on B's subscription).
+     *
+     * The injected event does NOT need to be signed or decrypt-able —
+     * the hook exercises the auto-invite commit pathway, not MLS
+     * decryption. `siblingKpEvent.pubkey` must match the current user's
+     * pubkey so the invite flows to A's own groups (same as a real
+     * sibling device scenario). Deleted on MarmotProvider unmount.
+     */
+    __notestrTestArmAutoInvite?: (siblingKpEvent: NostrEvent) => Promise<void>;
   }
 }
 

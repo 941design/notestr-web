@@ -1,0 +1,31 @@
+{
+  "story_id": "S4",
+  "status": "done",
+  "final_outcome": "accepted_with_caveats",
+  "started_at": "2026-05-18T13:09:00Z",
+  "completed_at": "2026-05-18T13:18:00Z",
+  "implemented_files_created": ["specs/epic-mls-live-delivery-race/report.md"],
+  "implemented_files_modified": [],
+  "test_count_delta": {"unit": "0", "e2e": "0"},
+  "verification_rounds": 0,
+  "ac_coverage": {
+    "AC-REPORT-1": "report.md exists. Enumerates the ONE scenario actually run (multi-user live-delivery, the canonical F-class trigger). Per the AC-DIAG-2 rewrite, the harness covers a representative scenario, not the 6-test cluster. The report makes this scope explicit.",
+    "AC-REPORT-2": "Report explicitly identifies the empirical verdict: no failures, no F-class dominance computable. Three resolution paths listed.",
+    "AC-REPORT-2a": "F3 termination clause vacuously inapplicable (no F3 failures because no failures).",
+    "AC-REPORT-3": "Vacuously satisfied (no `unknown` failures because no failures)."
+  },
+  "caveats": [
+    "Harness ran ONE iteration before exiting cleanly (test passed on first try). No trace artifacts produced, no F-class verdicts captured.",
+    "S5/S6 decision gate that AC-REPORT-2 was supposed to feed is OPEN — empirical evidence cannot distinguish F1 vs F2 dominance from this run.",
+    "Pre-run friction: Playwright browser revision mismatch (1208 expected, 1223 installed) required a 106 MB binary fetch before the harness could run. Surfaced in report.md's 'Pre-run friction' section.",
+    "The harness's 1-of-6 scenario coverage (a known AC-DIAG-2 RECONCILE trade-off) is more visible here than in the AC adjudication: even on a failing run, a 1-scenario sample would not provide reliable dominance evidence. Codex's S3 review flagged this; the empirical run confirms the limitation."
+  ],
+  "retrospective": {
+    "skipped": false,
+    "notes": [
+      "S4 was supposed to be the decision gate for the S5/S6 fork. Empirical execution revealed that the gate cannot fire on the dev host — the failing-cluster race needs CI-like contention OR a deterministic trigger (planned in S7 via __notestrTestArmAutoInvite). The chicken-and-egg ordering between S6 and S7 surfaces here for the first time.",
+      "The diagnostic harness is correctly engineered (S3 verified). The empirical limitation is not a defect in S3 but a consequence of (a) absent CI infrastructure (GAP-3), (b) the no-modify-cluster-tests constraint forcing a representative-scenario reduction, (c) the race only manifesting under contention.",
+      "Pre-run friction with Playwright browser revisions (1208 vs 1223) is a META concern worth raising to the user — the project's cross-platform stamping in the Makefile covers node_modules but not /opt/playwright-browsers."
+    ]
+  }
+}

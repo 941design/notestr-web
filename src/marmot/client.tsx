@@ -16,6 +16,7 @@ import {
   deserializeApplicationData,
   getNostrGroupIdHex,
   getPubkeyLeafNodeIndexes,
+  isAdmin,
 } from "@internet-privacy/marmot-ts";
 import type {
   BaseGroupHistory,
@@ -27,7 +28,8 @@ import type { EventSigner } from "applesauce-core";
 
 import { createKVStore, createInviteKVStore, getOrCreateClientId } from "./storage";
 import { NdkNetworkAdapter } from "./network";
-import { useDeviceSync } from "./device-sync";
+import { useDeviceSync, groupHasKeyPackageLeaf } from "./device-sync";
+import { mlsTrace } from "./mls-trace";
 import { computeDetachedGroupIds } from "./detached-groups";
 import { removeLeafByIndex } from "./per-leaf-remove";
 
@@ -218,12 +220,6 @@ export function MarmotProvider({
           const prev = previousEpoch.get(group.idStr) ?? 0n;
           const next = group.state.groupContext.epoch;
           previousEpoch.set(group.idStr, next);
-          console.debug("[mls-receive:state-changed]", {
-            groupId: group.idStr.slice(0, 8),
-            prevEpoch: prev.toString(),
-            newEpoch: next.toString(),
-            reason: next === prev ? "ratchet" : "epoch",
-          });
           if (mountedRef.current) {
             setState((prev) => ({ ...prev, groups: [...prev.groups] }));
           }
@@ -533,10 +529,58 @@ export function MarmotProvider({
       };
     };
 
+    // AC-HOOK-6 / AC-HOOK-7: install the trace-dump test hook only when
+    // BOTH conditions hold:
+    //   1. isTestRuntime() (NEXT_PUBLIC_E2E=1 or NODE_ENV=test) — keeps
+    //      the hook off in production builds even if a user's local
+    //      environment happened to set the trace flag.
+    //   2. process.env.NEXT_PUBLIC_E2E_TRACE_MLS === "1" at build time.
+    //      Next inlines NEXT_PUBLIC_* env vars at build time, so when
+    //      the flag is unset webpack DCE removes this branch entirely
+    //      (the install-block, the cleanup-block, and the captured
+    //      `mlsTrace` reference at the call site).
+    if (process.env.NEXT_PUBLIC_E2E_TRACE_MLS === "1") {
+      window.__notestrTestMlsTrace = () => mlsTrace.dump();
+    }
+
+    // AC-REG-2: inject a synthetic sibling KeyPackage event into the
+    // auto-invite scan. Mirrors the core of `inviteToAllGroups` in
+    // device-sync.ts (which is closure-private to `useDeviceSync`) —
+    // iterates loaded groups, skips non-admin / already-has-leaf groups,
+    // and calls `group.inviteByKeyPackageEvent`. Used by S7's F2
+    // regression test to force the commit+app-message race on B's side.
+    //
+    // The injected event's `pubkey` field (Nostr event author) is used
+    // for admin-check filtering; the KP content must be a valid MLS
+    // KeyPackage (marmot-ts validates it inside `inviteByKeyPackageEvent`).
+    // The pubkey guard ensures the hook only invites same-identity siblings
+    // (mirrors the device-sync auto-invite pubkey check). The hook is
+    // gated by `isTestRuntime()` so it is unreachable in production.
+    window.__notestrTestArmAutoInvite = async (siblingKpEvent) => {
+      if (!state.client) return;
+      // Only proceed if the synthetic event is authored by the current
+      // user — mirrors the pubkey guard in device-sync's auto-invite scan.
+      if (siblingKpEvent.pubkey !== pubkey) return;
+      for (const group of state.client.groups.loaded) {
+        const gd = group.groupData;
+        if (!gd || !isAdmin(gd, pubkey)) continue;
+        if (groupHasKeyPackageLeaf(group.state, siblingKpEvent)) continue;
+        try {
+          await group.inviteByKeyPackageEvent(siblingKpEvent);
+        } catch (err) {
+          console.debug("[test-hook] __notestrTestArmAutoInvite invite failed:", err);
+        }
+      }
+    };
+
     return () => {
       delete window.__notestrTestGroups;
       delete window.__notestrTestPubkey;
       delete window.__notestrTestNetworkRequest;
+      if (process.env.NEXT_PUBLIC_E2E_TRACE_MLS === "1") {
+        delete window.__notestrTestMlsTrace;
+      }
+      delete window.__notestrTestArmAutoInvite;
       delete window.__notestrTestInspectGroupEvent;
       delete window.__notestrTestSentRumors;
       delete window.__notestrTestResetSentRumors;

@@ -1,0 +1,21 @@
+{
+  "module_name": "S8-doc-and-retry-config",
+  "purpose": "Documentation-and-config story: add the MLS receive pipeline section to docs/task-protocol.md, update playwright.config.ts retries to be gated on the trace flag instead of CI, and file a follow-up tracker for dropping retries to 0 unconditionally. No src/ changes.",
+  "public_api": [],
+  "private_files": [
+    "docs/task-protocol.md",
+    "playwright.config.ts",
+    "specs/epic-mls-live-delivery-race/report.md",
+    "BACKLOG.json"
+  ],
+  "owned_data": [],
+  "dependencies_allowed": [],
+  "dependencies_forbidden": ["src/**"],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "npx tsc --noEmit (playwright.config.ts type-check)",
+    "npx vitest run (regression guard — S8 does not add new unit tests)"
+  ]
+}

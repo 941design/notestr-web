@@ -1,0 +1,158 @@
+{
+  "story_id": "S5",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S5-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-A-1",
+      "question": "AC-A-1 requires that `device-sync.ts:syncGroup` lines 511-550 are replaced with the subscribe-first body from spec.md § Solution A. Does the implementation open the persistent NDK subscription BEFORE the historical `request()` call — i.e. does `groupSubs.set` / `subs.push` now precede the `request(...)` invocation? Provide the diff showing the reordering, plus evidence that lines 511-513 (relaysForGroup / hTag / filter) are retained unchanged.",
+      "severity": 10
+    },
+    {
+      "question_id": "VQ-S5-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-A-1a",
+      "question": "AC-A-1a requires buffer/cutover semantics: events delivered by the persistent subscription while the historical fetch is in flight are routed into a closure-scoped `liveBuffer: NostrEvent[]`, NOT into `ingestGroupEvents`. After the historical `ingestGroupEvents` call resolves, the buffer is drained in `created_at` order via a single `ingestGroupEvents` call, then `cutoverComplete` flips so subsequent live events bypass the buffer. Show the production code for: (a) the condition that routes into `liveBuffer` vs `ingestGroupEvents` based on `cutoverComplete`, (b) the sort + drain call, (c) the flag flip, and (d) a test or trace inspection confirming historical events are always ingested before buffered live events.",
+      "severity": 10
+    },
+    {
+      "question_id": "VQ-S5-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-A-1b",
+      "question": "AC-A-1b requires that the cutover state-machine (`liveBuffer`, `cutoverComplete`) is closure-scoped to each `syncGroup` call — not module-scoped. A concurrent `syncGroup` for a different group MUST have its own independent buffer and flag. Show (a) the closure-scoped declarations (no `let` at module level or any outer scope reused across calls), and (b) that no module-level variable holds either of these. If there is any ambiguity in the diff, state explicitly which scope the two variables live in.",
+      "severity": 9
+    },
+    {
+      "question_id": "VQ-S5-004",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-A-2",
+      "question": "AC-A-2 requires the persistent subscription's filter to include `since: t0 - 60` where `t0 = Math.floor(Date.now() / 1000)` at sync start, and the historical request uses no `since`/`until`. Show (a) the line that computes `t0`, (b) the subscription filter construction with the since value, (c) the historical request filter (confirm absence of since/until), and (d) the constant definition `OVERLAP_SECONDS = 60` referenced by (b).",
+      "severity": 9
+    },
+    {
+      "question_id": "VQ-S5-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-A-3",
+      "question": "AC-A-3 requires that `OVERLAP_SECONDS` is a named constant in code (not a magic number), is NOT runtime-configurable, and carries a comment referencing Design Decision 3 in spec.md. Show the constant declaration line(s) and confirm no call site replaces the constant with a computed value.",
+      "severity": 7
+    },
+    {
+      "question_id": "VQ-S5-006",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-A-4",
+      "question": "AC-A-4 requires that the existing `syncedEventIds` dedupe in `ingestGroupEventsRaw` is unchanged and prevents double-processing of events that arrive both via the 60-second subscription overlap and via the historical request. Confirm (a) `syncedEventIds` dedupe logic in `ingestGroupEventsRaw` is unmodified from pre-S5 state, and (b) provide a trace inspection (or unit test) showing that for an event id present in both the subscription replay and the historical response, only one `ingest-result` with `result: \"processed\"` appears in the trace.",
+      "severity": 9
+    },
+    {
+      "question_id": "VQ-S5-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-A-5",
+      "question": "AC-A-5 requires zero F1-classified failures across 30 re-runs of the S3 harness (10 × 3 trials) after S5 merges. Show the harness output recorded in report.md: for each of the 30 runs, confirm the F1 count is 0. If any run was not completed or was skipped, explain why and confirm the reported zero-F1 result is still valid.",
+      "severity": 10
+    },
+    {
+      "question_id": "VQ-S5-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-A-6",
+      "question": "AC-A-6 requires that the pre-existing `ingestLock` (device-sync.ts:413-430) still serialises ingest calls after the subscribe-first restructure. Concurrent live-subscription deliveries MUST NOT race against the historical fetch. Show (a) that the lock is preserved in the new `syncGroup` body, (b) that the buffer drain calls go through `ingestGroupEvents` (the lock-protected path), and (c) that no \"desired gen in the past\" errors appear in the trace across the 30-run re-runs.",
+      "severity": 9
+    },
+    {
+      "question_id": "VQ-S5-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-A-7",
+      "question": "AC-A-7 requires `multi-user.spec.ts:145` (\"User B sees the task via live MLS subscription\") to pass ten consecutive times locally without retries. Show the run log or test output for 10 consecutive local `make e2e` invocations (or narrowed to that single test with `--grep`). Confirm no retry was triggered on any of the 10 runs.",
+      "severity": 10
+    },
+    {
+      "question_id": "VQ-S5-010",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-VAL-2",
+      "question": "AC-VAL-2 is an advisory check: simulate a relay-socket delay (e.g. `tc qdisc add dev lo root netem delay 100ms`), run the failing cluster three times pre-S5 and three times post-S5, and confirm F1 failures appear pre-S5 but not post-S5. Per stories.json this is optional — skip if S3 traces from real runs already provide sufficient evidence. Document the disposition in report.md: either (a) the netem experiment was performed with results, or (b) skipped because S3 traces provide sufficient evidence.",
+      "severity": 4
+    },
+    {
+      "question_id": "VQ-S5-011",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "S5's scope is strictly limited to `src/marmot/device-sync.ts` (per stories.json `files_to_modify`). Confirm that no other file outside this list was modified — specifically: no changes to `src/marmot/network.ts`, `src/marmot/ingest-queue.ts`, `src/store/task-store.tsx`, `src/marmot/client.tsx`, `src/marmot/mls-trace.ts`, or any e2e file. The diff of S5 should be bounded to `device-sync.ts` alone.",
+      "severity": 9
+    },
+    {
+      "question_id": "VQ-S5-012",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `marmot.device-sync` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list (`marmot.client`, `marmot.network`, `marmot.ingest-queue`, `marmot.mls-trace`, `task-store`)? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md? In particular: does S5's `liveBuffer` + `cutoverComplete` introduce any state or type that leaks out of `device-sync.ts` into modules not on that list?",
+      "severity": 7
+    },
+    {
+      "question_id": "VQ-S5-013",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "GAP-5 note: S5 is the first src/ caller of NDK's `since` filter parameter in production. The subscription filter will pass `since: t0 - OVERLAP_SECONDS` to NDK. Confirm that NDK's `NdkSubscription` constructor (or equivalent) accepts the `since` field in the filter object without patching, vendoring, or version-bumping NDK (per AC-X-NO-NDK-CHANGE-1). Show the NDK subscription call-site with the filter and confirm the `since` value lands in the NDK-outgoing REQ message.",
+      "severity": 8
+    },
+    {
+      "question_id": "VQ-S5-014",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the S5 implementation introduce any stub markers (`TODO`, `FIXME`, `HACK`), dead code (unreachable branches after the reorder), or unused variables? In particular: (a) is the old `subscribe-after-request` code path fully removed (no commented-out block left), and (b) are `liveBuffer` and `cutoverComplete` the only new variables, with no leftover debug temporaries?",
+      "severity": 7
+    },
+    {
+      "question_id": "VQ-S5-015",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does `npx tsc --noEmit` (the sole static gate per stories.json conventions) pass after S5? The `liveBuffer: NostrEvent[]` type and the `since` filter field must be typed correctly. Confirm there are no implicit `any` introductions and no TypeScript suppression comments (`@ts-ignore`, `@ts-expect-error`) added in the changed lines.",
+      "severity": 8
+    },
+    {
+      "question_id": "VQ-S5-016",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "S5 does not add new unit tests (stories.json `files_to_create` is empty, no `*.test.ts` in `files_to_modify`). The validation path is: (a) `multi-user.spec.ts:145` passes 10× consecutively (AC-A-7), (b) S3 harness shows zero F1 across 30 re-runs (AC-A-5). Given no unit tests cover the new cutover state-machine, how is AC-A-1a/1b verified — solely by the e2e observation or is there a unit-level assertion that `liveBuffer` is flushed in the correct order? Document the verification evidence explicitly.",
+      "severity": 7
+    },
+    {
+      "question_id": "VQ-S5-017",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does `make test` (vitest unit suite) still pass after S5's changes to `device-sync.ts`? The existing `device-sync.test.ts` tests (if any) must not be broken by the subscribe-first reorder. Run the test suite and confirm the test count does not decrease and there are no new test failures.",
+      "severity": 8
+    },
+    {
+      "question_id": "VQ-S5-018",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "Post-implementation trace inspection: in a run of `multi-user.spec.ts:145` under NEXT_PUBLIC_E2E_TRACE_MLS=1, show one example trace where the subscription's `sub-event` arrives BEFORE the historical `req-eose`, and confirm the event is held in `liveBuffer` (no `ingest-call` before the cutover), then drained after `req-eose` (one `ingest-call` covering the buffer drain). This trace proves the state-machine fires correctly in a real run.",
+      "severity": 8
+    },
+    {
+      "question_id": "VQ-S5-019",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "Confirm the merge coordination with S6: since both stories modify `device-sync.ts`, was there a merge conflict? Document the resolution strategy (which story landed first, or if they were squashed) so future reviewers understand the file's lineage.",
+      "severity": 5
+    },
+    {
+      "question_id": "VQ-S5-020",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "ac_id": "AC-A-1a",
+      "question": "The implementation flips `cutoverComplete = true` BEFORE awaiting the buffer-drain `ingestGroupEvents` call. This means a live event arriving during the drain goes directly to `ingestGroupEvents` rather than into the buffer. Is this the correct ordering? Verify: (a) the flip-then-drain ordering in `src/marmot/device-sync.ts` lines ~919-932, (b) that a concurrent live-subscription event arriving during the drain still goes through the lock-protected `ingestGroupEvents` path and does NOT overwrite or race with the drain's lock chain, and (c) that `liveBuffer.splice(0)` is called before the flip so the buffer snapshot is complete.",
+      "severity": 8
+    }
+  ]
+}

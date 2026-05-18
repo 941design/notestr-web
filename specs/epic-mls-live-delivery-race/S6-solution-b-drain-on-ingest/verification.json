@@ -1,0 +1,156 @@
+{
+  "story_id": "S6",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S6-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-B-1",
+      "question": "AC-B-1 requires that `ingestGroupEventsRaw` runs the parked queue drain when `processed.size > 0`, AFTER the `addSyncedGroupEventIds(...)` call. Show the exact insertion point in the diff: (a) the `processed.size > 0` condition, (b) the `addSyncedGroupEventIds(...)` call it follows, and (c) the drain call path (confirm it enters via the lock-protected `ingestGroupEvents` wrapper, not directly). Evidence: the drain is triggered by successful ingest activity, not on every call regardless of outcome.",
+      "severity": 10
+    },
+    {
+      "question_id": "VQ-S6-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-B-2",
+      "question": "AC-B-2 requires a module-scoped `retryAttempts: Map<string, Map<string, number>>` keyed `groupId → eventId → count`, and a module-level constant `MAX_RETRIES = 3`. Show (a) the declaration lines for both (confirm module scope, not function scope), and (b) that the type annotation is explicit (no inferred `any` or untyped Map construction).",
+      "severity": 9
+    },
+    {
+      "question_id": "VQ-S6-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-B-2a",
+      "question": "AC-B-2a requires that the `stateChanged` listener in `attachRetryOnEpochAdvance` clears the inner map for `groupId` on `newEpoch > prev` BEFORE the existing epoch-advance queue-drain runs. Show the sequence in the listener body: (1) `lastEpoch.set(...)`, (2) `retryAttempts.get(groupId)?.clear()`, (3) `queue.prune()`, (4) existing epoch-advance drain. If (2) and (3) appear in a different order than stated, flag it as a spec violation.",
+      "severity": 10
+    },
+    {
+      "question_id": "VQ-S6-004",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-B-3",
+      "question": "AC-B-3 requires that events whose per-epoch retry count has reached `MAX_RETRIES` are NOT re-attempted by the ingest-activity drain trigger within that epoch — they remain parked. Show the guard condition in the drain logic: `if (retryAttempts.get(groupId)?.get(eventId) ?? 0) >= MAX_RETRIES` (or equivalent) that skips exhausted events. Confirm that these events are still present in the queue (not evicted) so they become eligible again after the next epoch advance.",
+      "severity": 9
+    },
+    {
+      "question_id": "VQ-S6-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-B-4",
+      "question": "AC-B-4 requires a `queue-drain` trace event with `trigger: \"ingest-activity\"` for the new drain path, and `trigger: \"epoch-advance\"` for the existing epoch-advance path. Show (a) the `mlsTrace.record({kind: \"queue-drain\", trigger: \"ingest-activity\", ...})` call in the new drain block, and (b) confirm the existing epoch-advance drain record's `trigger` field value is `\"epoch-advance\"` (not changed by this story).",
+      "severity": 7
+    },
+    {
+      "question_id": "VQ-S6-006",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-B-5",
+      "question": "AC-B-5 requires that `refreshGroupSync` calls `retryAttempts.delete(groupId)` during group teardown, alongside `pendingRetry.delete`. Show the teardown loop change: (a) the `retryAttempts.delete(groupId)` call placed near `pendingRetry.delete`, and (b) that it is a single operation dropping the entire inner map (not iterating over entries). Confirm this prevents memory accumulation for groups that are unloaded and reloaded.",
+      "severity": 7
+    },
+    {
+      "question_id": "VQ-S6-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-B-6",
+      "question": "AC-B-6 requires three NEW test cases in `src/marmot/ingest-queue.test.ts` (or a new `device-sync.test.ts` if the architect deviated per the stories.json note): (1) drain-on-ingest does not infinite-loop within an epoch — simulate 3 consecutive ingest calls where the parked event stays unreadable, assert exactly 3 retry attempts and the 4th ingest does NOT retry; (2) epoch-reset — after 3-retry exhaustion, simulate an epoch-change to N+1, assert counter resets to 0 and the next ingest retries the event again; (3) per-group keying — two groups with the same eventId maintain independent counters, and `retryAttempts.delete(groupA)` does not affect groupB. Show that all three cases pass and confirm the test file choice (ingest-queue.test.ts or new device-sync.test.ts).",
+      "severity": 10
+    },
+    {
+      "question_id": "VQ-S6-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-B-7",
+      "question": "AC-B-7 requires zero F2-classified failures across 30 re-runs of the S3 harness after S6 merges. Show the harness output recorded in report.md. For each of the 30 runs confirm the F2 count is 0. If any run showed an F2 failure, explain the disposition.",
+      "severity": 10
+    },
+    {
+      "question_id": "VQ-S6-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-B-8",
+      "question": "AC-B-8 requires `three-party.spec.ts:79` to pass ten consecutive times locally without retries. Show the run log for 10 consecutive local `make e2e` runs (or narrowed to that single test). Confirm no retry was triggered on any of the 10 runs.",
+      "severity": 10
+    },
+    {
+      "question_id": "VQ-S6-010",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "S6's scope covers `src/marmot/device-sync.ts` and `src/marmot/ingest-queue.test.ts` only (per stories.json `files_to_modify`). Confirm no other file was modified. Per architecture.md boundary rules, `marmot.ingest-queue` is pure — it must NOT have been modified to add `retryAttempts` logic. The new `retryAttempts` map lives exclusively in `device-sync.ts`. Show that `ingest-queue.ts` is unchanged (only `ingest-queue.test.ts` is touched).",
+      "severity": 9
+    },
+    {
+      "question_id": "VQ-S6-011",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `marmot.device-sync` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md? Specifically: does S6's new `retryAttempts` map or `MAX_RETRIES` constant leak into `marmot.ingest-queue` or `task-store` in any way — e.g. via a shared type or exported symbol?",
+      "severity": 7
+    },
+    {
+      "question_id": "VQ-S6-012",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Adversarial-input concern (stories.json scope note): a malformed but signed kind-445 that is permanently undecryptable will park once, retry up to MAX_RETRIES per epoch, then sit until the 24h TTL prune. Show that the drain logic bails out fast on the still-unreadable branch — i.e. `ingestGroupEventsRaw` does not call any expensive decryption path more than once per event per drain trigger. Evidence: the existing `syncedEventIds` check or the marmot-ts `ingest` return-path short-circuits repeated work.",
+      "severity": 7
+    },
+    {
+      "question_id": "VQ-S6-013",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does `npx tsc --noEmit` pass after S6? The new `retryAttempts: Map<string, Map<string, number>>` must be fully typed. Confirm no `any` casts or `@ts-ignore` in the changed lines, and that the optional-chaining patterns (`retryAttempts.get(groupId)?.get(eventId)`, `retryAttempts.get(groupId)?.clear()`) have the correct return types inferred.",
+      "severity": 8
+    },
+    {
+      "question_id": "VQ-S6-014",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the S6 implementation introduce any dead code, stub markers (`TODO`/`FIXME`/`HACK`), or unused variables? In particular: (a) is the new drain block reachable only when `processed.size > 0` (no always-executed drain branch), (b) is `MAX_RETRIES` used exactly in the retry-budget guard and nowhere else, and (c) are there no leftover debug temporaries in the new code?",
+      "severity": 7
+    },
+    {
+      "question_id": "VQ-S6-015",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does `make test` pass after S6 with the three new test cases added to `ingest-queue.test.ts` (or `device-sync.test.ts`)? Show the test-count delta (expected: +3 new passing tests). Confirm no pre-existing tests were removed or modified to accommodate the new behaviour.",
+      "severity": 9
+    },
+    {
+      "question_id": "VQ-S6-016",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "The new unit tests for AC-B-6 must cover the drain path end-to-end: they need to exercise the real `retryAttempts` logic in `device-sync.ts`, not just `ingest-queue.ts` internals. If the tests were placed in `ingest-queue.test.ts`, describe how they exercise `retryAttempts` (which lives in `device-sync.ts`). If a small device-sync test harness was needed, show it. The key invariant: a test at the boundary between `ingestGroupEventsRaw` and `retryAttempts` is required; a pure queue-level test would not satisfy AC-B-6.",
+      "severity": 8
+    },
+    {
+      "question_id": "VQ-S6-017",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "Post-implementation trace inspection: in a run under NEXT_PUBLIC_E2E_TRACE_MLS=1 that classifies as F2 pre-S6, show the trace segment demonstrating the new drain path firing: `ingest-result` with `result: \"processed\"` for some event, followed by a `queue-drain` with `trigger: \"ingest-activity\"`, followed by the parked event's `ingest-result` with `result: \"processed\"`. This trace proves the drain-on-ingest chain works in a real run.",
+      "severity": 8
+    },
+    {
+      "question_id": "VQ-S6-018",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "Merge coordination with S5: both stories modify `device-sync.ts`. Document which story landed first, what conflicts arose (if any), and how the merged file preserves both the subscribe-first reorder (S5) and the drain-on-ingest addition (S6) without either regressing.",
+      "severity": 6
+    },
+    {
+      "question_id": "VQ-S6-019",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "The implementation extracts `selectAndIncrementRetries` and `MAX_RETRIES_PER_EPOCH` as exported module-level symbols rather than keeping all logic inside the effect closure. (a) Does exposing these symbols create any unintended coupling risk — e.g. callers outside device-sync.ts importing `MAX_RETRIES_PER_EPOCH` and hardcoding behavior against it? (b) Is the helper's `readonly { id: string }[]` parameter type sufficient to prevent callers from passing non-event objects that happen to have an `id` field?",
+      "severity": 5
+    },
+    {
+      "question_id": "VQ-S6-020",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "The `retryQueue` local variable inside `ingestGroupEventsRaw` was already declared at line ~631 (for the unreadable-event parking path). The drain block reuses this variable rather than re-declaring it. Confirm that the existing `retryQueue` binding in the for-loop body and the new drain block after `addSyncedGroupEventIds` refer to the same `getPendingRetryQueue(group.idStr)` value — i.e. no double-call to `getPendingRetryQueue` could return two different queue instances for the same groupId.",
+      "severity": 7
+    }
+  ]
+}
