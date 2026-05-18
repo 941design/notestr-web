@@ -18,12 +18,12 @@ async function getAccessibilitySnapshot(page: any) {
 
 async function getConsoleErrors(page: any) {
   const errors: any[] = [];
-  page.on('console', msg => {
+  page.on('console', (msg: { type: () => string; text: () => string }) => {
     if (msg.type() === 'error' || msg.type() === 'warning') {
       errors.push({ level: msg.type(), text: msg.text() });
     }
   });
-  page.on('pageerror', err => {
+  page.on('pageerror', (err: Error) => {
     errors.push({ level: 'error', text: err.toString() });
   });
   return errors;

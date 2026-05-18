@@ -21,3 +21,9 @@ This project is developed across Linux x86_64 and macOS ARM (darwin-arm64). Nati
 This project maintains a technical specification in ./docs/task-protocol.md describing the task management protocol over nostr MLS.
 
 - Whenever you work on task state, task datamodel or similar, check whether the protocol needs to be updated.
+
+## Project state
+Project orientation lives in `BACKLOG.md`. On a fresh session — or when
+resuming work after idle time — run `/base:orient` to get a 3-line
+"you are here" plus ranked next moves. Do not inline backlog content
+into this file.
