@@ -1,0 +1,38 @@
+{
+  "story_id": "S1",
+  "status": "done",
+  "final_outcome": "accepted_with_caveats",
+  "caveats": [
+    "AC-WIRE-3 satisfied; missing_contract PARTIAL on adapter constructor (VQ-S1-019) accepted by user — EventSignerNdkAdapter does not validate that the signer arg is truthy. In practice prevented by (1) TypeScript declaring `signer: EventSigner` (non-nullable), (2) `if (signer)` guard at the only call site in src/marmot/client.tsx:158, (3) MarmotProvider mount gate in app/page.tsx:424. If the adapter's call surface ever widens beyond MarmotProvider, add `if (!signer) throw new Error('EventSignerNdkAdapter: signer is required')` to the constructor."
+  ],
+  "completed_at": "2026-05-19T00:00:00Z",
+  "files_created": [
+    "src/marmot/event-signer-ndk-adapter.ts",
+    "src/marmot/event-signer-ndk-adapter.test.ts",
+    "specs/epic-nip42-relay-auth/S1-nip42-auth-adapter-and-wiring/architecture.json",
+    "specs/epic-nip42-relay-auth/S1-nip42-auth-adapter-and-wiring/baseline.json",
+    "specs/epic-nip42-relay-auth/S1-nip42-auth-adapter-and-wiring/result.json"
+  ],
+  "files_modified": [
+    "src/marmot/client.tsx"
+  ],
+  "tests_added": {
+    "unit": 7
+  },
+  "test_counts": {
+    "baseline": 137,
+    "final": 144
+  },
+  "mocks": [],
+  "remediation_rounds": 0,
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "One non-obvious friction point: the architecture.md examples and spec comments refer to NDKAuthPolicies.signIn() but the actual export from @nostr-dev-kit/ndk is NDKRelayAuthPolicies (with a NDKRelayAuthPolicies.signIn method). The spec's phantom name would have compiled only if there happened to be a re-export alias, which there is not. Discovering this required reading the export list in index.d.ts. A second friction was the TypeScript structural mismatch between NDK's NostrEvent.kind (number | undefined) and applesauce-core's EventTemplate.kind (number), requiring an explicit cast in the sign() method. Neither issue is a spec deficiency — they are just cross-library shape differences that only surface at compile time.",
+    "surprised_by": "The NDKSigner interface also requires a toPayload(): string method that does not appear in the architecture.md listing. TypeScript's implements check caught this at first compile. The adapter adds a minimal JSON serialization to satisfy it.",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  }
+}

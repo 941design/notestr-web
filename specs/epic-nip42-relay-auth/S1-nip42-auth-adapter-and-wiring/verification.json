@@ -1,0 +1,149 @@
+{
+  "story_id": "S1",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-19T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S1-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the adapter implementation contain no stub markers (TODO, FIXME, 'not implemented' strings outside the intentional encrypt/decrypt throws), no dead code, and no commented-out blocks? Confirm that the adapter file (whether inlined in client.tsx or extracted to event-signer-ndk-adapter.ts) is free of unused imports, unused local variables, and orphaned type aliases."
+    },
+    {
+      "question_id": "VQ-S1-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does the implementation respect the NDK import boundary declared in architecture.md §Boundary rules rule 2? Specifically: no file outside src/marmot/client.tsx, src/marmot/network.ts, and (if lifted) src/marmot/event-signer-ndk-adapter.ts gains a new import of @nostr-dev-kit/ndk. Check every import added by this story with `git diff --name-only` and verify no boundary violation is present."
+    },
+    {
+      "question_id": "VQ-S1-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could src/marmot/client.tsx be deleted and rewritten without modifying any file outside its dependencies_allowed list (src/marmot/event-signer-ndk-adapter.ts if lifted, src/config/relays.ts, applesauce-core, @nostr-dev-kit/ndk)? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md? Confirm that the AUTH wiring changes do not introduce any import of client.tsx internals from outside src/marmot/ — i.e. that client.tsx remains a leaf producer, not a source of re-exported NDK or adapter types consumed elsewhere."
+    },
+    {
+      "question_id": "VQ-S1-004",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does the overall implementation align with the spec's intent of transparently enabling AUTH on AUTH-gated relays without any user-visible change for open-relay sessions? Specifically: (a) is the adapter invisible to MarmotProvider's callers (no new prop, no new export from client.tsx that callers must handle)? (b) does the init callback's control flow remain structurally identical to its pre-AUTH shape, with the only additions being the adapter construction and the two property assignments before connect()?"
+    },
+    {
+      "question_id": "VQ-S1-005",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Are all signing-boundary inputs validated before delegation? Specifically: (a) does the adapter's sign() method pass the event template to EventSigner.signEvent() without mutation that could alter the signed content? (b) does the pubkey passed at adapter construction time match the pubkey the signer will actually sign with — i.e. is there a consistency check or at minimum a documented invariant that the caller (MarmotProvider) guarantees they are the same identity? (c) does the signer guard (AC-GUARD-1) fully prevent any code path from calling NDKAuthPolicies.signIn when signer is falsy?"
+    },
+    {
+      "question_id": "VQ-S1-006",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-WIRE-1",
+      "question": "AC-WIRE-1: After new NDK({ explicitRelayUrls: relays }) runs in MarmotProvider's init callback, does ndk.signer exist and does ndk.signer.pubkey synchronously return the exact hex pubkey string passed as the provider's pubkey prop — not a Promise, not undefined, not the result of an async call? Provide: (a) the line(s) in client.tsx that set ndk.signer; (b) the adapter's pubkey getter implementation; (c) a test or code-level assertion confirming the synchronous return type."
+    },
+    {
+      "question_id": "VQ-S1-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-WIRE-2",
+      "question": "AC-WIRE-2: Is ndk.relayAuthDefaultPolicy set to the return value of NDKAuthPolicies.signIn({ ndk }) (with the same NDK instance that will connect)? Provide: (a) the exact assignment statement in client.tsx; (b) confirmation that NDKAuthPolicies is imported from @nostr-dev-kit/ndk and not re-declared; (c) confirmation that the ndk variable referenced in signIn({ ndk }) is the same object later passed to ndk.connect() — not a stale reference or a different instance."
+    },
+    {
+      "question_id": "VQ-S1-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-WIRE-3",
+      "question": "AC-WIRE-3: Does the adapter implement the full NDKSigner surface? Provide evidence for each method: (a) pubkey getter — synchronous string return; (b) userSync getter — returns an NDKUser or null without async; (c) blockUntilReady() — resolves to NDKUser whose pubkey matches the constructor-supplied hex pubkey (show the NDKUser construction call — new NDKUser({ pubkey }) vs new NDKUser({ hexpubkey }) — the correct field name matters); (d) sign(event) — delegates to EventSigner.signEvent and returns only the sig string (not the full NostrEvent); (e) encrypt() and decrypt() — throw an explicit named error (not return undefined, not return null, not return empty string)."
+    },
+    {
+      "question_id": "VQ-S1-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-WIRE-4",
+      "question": "AC-WIRE-4: Are ndk.signer and ndk.relayAuthDefaultPolicy both assigned before the line that reads await ndk.connect(NDK_CONNECT_TIMEOUT_MS)? Show the exact ordering of statements in the init callback. Confirm there is no code path (early return, conditional, async branch) that could reach ndk.connect() without having previously executed both assignments."
+    },
+    {
+      "question_id": "VQ-S1-010",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-GUARD-1",
+      "question": "AC-GUARD-1: Is there a defensive guard that conditionally skips setting ndk.signer and ndk.relayAuthDefaultPolicy when the signer prop is falsy? Show the guard expression and confirm it wraps both assignments. Confirm that if the guard short-circuits (signer is falsy), the NDK instance constructed is indistinguishable from the pre-AUTH baseline — no partial state where relayAuthDefaultPolicy is set but signer is absent, or vice versa."
+    },
+    {
+      "question_id": "VQ-S1-011",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-NOOP-1",
+      "question": "AC-NOOP-1: Provide evidence that AUTH wiring does not cause any kind-22242 event to be published against an open relay (one that never sends [AUTH, ...]). Acceptable evidence: (a) the existing e2e suite result from make test (or the e2e runner) confirming no new kind-22242 events appear in the ephemeral relay log; (b) a code-level argument explaining why NDKAuthPolicies.signIn only fires on receipt of an AUTH challenge frame and is inert otherwise. Both (a) and (b) are expected — (a) alone is insufficient because the e2e relay log may not capture all NDK outbound events."
+    },
+    {
+      "question_id": "VQ-S1-012",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-TIMEOUT-1",
+      "question": "AC-TIMEOUT-1: Does the ndk.connect() call site still read ndk.connect(NDK_CONNECT_TIMEOUT_MS) with no argument change after the AUTH wiring is added? Show the exact call expression as it appears in the post-implementation client.tsx. Confirm that NDK_CONNECT_TIMEOUT_MS is still imported from src/config/relays.ts and equals 4_000 — no inline literal has replaced the named constant."
+    },
+    {
+      "question_id": "VQ-S1-013",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-TEST-1",
+      "question": "AC-TEST-1: Does the new unit test in src/marmot/ cover all three required assertions? Provide: (a) the test file path and describe/it block structure; (b) the assertion that adapter.pubkey === <constructed-hex-pubkey>; (c) the assertion that (await adapter.blockUntilReady()).pubkey === <same-hex>; (d) the assertion that adapter.sign(event) returns exactly the sig string produced by the stub EventSigner.signEvent (not the full event, not undefined). Confirm that the stub EventSigner is inline (not imported from a shared fixture file) and follows the forget-device.test.ts:131-139 pattern. Confirm that the test does NOT mock the NDK constructor — the real NDKUser class must be used."
+    },
+    {
+      "question_id": "VQ-S1-014",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-OBS-1",
+      "question": "AC-OBS-1: Confirm that the diff produced by this story touches only files under src/marmot/ (client.tsx and optionally event-signer-ndk-adapter.ts plus its test file). Provide the output of git diff --name-only (or equivalent) scoped to this story's commits and confirm zero files outside src/marmot/ appear. If any file outside that directory was modified, explain why it is not scope creep."
+    },
+    {
+      "question_id": "VQ-S1-015",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-OBS-2",
+      "question": "AC-OBS-2: Does make test pass in full after the AUTH wiring is added? Provide the make test output (or a truncated version showing pass/fail counts). Pay special attention to: (a) src/marmot/client.test.ts — any MarmotProvider tests that construct NDK must still pass; (b) any test that mocks ndk.connect() — the new signer/policy assignments before connect() must not break existing mock setups."
+    },
+    {
+      "question_id": "VQ-S1-016",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Adapter type completeness risk: NDKSigner is a TypeScript interface. Does the adapter satisfy the interface without using 'as any', type assertions, or @ts-ignore suppressions? Specifically: (a) does the userSync getter return NDKUser | undefined (or null) — check the exact type the interface declares in node_modules/@nostr-dev-kit/ndk/dist/index.d.ts:460 and match it; (b) does blockUntilReady() return Promise<NDKUser> with no additional overloads needed? If TypeScript emits zero errors on strict compilation (make build or tsc --noEmit), that is the expected evidence."
+    },
+    {
+      "question_id": "VQ-S1-017",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "NDKUser construction shape risk: The architecture.md §Test strategy prescribes new NDKUser({ pubkey }). Confirm that the NDKUser constructor in the installed version of @nostr-dev-kit/ndk accepts { pubkey } (hex string) as its first argument and that this field name is correct in the type definitions. If the constructor uses a different field name (e.g. hexpubkey, npub, or a positional string), the blockUntilReady() implementation and the unit test assertions will silently produce an NDKUser whose .pubkey is undefined. Show the NDKUser constructor signature from node_modules/@nostr-dev-kit/ndk/dist/index.d.ts and confirm the field name used in the adapter matches."
+    },
+    {
+      "question_id": "VQ-S1-018",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "sign() return-type gap risk: NDKSigner.sign(event) declares Promise<string> (the signature hex only), while EventSigner.signEvent(draft) returns Promise<NostrEvent> (the full signed event object). Has the adapter correctly extracted only the .sig field before resolving? Provide the exact implementation of the adapter's sign() method. Confirm that calling adapter.sign(template) with a stub signer that returns { ...template, sig: 'abc123' } resolves to the string 'abc123' — not to the full object, not to undefined, not to a JSON-stringified form."
+    },
+    {
+      "question_id": "VQ-S1-019",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Null signer at construction time risk: The EventSignerNdkAdapter constructor receives (signer: EventSigner, pubkey: string). If MarmotProvider ever calls the constructor with a null or undefined signer (despite the defensive guard meant to prevent it), what happens? Does the adapter constructor throw immediately, silently store null, or defer the error to the first call to sign()? The preferred behavior is an explicit throw at construction time (fail-fast). Confirm the constructor either validates its signer argument or that the TypeScript type system makes null/undefined non-assignable to EventSigner at the call site."
+    },
+    {
+      "question_id": "VQ-S1-020",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "encrypt()/decrypt() explicit-throw policy risk: AC-WIRE-3 requires that encrypt() and decrypt() MUST NOT silently return falsy values — they MUST throw. Confirm: (a) both methods throw (not return undefined, not return Promise.resolve(undefined)); (b) the thrown error is identifiable (e.g. new Error('not implemented') or a named subclass) so that a future stack trace is actionable; (c) no test suppresses or catches these throws in a way that would mask a regression if the throws were removed."
+    },
+    {
+      "question_id": "VQ-S1-021",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "The actual exported name from @nostr-dev-kit/ndk for the AUTH policies object is NDKRelayAuthPolicies, not NDKAuthPolicies as used in the architecture.md examples and spec comments. The implementation imports NDKRelayAuthPolicies and calls NDKRelayAuthPolicies.signIn({ ndk }). Does every reference in client.tsx that calls the policy factory use NDKRelayAuthPolicies (the real export) rather than the phantom NDKAuthPolicies name? Confirm by inspecting the import line and the signIn call site."
+    },
+    {
+      "question_id": "VQ-S1-022",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "The sign() method in EventSignerNdkAdapter uses a Parameters<EventSigner['signEvent']>[0] cast to resolve a structural incompatibility between NDK's NostrEvent (kind: number | undefined) and applesauce-core's EventTemplate (kind: number). Does this cast preserve the event content without mutation? Is there a regression risk if NDK ever passes an event with kind === undefined to the signer — specifically, would the applesauce-core signer silently accept or reject it?"
+    }
+  ]
+}

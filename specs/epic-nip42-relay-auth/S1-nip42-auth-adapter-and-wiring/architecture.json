@@ -1,0 +1,44 @@
+{
+  "module_name": "src/marmot/event-signer-ndk-adapter",
+  "purpose": "Adapts an applesauce-core EventSigner to the NDKSigner interface, enabling NDK's NIP-42 AUTH policy to use the application's existing signer without introducing new external dependencies.",
+  "public_api": [
+    {
+      "name": "EventSignerNdkAdapter",
+      "signature": "class EventSignerNdkAdapter implements NDKSigner { constructor(signer: EventSigner, pubkey: string) }",
+      "description": "Wraps an EventSigner and exposes the full NDKSigner surface. pubkey is passed at construction time so the synchronous getter works without awaiting the async getPublicKey(). sign() delegates to EventSigner.signEvent() and returns the .sig field only. encrypt() and decrypt() throw 'not implemented'. Wired into MarmotProvider's init callback via ndk.signer = new EventSignerNdkAdapter(signer, pubkey) and ndk.relayAuthDefaultPolicy = NDKRelayAuthPolicies.signIn({ ndk }), both before ndk.connect()."
+    }
+  ],
+  "private_files": [
+    "src/marmot/event-signer-ndk-adapter.ts",
+    "src/marmot/event-signer-ndk-adapter.test.ts"
+  ],
+  "owned_data": [],
+  "dependencies_allowed": [
+    "@nostr-dev-kit/ndk",
+    "applesauce-core"
+  ],
+  "dependencies_forbidden": [
+    "src/lib/nostr.ts",
+    "src/marmot/network.ts",
+    "src/marmot/device-sync.ts",
+    "src/marmot/device-store.ts",
+    "src/marmot/forget-device.ts",
+    "src/marmot/forgotten-slots.ts",
+    "src/marmot/ingest-queue.ts",
+    "src/marmot/mls-trace.ts",
+    "src/marmot/per-leaf-remove.ts",
+    "src/marmot/storage.ts",
+    "src/marmot/detached-groups.ts",
+    "app/page.tsx"
+  ],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "adapter.pubkey synchronously returns the hex pubkey passed at construction",
+    "adapter.blockUntilReady() resolves to NDKUser whose .pubkey matches the construction hex",
+    "adapter.sign(event) delegates to wrapped EventSigner.signEvent and returns only .sig string",
+    "adapter.encrypt() throws explicitly",
+    "adapter.decrypt() throws explicitly"
+  ]
+}

@@ -9,7 +9,8 @@ import {
   type ReactNode,
 } from "react";
 
-import NDK, { NDKEvent, NDKRelay, NDKRelaySet } from "@nostr-dev-kit/ndk";
+import NDK, { NDKEvent, NDKRelay, NDKRelayAuthPolicies, NDKRelaySet } from "@nostr-dev-kit/ndk";
+import { EventSignerNdkAdapter } from "./event-signer-ndk-adapter";
 import {
   MarmotClient,
   createKeyPackageRelayListEvent,
@@ -150,6 +151,15 @@ export function MarmotProvider({
 
       const ndk = new NDK({ explicitRelayUrls: relays });
       ndkRef.current = ndk;
+
+      // AC-GUARD-1: only set AUTH wiring when a signer is present.
+      // AC-WIRE-4: both assignments are before ndk.connect() to avoid a race
+      // window where an AUTH challenge arrives before the policy is installed.
+      if (signer) {
+        ndk.signer = new EventSignerNdkAdapter(signer, pubkey);
+        ndk.relayAuthDefaultPolicy = NDKRelayAuthPolicies.signIn({ ndk });
+      }
+
       await ndk.connect(NDK_CONNECT_TIMEOUT_MS);
 
       if (!mountedRef.current) return;

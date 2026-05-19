@@ -1,0 +1,62 @@
+{
+  "epic_name": "nip42-relay-auth",
+  "created_at": "2026-05-19T00:00:00Z",
+  "total_stories": 1,
+  "story_order": [
+    "S1"
+  ],
+  "dependency_notes": "Single-story epic. No inter-story dependencies. S1 is self-contained inside src/marmot/; the adapter and its test are the only new artifacts.",
+  "mock_resolution_plan": "No temporary mocks are introduced. The EventSigner stub used in the unit test is a permanent test fixture (inline stub in the test file); it does not model a dependency that a future story must implement.",
+  "seams": [],
+  "stories": [
+    {
+      "id": "S1",
+      "name": "nip42-auth-adapter-and-wiring",
+      "title": "Add NIP-42 AUTH to MarmotProvider's NDK",
+      "description": "Implement the EventSigner-to-NDKSigner adapter, wire ndk.signer and ndk.relayAuthDefaultPolicy before ndk.connect() inside MarmotProvider's init callback, add the defensive signer guard, and ship a direct adapter unit test covering pubkey getter, blockUntilReady(), and sign() delegation. No external deps added; no files outside src/marmot/ touched.",
+      "owning_module": "src/marmot/client.tsx",
+      "acceptance_criteria": [
+        "AC-WIRE-1",
+        "AC-WIRE-2",
+        "AC-WIRE-3",
+        "AC-WIRE-4",
+        "AC-GUARD-1",
+        "AC-NOOP-1",
+        "AC-TIMEOUT-1",
+        "AC-TEST-1",
+        "AC-OBS-1",
+        "AC-OBS-2"
+      ],
+      "scope": {
+        "includes": [
+          "src/marmot/client.tsx — add NDKAuthPolicies import, define EventSignerNdkAdapter (inline or re-export from sibling), wire ndk.signer and ndk.relayAuthDefaultPolicy before ndk.connect()",
+          "src/marmot/event-signer-ndk-adapter.ts — new file (optional layout): adapter class implementing the full NDKSigner surface",
+          "src/marmot/event-signer-ndk-adapter.test.ts — new file: direct adapter unit test (pubkey getter, blockUntilReady, sign delegation)"
+        ],
+        "excludes": [
+          "src/lib/nostr.ts — bunker/NIP-46/NIP-07 signer construction is out of scope",
+          "src/marmot/network.ts and all other src/marmot/* modules — unrelated",
+          "app/page.tsx — no contract change needed",
+          "e2e/ — no new e2e test for AUTH-gated relay (separate epic per spec §Out of Scope)"
+        ]
+      },
+      "complexity": "medium",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [
+        {
+          "fixture_id": "FIXTURE-01-001",
+          "description": "Inline EventSigner stub (getPublicKey + signEvent vi.fn()) used in the adapter unit test — follows the canonical pattern from src/marmot/forget-device.test.ts:131-139",
+          "interface": "EventSigner (applesauce-core)",
+          "reason": "External applesauce-core EventSigner is a permanent boundary; the stub stands in for it in all unit tests and is not replaced by a future story",
+          "permanent": true
+        }
+      ],
+      "creates_seam": false,
+      "consumes_seams": [],
+      "lighter_path": false,
+      "status": "done",
+      "notes": "lighter_path=false: files_code is non-empty (.tsx/.ts targets), and both event-signer-ndk-adapter.ts and event-signer-ndk-adapter.test.ts are new files that do not exist on disk at planning time. The architect path is appropriate — non-trivial adapter implementation plus test coverage."
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+{
+  "focuses": ["similar-features", "architecture", "testing-and-conventions"],
+  "similar_features": {
+    "ndk_construction_sites": [
+      {"file": "src/marmot/client.tsx", "line": 151, "options": "{ explicitRelayUrls: relays }", "signer_source": "none", "auth_code": "none", "in_scope": true},
+      {"file": "src/lib/nostr.ts", "line": 87, "options": "{ explicitRelayUrls: relays }", "purpose": "NDKNip46Signer.bunker() — short-lived, then abandoned", "in_scope": false},
+      {"file": "src/lib/nostr.ts", "line": 119, "options": "{ explicitRelayUrls: relays }", "purpose": "NDKNip46Signer.fromPayload() restore", "in_scope": false},
+      {"file": "src/lib/nostr.ts", "line": 163, "options": "{ explicitRelayUrls: relays }", "purpose": "NDKNip46Signer.nostrconnect()", "in_scope": false},
+      {"file": "e2e/fixtures/ndk-client.ts", "line": 27, "options": "{ explicitRelayUrls, signer }", "signer_source": "NDKPrivateKeySigner test key", "in_scope": false},
+      {"file": "e2e/fixtures/ndk-subscriber.ts", "line": 40, "options": "{ explicitRelayUrls, signer }", "signer_source": "NDKPrivateKeySigner test key", "in_scope": false}
+    ],
+    "existing_signer_bridge": {
+      "function": "bridgeNip46ToEventSigner",
+      "file": "src/lib/nostr.ts",
+      "lines": "35-71",
+      "direction": "NDKSigner → EventSigner",
+      "note": "The INVERSE (EventSigner → NDKSigner) does not exist anywhere; this epic introduces it."
+    },
+    "ndkuser_construction_pattern": "new NDKUser({ pubkey }) with no attached ndk — see nostr.ts:52,56,62,66",
+    "ndksigner_vs_eventsigner_interface_gap": {
+      "NDKSigner.sign": "Promise<string> — signature only (index.d.ts:4034)",
+      "EventSigner.signEvent": "Promise<NostrEvent> — full signed event (applesauce-core/dist/event-factory/types.d.ts:6)",
+      "implication": "Adapter's sign(event) must call wrapped.signEvent(event) and return result.sig"
+    },
+    "ndkauthpolicies_signin_location": "node_modules/@nostr-dev-kit/ndk/dist/index.d.ts:670 — signIn({ ndk, signer?, debug? }); uses ndk.signer when signer arg omitted",
+    "dynamic_relay_expansion": "ndk.pool.addRelay(new NDKRelay(url, undefined, ndk), true) at client.tsx:201–202 and 240–241; the undefined is the per-relay authPolicy slot — they will inherit ndk.relayAuthDefaultPolicy if set"
+  },
+  "architecture": {
+    "ndk_ownership": {
+      "creator": "client.tsx:151 (init callback)",
+      "ref": "ndkRef.current",
+      "consumers": ["NdkNetworkAdapter (private readonly ndk) — network.ts:32"],
+      "post_construction_mutations": ["ndk.pool.addRelay (client.tsx:201,240)"]
+    },
+    "init_sequence": [
+      "new NDK({ explicitRelayUrls }) — client.tsx:151",
+      "await ndk.connect(NDK_CONNECT_TIMEOUT_MS) — client.tsx:153",
+      "new NdkNetworkAdapter(ndk, relays) — client.tsx:168",
+      "new MarmotClient(baseOptions) — client.tsx:184",
+      "client.groups.loadAll() — client.tsx:194",
+      "setState(...) unblocks provider — client.tsx:233",
+      "Background IIFE: first explicit network.request — client.tsx:304"
+    ],
+    "auth_wiring_window": "Must be in place before ndk.connect() (or before first REQ) — AUTH challenges arrive in the relay-handshake → REQ window. Cleanest: set in NDK constructor options. Alternative: post-construction setters before ndk.connect().",
+    "teardown": "useEffect cleanup at client.tsx:394–413 nulls refs but does not call pool.disconnect (no clean API). Re-mount creates fresh NDK. No cross-mount AUTH state risk.",
+    "signer_prop_contract": "MarmotProvider only mounts when pubkey is non-null AND signer is set (app/page.tsx:237 guards login screen, line 424 mounts provider). AC-GUARD-1 is statically guaranteed by structure but defensive guard adds protection against future regression."
+  },
+  "testing_and_conventions": {
+    "runner": "vitest",
+    "config_file": "vitest.config.ts",
+    "environment": "node (NOT jsdom)",
+    "globals": false,
+    "include_globs": ["src/**/*.test.ts", "src/**/*.test.tsx", "e2e/fixtures/**/*.test.ts"],
+    "test_command": "make test (= npm test = vitest run + test:export)",
+    "relay_independent": true,
+    "canonical_event_signer_stub": {
+      "file": "src/marmot/forget-device.test.ts",
+      "lines": "131-139",
+      "shape": "function makeSigner(pubkey) { return { getPublicKey: vi.fn().mockResolvedValue(pubkey), signEvent: vi.fn().mockImplementation(async (event) => ({ ...event, sig: 'dummy-sig', id: 'signed-event-id' })) } as unknown as EventSigner; }"
+    },
+    "mock_patterns": {
+      "full_replacement": "vi.mock('@internet-privacy/marmot-ts', () => ({ ...named exports... })) — most common",
+      "partial_spread": "vi.mock(mod, async () => ({ ...await vi.importActual(mod), override: vi.fn() })) — used in client.test.ts",
+      "vi_hoisted_proxy": "vi.hoisted + storeRef.current swap — forgotten-slots.test.ts:22-53"
+    },
+    "ndk_test_mocks": "NONE — no existing vi.mock for @nostr-dev-kit/ndk anywhere in src/. NDKUser is a lightweight constructor; using it directly in tests is fine without mocking.",
+    "import_order_convention": "vi.mock(...) calls BEFORE any import of the module under test (Vitest hoisting requirement; restated in forget-device.test.ts:58-59)"
+  }
+}

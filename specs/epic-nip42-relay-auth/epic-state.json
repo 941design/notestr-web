@@ -1,0 +1,46 @@
+{
+  "epic_name": "nip42-relay-auth",
+  "status": "done",
+  "phase": "COMPLETE",
+  "created_at": "2026-05-19T10:34:30Z",
+  "updated_at": "2026-05-19T11:48:44Z",
+  "pre_existing_dirty_files": [
+    ".claude/skills/e2e-triage/SKILL.md",
+    ".claude/skills/e2e-triage/learnings.md",
+    ".claude/verification-results.csv",
+    ".clauded.yaml",
+    "docs/quizzl-report.md",
+    "docs/shophop-report.md",
+    "e2e/.triage-phase-a.log",
+    "e2e/.triage/device.md",
+    "e2e/.triage/findings-merged.md",
+    "e2e/.triage/multi-party.md",
+    "e2e/.triage/run.log",
+    "e2e/.triage/tasks.md",
+    "notestr-web-group-discovery-report.md",
+    "package-lock.json",
+    "specs/epic-property-tests-l3-three-party/acceptance-criteria.md"
+  ],
+  "completed_stories": [
+    "S1"
+  ],
+  "escalated_stories": [],
+  "phase_history": [
+    {
+      "phase": "SPEC_VALIDATED",
+      "timestamp": "2026-05-19T10:34:30Z",
+      "trigger": "validation_passed"
+    },
+    {
+      "phase": "IMPLEMENTING",
+      "timestamp": "2026-05-19T10:49:57Z",
+      "trigger": "story_started"
+    },
+    {
+      "phase": "COMPLETE",
+      "timestamp": "2026-05-19T11:48:44Z",
+      "trigger": "all_stories_done"
+    }
+  ],
+  "completed_at": "2026-05-19T11:48:44Z"
+}

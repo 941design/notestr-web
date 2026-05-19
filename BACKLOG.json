@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-05-19T05:53:24Z",
+  "updated_at": "2026-05-19T11:53:32Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -76,6 +76,11 @@
       "path": "specs/epic-task-sync-publish-contract/",
       "status": "PLANNED",
       "next_action": "seeded by /base:backlog init 2026-05-12"
+    },
+    {
+      "path": "specs/epic-nip42-relay-auth/",
+      "status": "DONE",
+      "next_action": "completed 2026-05-19"
     }
   ],
   "findings": [
@@ -192,6 +197,26 @@
         "line": 64
       },
       "text": "authenticate(page, url, slot?) slot param is a silent correctness requirement when two contexts share the same bunker URL — omitting slot causes both contexts to derive the same KP slot from the bunker pubkey, so A2 never appears as a separate leaf; this is not visible from the optional type signature alone",
+      "created_at": "2026-05-19"
+    },
+    {
+      "slug": "dead-ndkprivatekeysigner-import-src-lib-nostr",
+      "scope": "any",
+      "anchor": {
+        "path": "src/lib/nostr.ts",
+        "line": 3
+      },
+      "text": "Dead NDKPrivateKeySigner import in src/lib/nostr.ts — imported but never referenced; only NDKNip46Signer is live; a future architect may mistake it for an intentional internal-key-management fixture",
+      "created_at": "2026-05-19"
+    },
+    {
+      "slug": "eventsignerndkadapter-constructor-does-not",
+      "scope": "any",
+      "anchor": {
+        "path": "src/marmot/event-signer-ndk-adapter.ts",
+        "line": 21
+      },
+      "text": "EventSignerNdkAdapter constructor does not validate signer arg is truthy — safe today via TypeScript non-nullable type and if(signer) guard at only call site (client.tsx:158), but if adapter's call surface ever widens beyond MarmotProvider the guard should be added: if (!signer) throw new Error('EventSignerNdkAdapter: signer is required')",
       "created_at": "2026-05-19"
     }
   ],
