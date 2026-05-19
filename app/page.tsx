@@ -29,8 +29,19 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import type { EventSigner } from "applesauce-core";
 import { DEFAULT_RELAYS, NOSTRCONNECT_RELAY } from "@/config/relays";
+import { forgetSelfDevice } from "@/marmot/forget-device";
 
 type AuthMethod = "nip07" | "nip46" | null;
 
@@ -56,6 +67,258 @@ function DetachedBoard({ groupId, pubkey }: { groupId: string; pubkey: string })
   const { detachedGroupIds } = useMarmot();
   const isDetached = detachedGroupIds.has(groupId);
   return <Board currentUserPubkey={pubkey} isDetached={isDetached} />;
+}
+
+interface ConnectedAppProps {
+  pubkey: string;
+  authMethod: "nip07" | "nip46" | null;
+  drawerOpen: boolean;
+  setDrawerOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
+  settingsOpen: boolean;
+  setSettingsOpen: (open: boolean) => void;
+  selectedGroupId: string | null;
+  setSelectedGroupId: (id: string | null) => void;
+  selectedGroupName: string | null;
+  setSelectedGroupName: (name: string | null) => void;
+  showSignOutDialog: boolean;
+  setShowSignOutDialog: (open: boolean) => void;
+  performDisconnect: () => void;
+}
+
+/**
+ * Inner component rendered inside MarmotProvider.
+ * Has access to useMarmot() so it can call forgetSelfDevice with client/signer/relays.
+ * Owns the sign-out confirmation dialog.
+ */
+function ConnectedApp({
+  pubkey,
+  authMethod,
+  drawerOpen,
+  setDrawerOpen,
+  settingsOpen,
+  setSettingsOpen,
+  selectedGroupId,
+  setSelectedGroupId,
+  selectedGroupName,
+  setSelectedGroupName,
+  showSignOutDialog,
+  setShowSignOutDialog,
+  performDisconnect,
+}: ConnectedAppProps) {
+  const { client, signer: marmotSigner, relays } = useMarmot();
+  const [forgetInFlight, setForgetInFlight] = useState(false);
+
+  const handleForgetAndSignOut = useCallback(async () => {
+    if (!client || !marmotSigner || forgetInFlight) return;
+    setForgetInFlight(true);
+    try {
+      await forgetSelfDevice(client, marmotSigner, relays, performDisconnect);
+    } catch (err) {
+      console.error("forgetSelfDevice failed:", err);
+      // Fall back to plain sign-out so the user is never left stuck.
+      performDisconnect();
+    } finally {
+      setForgetInFlight(false);
+      setShowSignOutDialog(false);
+    }
+  }, [client, marmotSigner, relays, performDisconnect, forgetInFlight, setShowSignOutDialog]);
+
+  const handlePlainSignOut = useCallback(() => {
+    setShowSignOutDialog(false);
+    performDisconnect();
+  }, [performDisconnect, setShowSignOutDialog]);
+
+  // handleDisconnect passed to child components — opens the dialog.
+  const handleDisconnect = useCallback(() => {
+    setShowSignOutDialog(true);
+  }, [setShowSignOutDialog]);
+
+  return (
+    <>
+      <div className="flex h-dvh flex-col bg-background text-foreground">
+        <header className="flex shrink-0 items-center justify-between border-b bg-card px-4 py-3 md:px-6" style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top, 0px))" }}>
+          {/* Hamburger — visible only on mobile */}
+          <button
+            className="mr-2 flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent md:hidden"
+            aria-label={drawerOpen ? "Close menu" : "Open menu"}
+            onClick={() => setDrawerOpen((o) => !o)}
+          >
+            {drawerOpen ? <X className="size-5" /> : <Menu className="size-5" />}
+          </button>
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+            <h1 className="shrink-0 text-xl font-bold tracking-tight text-primary">
+              notestr
+            </h1>
+            {selectedGroupName && (
+              <>
+                <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                <span className="truncate text-sm font-medium text-foreground">
+                  {selectedGroupName}
+                </span>
+              </>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <ThemeToggle />
+            <button
+              type="button"
+              className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
+              aria-label="Settings"
+              onClick={() => setSettingsOpen(true)}
+            >
+              <SettingsIcon className="size-5" />
+            </button>
+            <ConnectionStatus
+              pubkey={pubkey}
+              onDisconnect={handleDisconnect}
+            />
+          </div>
+        </header>
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
+          {/* Mobile drawer backdrop — absolute so the page header stays uncovered */}
+          {drawerOpen && (
+            <div
+              className="absolute inset-0 z-20 bg-black/50 md:hidden"
+              onClick={() => setDrawerOpen(false)}
+              aria-hidden="true"
+            />
+          )}
+
+          {/* Sidebar — desktop: static 280px; tablet: icon rail 56px; mobile: overlay drawer below header */}
+          <aside
+            className={[
+              "absolute inset-y-0 left-0 z-30 flex flex-col overflow-y-auto overscroll-contain border-r bg-card transition-transform duration-200",
+              "w-[280px]",
+              drawerOpen ? "translate-x-0" : "-translate-x-full",
+              "md:static md:translate-x-0 md:w-14 md:shrink-0",
+              "lg:w-[280px]",
+            ].join(" ")}
+          >
+            {/* Tablet icon rail — shown only at md breakpoint */}
+            <div className="hidden md:flex lg:hidden flex-col items-center gap-3 py-4">
+              <button
+                className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
+                aria-label="Expand sidebar"
+                onClick={() => setDrawerOpen(true)}
+              >
+                <Menu className="size-5" />
+              </button>
+            </div>
+
+            {/* Full sidebar content — shown on mobile drawer and desktop */}
+            <div className="flex-1 overflow-y-auto p-4 md:hidden lg:block">
+              <GroupManager
+                onGroupSelect={(id, name) => {
+                  setSelectedGroupId(id);
+                  setSelectedGroupName(name);
+                  saveLastGroup(id, name);
+                  setDrawerOpen(false);
+                }}
+                onGroupLeft={() => { setSelectedGroupId(null); setSelectedGroupName(null); clearLastGroup(); }}
+                selectedGroupId={selectedGroupId}
+              />
+            </div>
+          </aside>
+
+          {/* Tablet expanded sidebar overlay */}
+          {drawerOpen && (
+            <div className="hidden md:block lg:hidden">
+              <div
+                className="absolute inset-0 z-20 bg-black/50"
+                onClick={() => setDrawerOpen(false)}
+                aria-hidden="true"
+              />
+              <aside className="absolute inset-y-0 left-0 z-30 w-[280px] overflow-y-auto border-r bg-card p-4">
+                <GroupManager
+                  onGroupSelect={(id, name) => {
+                    setSelectedGroupId(id);
+                    setSelectedGroupName(name);
+                    saveLastGroup(id, name);
+                    setDrawerOpen(false);
+                  }}
+                  selectedGroupId={selectedGroupId}
+                />
+              </aside>
+            </div>
+          )}
+
+          <main className="flex-1 overflow-y-auto overscroll-contain p-4 md:p-6" style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}>
+            {selectedGroupId ? (
+              <TaskStoreProvider groupId={selectedGroupId}>
+                <DetachedBoard groupId={selectedGroupId} pubkey={pubkey} />
+              </TaskStoreProvider>
+            ) : (
+              <div className="flex h-full min-h-[300px] flex-col items-center justify-center gap-4 text-center">
+                <Users className="size-12 text-muted-foreground/50" aria-hidden="true" />
+                <div>
+                  <h2 className="mb-1 text-xl font-semibold text-foreground">
+                    No group selected
+                  </h2>
+                  <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">
+                    Select a group from the sidebar or create a new one to start
+                    managing tasks.
+                  </p>
+                </div>
+                <Button
+                  onClick={() => setDrawerOpen(true)}
+                  className="md:hidden"
+                >
+                  Create your first group
+                </Button>
+                <p className="hidden text-sm text-muted-foreground md:block">
+                  Use the sidebar to select or create a group.
+                </p>
+              </div>
+            )}
+          </main>
+        </div>
+
+        <SettingsModal
+          isOpen={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          pubkey={pubkey}
+          authMethod={authMethod}
+          onSignOut={handleDisconnect}
+        />
+      </div>
+
+      {/* Sign-out confirmation dialog — two paths: forget+signout vs plain signout */}
+      <AlertDialog open={showSignOutDialog} onOpenChange={setShowSignOutDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sign out</AlertDialogTitle>
+            <AlertDialogDescription>
+              Do you want to remove this device from all groups before signing out? This publishes a network-visible leave event and deletes local MLS state.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setShowSignOutDialog(false)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handlePlainSignOut}
+              className="border border-input bg-background text-foreground shadow-xs hover:bg-accent hover:text-accent-foreground"
+            >
+              Sign out
+            </AlertDialogAction>
+            <AlertDialogAction
+              onClick={handleForgetAndSignOut}
+              disabled={forgetInFlight}
+            >
+              {forgetInFlight ? (
+                <>
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                  Forgetting…
+                </>
+              ) : (
+                "Forget this device and sign out"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
 }
 
 export default function Page() {
@@ -219,7 +482,11 @@ export default function Page() {
     setNostrConnectError(null);
   }, [nostrConnectCancel]);
 
-  const handleDisconnect = useCallback(() => {
+  const [showSignOutDialog, setShowSignOutDialog] = useState(false);
+
+  // performDisconnect: the actual state-clearing logic, unchanged from pre-epic.
+  // Passed as onSignOut to forgetSelfDevice so it is called after forget completes.
+  const performDisconnect = useCallback(() => {
     if (authMethod === "nip46") {
       clearNip46Session();
     }
@@ -232,6 +499,11 @@ export default function Page() {
     setSelectedGroupId(null);
     setSelectedGroupName(null);
   }, [authMethod]);
+
+  // handleDisconnect: opens the two-path confirmation dialog.
+  const handleDisconnect = useCallback(() => {
+    setShowSignOutDialog(true);
+  }, []);
 
   // Not yet connected: show connect screen
   if (!pubkey) {
@@ -419,161 +691,24 @@ export default function Page() {
     );
   }
 
-  // Connected: wrap in MarmotProvider
+  // Connected: wrap in MarmotProvider, delegate UI + signout dialog to ConnectedApp.
   return (
     <MarmotProvider signer={signer!} pubkey={pubkey}>
-      <div className="flex h-dvh flex-col bg-background text-foreground">
-        <header className="flex shrink-0 items-center justify-between border-b bg-card px-4 py-3 md:px-6" style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top, 0px))" }}>
-          {/* Hamburger — visible only on mobile */}
-          <button
-            className="mr-2 flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent md:hidden"
-            aria-label={drawerOpen ? "Close menu" : "Open menu"}
-            onClick={() => setDrawerOpen((o) => !o)}
-          >
-            {drawerOpen ? <X className="size-5" /> : <Menu className="size-5" />}
-          </button>
-          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-            <h1 className="shrink-0 text-xl font-bold tracking-tight text-primary">
-              notestr
-            </h1>
-            {selectedGroupName && (
-              <>
-                <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                <span className="truncate text-sm font-medium text-foreground">
-                  {selectedGroupName}
-                </span>
-              </>
-            )}
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <ThemeToggle />
-            <button
-              type="button"
-              className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
-              aria-label="Settings"
-              onClick={() => setSettingsOpen(true)}
-            >
-              <SettingsIcon className="size-5" />
-            </button>
-            <ConnectionStatus
-              pubkey={pubkey}
-              onDisconnect={handleDisconnect}
-            />
-          </div>
-        </header>
-        <div className="relative flex min-h-0 flex-1 overflow-hidden">
-          {/* Mobile drawer backdrop — absolute so the page header stays uncovered */}
-          {drawerOpen && (
-            <div
-              className="absolute inset-0 z-20 bg-black/50 md:hidden"
-              onClick={() => setDrawerOpen(false)}
-              aria-hidden="true"
-            />
-          )}
-
-          {/* Sidebar — desktop: static 280px; tablet: icon rail 56px; mobile: overlay drawer below header */}
-          <aside
-            className={[
-              // Base: positioned within the content row so the header remains visible above
-              "absolute inset-y-0 left-0 z-30 flex flex-col overflow-y-auto overscroll-contain border-r bg-card transition-transform duration-200",
-              // Mobile: full-width drawer up to ~280px
-              "w-[280px]",
-              // Mobile open/closed
-              drawerOpen ? "translate-x-0" : "-translate-x-full",
-              // Tablet+: always visible as static element
-              "md:static md:translate-x-0 md:w-14 md:shrink-0",
-              // Desktop: full sidebar
-              "lg:w-[280px]",
-            ].join(" ")}
-          >
-            {/* Tablet icon rail — shown only at md breakpoint */}
-            <div className="hidden md:flex lg:hidden flex-col items-center gap-3 py-4">
-              {/* Rail is just a visual placeholder; clicking it will expand via overlay */}
-              <button
-                className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
-                aria-label="Expand sidebar"
-                onClick={() => setDrawerOpen(true)}
-              >
-                <Menu className="size-5" />
-              </button>
-            </div>
-
-            {/* Full sidebar content — shown on mobile drawer and desktop */}
-            <div className="flex-1 overflow-y-auto p-4 md:hidden lg:block">
-              <GroupManager
-                onGroupSelect={(id, name) => {
-                  setSelectedGroupId(id);
-                  setSelectedGroupName(name);
-                  saveLastGroup(id, name);
-                  setDrawerOpen(false);
-                }}
-                onGroupLeft={() => { setSelectedGroupId(null); setSelectedGroupName(null); clearLastGroup(); }}
-                selectedGroupId={selectedGroupId}
-              />
-            </div>
-          </aside>
-
-          {/* Tablet expanded sidebar overlay */}
-          {drawerOpen && (
-            <div className="hidden md:block lg:hidden">
-              <div
-                className="absolute inset-0 z-20 bg-black/50"
-                onClick={() => setDrawerOpen(false)}
-                aria-hidden="true"
-              />
-              <aside className="absolute inset-y-0 left-0 z-30 w-[280px] overflow-y-auto border-r bg-card p-4">
-                <GroupManager
-                  onGroupSelect={(id, name) => {
-                    setSelectedGroupId(id);
-                    setSelectedGroupName(name);
-                    saveLastGroup(id, name);
-                    setDrawerOpen(false);
-                  }}
-                  selectedGroupId={selectedGroupId}
-                />
-              </aside>
-            </div>
-          )}
-
-          <main className="flex-1 overflow-y-auto overscroll-contain p-4 md:p-6" style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}>
-            {selectedGroupId ? (
-              <TaskStoreProvider groupId={selectedGroupId}>
-                <DetachedBoard groupId={selectedGroupId} pubkey={pubkey} />
-              </TaskStoreProvider>
-            ) : (
-              <div className="flex h-full min-h-[300px] flex-col items-center justify-center gap-4 text-center">
-                <Users className="size-12 text-muted-foreground/50" aria-hidden="true" />
-                <div>
-                  <h2 className="mb-1 text-xl font-semibold text-foreground">
-                    No group selected
-                  </h2>
-                  <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">
-                    Select a group from the sidebar or create a new one to start
-                    managing tasks.
-                  </p>
-                </div>
-                <Button
-                  onClick={() => setDrawerOpen(true)}
-                  className="md:hidden"
-                >
-                  Create your first group
-                </Button>
-                <p className="hidden text-sm text-muted-foreground md:block">
-                  Use the sidebar to select or create a group.
-                </p>
-              </div>
-            )}
-          </main>
-        </div>
-
-        <SettingsModal
-          isOpen={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-          pubkey={pubkey}
-          authMethod={authMethod}
-          onSignOut={handleDisconnect}
-        />
-      </div>
+      <ConnectedApp
+        pubkey={pubkey}
+        authMethod={authMethod}
+        drawerOpen={drawerOpen}
+        setDrawerOpen={setDrawerOpen}
+        settingsOpen={settingsOpen}
+        setSettingsOpen={setSettingsOpen}
+        selectedGroupId={selectedGroupId}
+        setSelectedGroupId={setSelectedGroupId}
+        selectedGroupName={selectedGroupName}
+        setSelectedGroupName={setSelectedGroupName}
+        showSignOutDialog={showSignOutDialog}
+        setShowSignOutDialog={setShowSignOutDialog}
+        performDisconnect={performDisconnect}
+      />
     </MarmotProvider>
   );
 }

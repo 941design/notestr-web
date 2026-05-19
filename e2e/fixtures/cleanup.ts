@@ -25,6 +25,9 @@ const KNOWN_IDB_NAMES = [
   // S5: forgotten-slots store — must be cleared between runs so prior test
   // runs do not leave slots marked forgotten for subsequent test runs.
   'notestr-forgotten-slots',
+  // S1: failed-welcomes store — must be cleared between runs so join-failure
+  // records from one test run do not surface in subsequent runs.
+  'notestr-failed-welcomes',
 ];
 
 /**

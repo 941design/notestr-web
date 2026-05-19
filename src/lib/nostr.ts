@@ -8,6 +8,24 @@ const NIP46_LOCAL_KEY = "notestr-nip46-local-key";
 const NIP46_PAYLOAD = "notestr-nip46-payload";
 const AUTH_METHOD_KEY = "notestr-auth-method";
 
+/**
+ * Exhaustive comma-separated NIP-46 perms string passed to NDKNip46Signer.
+ * Exported so the perms-audit unit test can import it directly without mocking NDK.
+ *
+ * Kinds covered:
+ *   5      – NIP-09 deletion (stale KP cleanup in client.tsx, forget-device.ts,
+ *            and marmot-ts key-package-manager rotate/purge)
+ *   13     – NIP-59 Seal (applesauce-common gift-wrap pipeline, called when
+ *            marmot-ts sends MLS welcome invitations)
+ *   10051  – Relay list (client.tsx)
+ *   22242  – NIP-42 AUTH (NDK-internal; EventSignerNdkAdapter routes AUTH
+ *            challenges through the app signer)
+ *   30078  – Task snapshot (device-sync.ts publishTaskSnapshot)
+ *   30443  – Addressable key package (marmot-ts key-package-manager publish/rotate)
+ */
+export const NIP46_PERMS =
+  "sign_event:5,sign_event:13,sign_event:10051,sign_event:22242,sign_event:30078,sign_event:30443,nip44_encrypt,nip44_decrypt";
+
 export function getNip07Signer(): EventSigner | null {
   if (!window.nostr) return null;
   return window.nostr as unknown as EventSigner;
@@ -164,7 +182,7 @@ export function startNostrConnect(
   const savedKey = localStorage.getItem(NIP46_LOCAL_KEY) ?? undefined;
   const signer = NDKNip46Signer.nostrconnect(ndk, relay, savedKey, {
     name: "notestr",
-    perms: "sign_event:31337,nip44_encrypt,nip44_decrypt",
+    perms: NIP46_PERMS,
   });
   const uri = signer.nostrConnectUri!;
 

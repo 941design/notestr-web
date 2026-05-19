@@ -1,0 +1,38 @@
+{
+  "module_name": "IdentityPanel",
+  "purpose": "Presentation-layer React component that surfaces this device's MLS identity (clientId, KP d-slot, per-relay event info) and observed sibling slots with group-membership flags inside the Settings modal's 'Identity' tab.",
+  "public_api": [
+    {
+      "name": "IdentityPanel",
+      "signature": "() => JSX.Element | null",
+      "description": "Renders the identity transparency panel. Returns null with a 'not signed in' placeholder when client or pubkey is absent from useMarmot(). All data is read exclusively via useMarmot() plus a relay request for sibling kind-30443 events."
+    }
+  ],
+  "private_files": [
+    "src/components/IdentityPanel.tsx"
+  ],
+  "owned_data": [],
+  "dependencies_allowed": [
+    "src/marmot/client.tsx (useMarmot hook — read-only context consumer)",
+    "src/marmot/device-sync.ts (groupHasKeyPackageLeaf — type import and runtime call)",
+    "@internet-privacy/marmot-ts (keyPackageFilters, getKeyPackageIdentifier — relay query helpers)",
+    "applesauce-core/helpers/event (NostrEvent type)",
+    "src/components/ui/* (Button, Badge — UI primitives)",
+    "lucide-react (Copy, Check icons)"
+  ],
+  "dependencies_forbidden": [
+    "src/marmot/forget-device.ts",
+    "src/marmot/failed-welcomes.ts",
+    "src/marmot/storage.ts",
+    "any direct IDB access",
+    "any toast/notification library not already in package.json"
+  ],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "IdentityPanel renders nothing / placeholder when client is null",
+    "IdentityPanel renders nothing / placeholder when pubkey is empty",
+    "Identity tab is present in SettingsModal alongside existing tabs"
+  ]
+}

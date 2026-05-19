@@ -1,0 +1,56 @@
+{
+  "module_name": "failed-welcomes",
+  "purpose": "IDB-backed log of MLS Welcome join failures and decrypt failures. Appends FailedWelcomeRecord entries keyed by giftWrapEventId (upsert semantics for dedup), exposes load/forget/prune helpers, and dispatches notestr:failed-welcomes-changed on window after every mutation so UI components can refresh without polling.",
+  "public_api": [
+    {
+      "name": "appendFailedWelcome",
+      "signature": "async function appendFailedWelcome(record: FailedWelcomeRecord): Promise<void>",
+      "description": "Upserts a FailedWelcomeRecord into the notestr-failed-welcomes IDB store (keyed by giftWrapEventId), then dispatches notestr:failed-welcomes-changed on window."
+    },
+    {
+      "name": "loadFailedWelcomes",
+      "signature": "async function loadFailedWelcomes(opts?: { since?: number; limit?: number }): Promise<FailedWelcomeRecord[]>",
+      "description": "Returns all stored records, optionally filtered to recordedAt >= since, up to limit entries, sorted by recordedAt descending."
+    },
+    {
+      "name": "forgetFailedWelcome",
+      "signature": "async function forgetFailedWelcome(giftWrapEventId: string): Promise<void>",
+      "description": "Removes the record for the given giftWrapEventId from IDB, then dispatches notestr:failed-welcomes-changed on window."
+    },
+    {
+      "name": "pruneOlderThan",
+      "signature": "async function pruneOlderThan(ms: number): Promise<void>",
+      "description": "Removes all records with recordedAt < (Date.now() - ms), then dispatches notestr:failed-welcomes-changed on window."
+    },
+    {
+      "name": "FailedWelcomeRecord",
+      "signature": "interface FailedWelcomeRecord { recordedAt: number; giftWrapEventId: string; innerKind: number; innerCreatedAt: number; inviterPubkey: string | null; groupId: string | null; kpRef: string | null; failureReason: string; failureDetail: string; }",
+      "description": "Schema for a failed Welcome join or decrypt-failure event stored in IDB."
+    }
+  ],
+  "private_files": [
+    "src/marmot/failed-welcomes.ts"
+  ],
+  "owned_data": [
+    "notestr-failed-welcomes IDB store (keyed by giftWrapEventId)"
+  ],
+  "dependencies_allowed": [
+    "./storage"
+  ],
+  "dependencies_forbidden": [
+    "react",
+    "react-dom",
+    "@nostr-dev-kit/ndk",
+    "idb-keyval"
+  ],
+  "external_ports": [
+    "window.dispatchEvent (DOM CustomEvent on notestr:failed-welcomes-changed)"
+  ],
+  "events_emitted": [
+    "notestr:failed-welcomes-changed (CustomEvent on window, after every mutation)"
+  ],
+  "events_consumed": [],
+  "test_targets": [
+    "src/marmot/failed-welcomes.test.ts"
+  ]
+}

@@ -29,7 +29,9 @@ import type {
 } from "@internet-privacy/marmot-ts";
 import type { EventSigner } from "applesauce-core";
 
+import { get as idbGet, set as idbSet, createStore } from "idb-keyval";
 import { createKVStore, createInviteKVStore, getOrCreateClientId } from "./storage";
+import { loadFailedWelcomes } from "./failed-welcomes";
 import { NdkNetworkAdapter } from "./network";
 import { useDeviceSync, groupHasKeyPackageLeaf } from "./device-sync";
 import { mlsTrace } from "./mls-trace";
@@ -39,6 +41,12 @@ import { removeLeafByIndex } from "./per-leaf-remove";
 import type { MarmotGroup } from "@internet-privacy/marmot-ts";
 import { DEFAULT_RELAYS, NDK_CONNECT_TIMEOUT_MS } from "../config/relays";
 import { computeAllGroupRelays } from "../lib/relay-utils";
+import { shouldRunProbe } from "./probe-gate";
+
+// Shared reference to the notestr-identity IDB store for probe gating.
+// createStore("notestr-identity", "identity") must match storage.ts exactly so
+// both modules operate on the same IndexedDB object store.
+const _probeIdentityStore = createStore("notestr-identity", "identity");
 
 function isTestRuntime(): boolean {
   return process.env.NEXT_PUBLIC_E2E === "1" || process.env.NODE_ENV === "test";
@@ -98,6 +106,8 @@ interface MarmotContextValue {
   error: Error | null;
   discoverable: boolean;
   detachedGroupIds: Set<string>;
+  /** 0 = no banner; >0 = number of potentially undelivered invitations found by probe */
+  probeBannerCount: number;
 }
 
 const MarmotContext = createContext<MarmotContextValue>({
@@ -111,6 +121,7 @@ const MarmotContext = createContext<MarmotContextValue>({
   error: null,
   discoverable: false,
   detachedGroupIds: new Set(),
+  probeBannerCount: 0,
 });
 
 interface MarmotProviderProps {
@@ -128,13 +139,14 @@ export function MarmotProvider({
 }: MarmotProviderProps) {
   const relays = relaysProp ?? DEFAULT_RELAYS;
   const [state, setState] = useState<
-    Pick<MarmotContextValue, "client" | "groups" | "loading" | "error" | "discoverable">
+    Pick<MarmotContextValue, "client" | "groups" | "loading" | "error" | "discoverable" | "probeBannerCount">
   >({
     client: null,
     groups: [],
     loading: true,
     error: null,
     discoverable: false,
+    probeBannerCount: 0,
   });
 
   const mountedRef = useRef(true);
@@ -240,7 +252,49 @@ export function MarmotProvider({
       for (const group of groups) attachStateListener(group);
 
       // Make client available immediately — key package work runs in background
-      setState({ client, groups, loading: false, error: null, discoverable: false });
+      setState({ client, groups, loading: false, error: null, discoverable: false, probeBannerCount: 0 });
+
+      // AC-PROBE-2: probe launches AFTER loading:false — never blocks the init path.
+      // AC-OBS-2: no-op when pubkey is empty (unauthenticated).
+      void (async () => {
+        if (!pubkey || !client) return;
+
+        // AC-PROBE-1 gating: run at most once per 24 hours per browser session.
+        const lastProbeAtRaw = await idbGet<string>("lastProbeAt", _probeIdentityStore);
+        const lastProbeAtParsed = lastProbeAtRaw !== undefined ? Number(lastProbeAtRaw) : null;
+        // Treat NaN (corrupt IDB value) as absent so the probe always runs in that case.
+        const lastProbeAt = lastProbeAtParsed !== null && isNaN(lastProbeAtParsed) ? null : lastProbeAtParsed;
+        if (!shouldRunProbe(lastProbeAt)) {
+          // Fresh probe — skip.
+          return;
+        }
+
+        try {
+          // AC-PROBE-1.1: fetch kind-1059 gift wraps for this pubkey over last 14 days.
+          const since = Math.floor(Date.now() / 1000) - 14 * 86400;
+          const wraps = await client.network.request(
+            DEFAULT_RELAYS,
+            [{ kinds: [1059], "#p": [pubkey], since } as any],
+          );
+          const wrapCount = wraps.length;
+
+          // AC-PROBE-1.2: compare against failed-welcome records + already loaded groups.
+          const failedWelcomes = await loadFailedWelcomes({ since: since * 1000 });
+          const failedCount = failedWelcomes.length;
+          const groupCount = client.groups.loaded.length;
+
+          // AC-PROBE-1.3: surface banner only when there is a material gap.
+          if (wrapCount > failedCount + groupCount) {
+            const gap = wrapCount - failedCount - groupCount;
+            if (mountedRef.current) {
+              setState((prev) => ({ ...prev, probeBannerCount: gap }));
+            }
+          }
+        } finally {
+          // AC-PROBE-1.5: always record the probe time so gating works next visit.
+          await idbSet("lastProbeAt", String(Date.now()), _probeIdentityStore);
+        }
+      })().catch(console.error);
 
       client.groups.on("updated", (updatedGroups) => {
         if (mountedRef.current) {
@@ -395,6 +449,7 @@ export function MarmotProvider({
           loading: false,
           error: err instanceof Error ? err : new Error(String(err)),
           discoverable: false,
+          probeBannerCount: 0,
         });
       }
     }
@@ -645,6 +700,22 @@ export function MarmotProvider({
 
   return (
     <MarmotContext.Provider value={contextValue}>
+      {state.probeBannerCount > 0 && (
+        <div
+          role="alert"
+          aria-live="polite"
+          style={{
+            background: "#fffbeb",
+            border: "1px solid #f59e0b",
+            borderRadius: "0.375rem",
+            padding: "0.75rem 1rem",
+            margin: "0.5rem",
+            fontSize: "0.875rem",
+          }}
+        >
+          You have {state.probeBannerCount} invitation{state.probeBannerCount !== 1 ? "s" : ""} that may not have been delivered to this device. Open Pending Invitations to check.
+        </div>
+      )}
       {children}
     </MarmotContext.Provider>
   );

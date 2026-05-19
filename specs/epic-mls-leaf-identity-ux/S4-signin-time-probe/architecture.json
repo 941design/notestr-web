@@ -1,0 +1,46 @@
+{
+  "module_name": "client.tsx (MarmotProvider)",
+  "purpose": "Background signin-time probe that runs once per 24h after the MarmotProvider init path completes. Detects uninspected kind-1059 gift-wrap invitations by comparing network wrap count against failed-welcome records and loaded groups, then surfaces an inline banner if a material gap is found.",
+  "public_api": [
+    {
+      "name": "MarmotContextValue.probeBannerCount",
+      "signature": "probeBannerCount: number",
+      "description": "0 = no banner; >0 = show banner with this count of potentially undelivered invitations"
+    },
+    {
+      "name": "MarmotProvider",
+      "signature": "function MarmotProvider({ signer, pubkey, relays, children }: MarmotProviderProps): JSX.Element",
+      "description": "Existing provider, extended to run the probe after setState({ loading: false }) and render an inline aria-live='polite' banner when probeBannerCount > 0"
+    }
+  ],
+  "private_files": [
+    "src/marmot/client.tsx"
+  ],
+  "owned_data": [
+    "probeBannerCount state variable inside MarmotProvider",
+    "notestr-identity IDB key 'lastProbeAt' (shared store, probe-owned key)"
+  ],
+  "dependencies_allowed": [
+    "src/marmot/storage.ts (identityStore via get/set from idb-keyval)",
+    "src/marmot/failed-welcomes.ts (loadFailedWelcomes seam — S1 output)",
+    "src/config/relays.ts (DEFAULT_RELAYS)",
+    "idb-keyval (get, set — via identityStore directly)"
+  ],
+  "dependencies_forbidden": [
+    "Any toast library",
+    "Direct idb-keyval imports without going through storage.ts for new stores",
+    "Any module outside src/marmot/ or src/config/"
+  ],
+  "external_ports": [
+    "client.network.request(DEFAULT_RELAYS, [{kinds:[1059], '#p':[pubkey], since}], {timeout:10000}) — kind-1059 gift wrap fetch"
+  ],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "lastProbeAt absent → probe runs, lastProbeAt set in IDB",
+    "lastProbeAt stale (> 24h ago) → probe runs",
+    "lastProbeAt fresh (< 24h ago) → probe does NOT run, lastProbeAt NOT updated",
+    "probeBannerCount set when wrapCount > failedCount + groupCount",
+    "probeBannerCount stays 0 when wrapCount <= failedCount + groupCount"
+  ]
+}

@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-05-19T11:53:32Z",
+  "updated_at": "2026-05-19T16:23:05Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -79,6 +79,11 @@
     },
     {
       "path": "specs/epic-nip42-relay-auth/",
+      "status": "DONE",
+      "next_action": "completed 2026-05-19"
+    },
+    {
+      "path": "specs/epic-mls-leaf-identity-ux/",
       "status": "DONE",
       "next_action": "completed 2026-05-19"
     }
@@ -218,6 +223,24 @@
       },
       "text": "EventSignerNdkAdapter constructor does not validate signer arg is truthy — safe today via TypeScript non-nullable type and if(signer) guard at only call site (client.tsx:158), but if adapter's call surface ever widens beyond MarmotProvider the guard should be added: if (!signer) throw new Error('EventSignerNdkAdapter: signer is required')",
       "created_at": "2026-05-19"
+    },
+    {
+      "slug": "multi-user-idb-scoping-marmot-idb",
+      "scope": "marmot",
+      "anchor": {
+        "path": "src/marmot/storage.ts"
+      },
+      "text": "Multi-user IDB scoping: marmot IDB stores (notestr-groups, notestr-key-packages, notestr-invite-store, notestr-failed-welcomes, etc.) are keyed only by origin, not pubkey. Switching users on same browser leaks prior user's metadata. Spec a per-pubkey partitioning pattern or clear-on-signout policy across the marmot data layer.",
+      "created_at": "2026-05-19"
+    },
+    {
+      "slug": "vitest-node-env-cannot-import-tsx",
+      "scope": "any",
+      "anchor": {
+        "path": "src/marmot/probe-gate.ts"
+      },
+      "text": "vitest node env cannot import .tsx or NEXT_PUBLIC-bearing modules — pure logic must be extracted to .ts sidecar files for unit testability (established pattern: probe-gate.ts, pending-invitations-helpers.ts)",
+      "created_at": "2026-05-19"
     }
   ],
   "archive": [
@@ -225,6 +248,11 @@
       "date": "2026-05-18",
       "text": "epic-e2e-relay-state-isolation: per-spec docker compose restart relay auto-fixture to wipe stale kind-30443 KeyPackages between spec files.",
       "reason": "Relitigates the 2026-05-01 reversal in commit 7b31ba1. The per-spec _relayReset fixture was tried, broke 'npx playwright test' for callers without the relay container up, and masked test-design bugs behind sweeping cleanups. The standing principle (feedback_e2e_relay_independence.md) is that e2e tests must pass against any relay state via within-test isolation: pinClientSlot, rotated bunker keys, Date.now() group names, clearAppState — not fixture-level resets. If a test seems to need a clean relay, the test has a bug."
+    },
+    {
+      "date": "2026-05-19",
+      "text": "Including kinds 443, 444, 445, 0, 1059 in NIP-46 perms list because marmot-ts documentation implied they were user-signer kinds",
+      "reason": "S5 implementation verified via marmot-ts dist/client/group/marmot-group.js and applesauce-common/dist/operations/gift-wrap.js: kind 443 is legacy and query-only; kind 444 is an unsigned NIP-59 rumor by design; kind 445 uses an ephemeral key via finalizeEvent; kind 1059 (gift wrap outer) also uses an ephemeral key; kind 0 is not exercised. The actual user-signer kind for sending MLS welcomes is kind 13 (NIP-59 Seal), which was absent from the original spec list. The spec's architecture context was based on marmot-ts kind numbers, not on which signing path the user signer was actually routed through."
     }
   ]
 }

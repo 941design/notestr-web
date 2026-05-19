@@ -1,0 +1,22 @@
+{
+  "story_id": "S5",
+  "status": "done",
+  "final_outcome": "accepted",
+  "files_modified": [
+    "src/lib/nostr.ts",
+    "src/lib/nostr.test.ts"
+  ],
+  "remediation_rounds": 0,
+  "completed_at": "2026-05-19T17:18:00Z",
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The story said marmot-ts signs kinds 443, 444, 445, 30443 through the signer adapter. This is only partially correct: kind 443 is legacy and is only queried (not signed) — marmot-ts only signs 30443 now. Kind 444 is a rumor (unsigned by design per NIP-59). Kind 445 is signed with an ephemeral key via finalizeEvent, not the user's signer. Kind 13 (NIP-59 Seal) was not in the story's starting list but is the actual kind the user's signer signs when marmot-ts sends welcome invitations, via applesauce-common's gift-wrap pipeline. Verifying the correct set required reading marmot-ts dist/client/group/marmot-group.js and applesauce-common/dist/operations/gift-wrap.js.",
+    "surprised_by": "The gift-wrap pipeline structure: gift-wrap (kind 1059) uses an ephemeral random key; seal (kind 13) uses the user's signer; rumor (kind 444) is unsigned. The story's architecture context listed 443/444/445 as signed kinds, none of which are actually signed by the user's signer in the current codebase version.",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  },
+  "verification_rounds": []
+}

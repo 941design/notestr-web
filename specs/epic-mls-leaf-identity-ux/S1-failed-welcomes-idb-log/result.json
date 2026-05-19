@@ -1,0 +1,42 @@
+{
+  "story_id": "S1",
+  "status": "complete",
+  "remediation_rounds": 1,
+  "files_created": [
+    "src/marmot/failed-welcomes.ts",
+    "src/marmot/failed-welcomes.test.ts",
+    "specs/epic-mls-leaf-identity-ux/S1-failed-welcomes-idb-log/architecture.json",
+    "specs/epic-mls-leaf-identity-ux/S1-failed-welcomes-idb-log/baseline.json",
+    "specs/epic-mls-leaf-identity-ux/S1-failed-welcomes-idb-log/result.json"
+  ],
+  "files_modified": [
+    "src/marmot/device-sync.ts",
+    "src/marmot/device-sync.test.ts",
+    "e2e/fixtures/cleanup.ts"
+  ],
+  "implementation_summary": "Created failed-welcomes.ts (IDB-backed log via createKVStore following the forgotten-slots.ts pattern). Exports appendFailedWelcome (upsert by giftWrapEventId — satisfies dedup AC-LOG-3), loadFailedWelcomes (with since/limit filters), forgetFailedWelcome, and pruneOlderThan. All four mutations dispatch notestr:failed-welcomes-changed on window (AC-LOG-4). failureDetail is capped at 500 chars. Wired two points in device-sync.ts: (1) joinFromWelcomeInvite catch block now logs the failure via appendFailedWelcome BEFORE markAsRead (AC-LOG-1), extracting groupId via readInviteGroupInfo if available; (2) inviteReader.on('error') handler now calls appendFailedWelcome with failureReason='decrypt_failed' (AC-LOG-2), fire-and-forget with .catch. Added pruneOlderThan call in useDeviceSync useEffect for AC-LOG-5. Added notestr-failed-welcomes to KNOWN_IDB_NAMES in cleanup.ts (AC-OBS-1). Added vi.mock('./failed-welcomes') to device-sync.test.ts to suppress IDB access in the test environment (remediation round 1).",
+  "test_counts": {
+    "baseline_files": 17,
+    "baseline_tests": 151,
+    "final_files": 18,
+    "final_tests": 160,
+    "new_tests": 9
+  },
+  "mocks_introduced": [
+    {
+      "file": "src/marmot/device-sync.test.ts",
+      "mock": "vi.mock('./failed-welcomes')",
+      "reason": "joinFromWelcomeInvite now calls appendFailedWelcome in its catch block; the test environment has no indexedDB, so the real store must be suppressed."
+    }
+  ],
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The device-sync.test.ts regression (indexedDB not defined) required an extra remediation round. The test already mocked mls-trace and marmot-ts to prevent real I/O, but the new appendFailedWelcome call was not anticipated — it routes through the unmocked createKVStore, which hits real idb-keyval. The scope list did not include device-sync.test.ts, creating brief ambiguity about whether touching it was allowed. The correct decision was to add the mock there since the regression is directly caused by the production code change.",
+    "surprised_by": "",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  }
+}

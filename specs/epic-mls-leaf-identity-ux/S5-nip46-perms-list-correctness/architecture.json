@@ -1,0 +1,5 @@
+{
+  "decision": "single_file_edit",
+  "affected_files": ["src/lib/nostr.ts", "src/lib/nostr.test.ts"],
+  "rationale": "Single perms string replacement + audit test. No new modules, no seam changes."
+}

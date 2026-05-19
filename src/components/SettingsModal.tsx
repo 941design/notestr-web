@@ -13,6 +13,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DevicesTab } from "@/components/DevicesTab";
+import { IdentityPanel } from "@/components/IdentityPanel";
+import { PendingInvitations } from "@/components/PendingInvitations";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -57,6 +59,12 @@ export function SettingsModal({
             </TabsTrigger>
             <TabsTrigger value="devices" className="flex-1">
               Devices
+            </TabsTrigger>
+            <TabsTrigger value="identity" className="flex-1">
+              Identity
+            </TabsTrigger>
+            <TabsTrigger value="pending-invitations" className="flex-1">
+              Pending Invitations
             </TabsTrigger>
           </TabsList>
 
@@ -109,6 +117,18 @@ export function SettingsModal({
           <TabsContent value="devices">
             <div className="pt-2">
               <DevicesTab onSignOut={onSignOut} />
+            </div>
+          </TabsContent>
+
+          <TabsContent value="identity">
+            <div className="pt-2">
+              <IdentityPanel />
+            </div>
+          </TabsContent>
+
+          <TabsContent value="pending-invitations">
+            <div className="pt-2">
+              <PendingInvitations />
             </div>
           </TabsContent>
         </Tabs>

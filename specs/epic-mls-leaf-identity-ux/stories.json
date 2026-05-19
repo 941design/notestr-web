@@ -1,0 +1,185 @@
+{
+  "epic_name": "mls-leaf-identity-ux",
+  "created_at": "2026-05-19T00:00:00Z",
+  "total_stories": 6,
+  "story_order": ["S5", "S6", "S1", "S3", "S4", "S2"],
+  "dependency_notes": "S1 must precede S2 (S2 consumes FailedWelcomesAPI exported by S1: loadFailedWelcomes, forgetFailedWelcome, appendFailedWelcome, pruneOlderThan, notestr:failed-welcomes-changed DOM event). S4 also consumes loadFailedWelcomes from S1 and must be implemented after S1. S3, S5, S6 are fully independent of each other and of S1/S2. Suggested execution order: S5 (mechanical single-line fix), S6 (wires existing primitive), S1 (data layer foundation), S3 (read-only panel, independent), S4 (probe requires S1), S2 (UI consumer of S1).",
+  "mock_resolution_plan": "No temporary mocks are introduced. S2 and S4 consume S1's FailedWelcomesAPI directly via import; because S1 is implemented first (story_order position 3), no stub is needed at integration time. Unit tests in S2 and S4 may use in-process fakes of the IDB functions (vitest mocks) — these are test fixtures, not tracked temporary mocks.",
+  "seams": [
+    {
+      "data": "Failed-welcome IDB records and DOM event notification",
+      "source": {
+        "story": "S1",
+        "artifact": "src/marmot/failed-welcomes.ts"
+      },
+      "destination": {
+        "story": "S2",
+        "artifact": "src/components/PendingInvitations.tsx"
+      },
+      "intermediaries": [
+        {
+          "story": "S4",
+          "artifact": "src/marmot/client.tsx"
+        }
+      ],
+      "contract": {
+        "type_name": "FailedWelcomesAPI",
+        "fields": [
+          { "name": "appendFailedWelcome", "type": "(record: FailedWelcomeRecord) => Promise<void>" },
+          { "name": "loadFailedWelcomes", "type": "(opts?: { since?: number; limit?: number }) => Promise<FailedWelcomeRecord[]>" },
+          { "name": "forgetFailedWelcome", "type": "(giftWrapEventId: string) => Promise<void>" },
+          { "name": "pruneOlderThan", "type": "(ms: number) => Promise<void>" }
+        ],
+        "invariants": [
+          "Records are unique by giftWrapEventId — re-inserting the same ID MUST overwrite, not duplicate (AC-LOG-3)",
+          "appendFailedWelcome dispatches notestr:failed-welcomes-changed on window after every write (AC-LOG-4)",
+          "forgetFailedWelcome dispatches notestr:failed-welcomes-changed after deletion (AC-LOG-4)",
+          "pruneOlderThan dispatches notestr:failed-welcomes-changed after any records are removed (AC-LOG-4)",
+          "loadFailedWelcomes with { since: T } MUST return only records where recordedAt >= T",
+          "IDB store name is 'notestr-failed-welcomes' (AC-OBS-1)"
+        ]
+      }
+    }
+  ],
+  "stories": [
+    {
+      "id": "S5",
+      "name": "nip46-perms-list-correctness",
+      "title": "NIP-46 perms list correctness",
+      "description": "Replace the placeholder `sign_event:31337` in `src/lib/nostr.ts:167` with an exhaustive comma-separated enumeration of every kind the application signs, plus nip44_encrypt/decrypt. Adds a perms-audit unit test to confirm the enumeration stays in sync with actual signEvent call sites.",
+      "acceptance_criteria": ["AC-PERMS-1", "AC-PERMS-2"],
+      "scope": {
+        "includes": [
+          "src/lib/nostr.ts",
+          "src/lib/nostr.test.ts"
+        ],
+        "excludes": []
+      },
+      "complexity": "low",
+      "status": "done",
+      "story_order": 1,
+      "dependencies": [],
+      "owning_module": "nostr.ts",
+      "creates_seam": false,
+      "consumes_seams": [],
+      "lighter_path": false,
+      "notes": "nostr.test.ts is a new file (does not exist on disk at planning time). The kind enumeration must be re-verified at implementation time by grepping signEvent call sites across src/ — the spec list (kinds 0,5,443,444,445,1059,10051,22242,30078,30443) is a starting point, not a binding final answer."
+    },
+    {
+      "id": "S6",
+      "name": "forget-on-signout",
+      "title": "Forget-on-signout flow",
+      "description": "Wire the existing `forgetSelfDevice` from `src/marmot/forget-device.ts` into the `handleDisconnect` path in `app/page.tsx`, presenting a two-path confirmation dialog (forget vs. plain sign-out). The plain sign-out path must retain its current behaviour exactly.",
+      "acceptance_criteria": ["AC-SIGNOUT-1", "AC-SIGNOUT-2", "AC-SIGNOUT-3"],
+      "scope": {
+        "includes": [
+          "app/page.tsx"
+        ],
+        "excludes": []
+      },
+      "complexity": "low",
+      "status": "done",
+      "story_order": 2,
+      "dependencies": [],
+      "owning_module": "page.tsx",
+      "creates_seam": false,
+      "consumes_seams": [],
+      "lighter_path": false,
+      "notes": "handleDisconnect must become async to accommodate forgetSelfDevice. Use the AlertDialog confirmation pattern from DevicesTab.tsx:350-384 as the reference for the two-path UX. forgetSelfDevice is pre-existing; no new primitives needed."
+    },
+    {
+      "id": "S1",
+      "name": "failed-welcomes-idb-log",
+      "title": "Failed-welcomes IDB log and DOM event surface",
+      "description": "Create `src/marmot/failed-welcomes.ts` (new IDB-backed module) and wire it into the `joinFromWelcomeInvite` catch block and the `inviteReader.on('error')` handler in `device-sync.ts`. Dispatches a `notestr:failed-welcomes-changed` DOM event after every mutation so UI consumers can refresh without polling.",
+      "acceptance_criteria": ["AC-LOG-1", "AC-LOG-2", "AC-LOG-3", "AC-LOG-4", "AC-LOG-5", "AC-OBS-1", "AC-OBS-3"],
+      "scope": {
+        "includes": [
+          "src/marmot/failed-welcomes.ts",
+          "src/marmot/failed-welcomes.test.ts",
+          "src/marmot/device-sync.ts",
+          "e2e/fixtures/cleanup.ts"
+        ],
+        "excludes": []
+      },
+      "complexity": "medium",
+      "status": "done",
+      "story_order": 3,
+      "dependencies": [],
+      "owning_module": "failed-welcomes.ts",
+      "creates_seam": true,
+      "consumes_seams": [],
+      "lighter_path": false,
+      "notes": "failed-welcomes.ts is a new file; follow the forgotten-slots.ts pattern (own createKVStore call, no React imports, no shared versioned DB). appendFailedWelcome MUST be called before inviteReader.markAsRead. The giftWrapEventId field holds invite.id (Rumor ID) for join-failure records and the actual kind-1059 event ID for decrypt-failure records — both serve as stable dedup keys per AC-LOG-3. KNOWN_IDB_NAMES in e2e/fixtures/cleanup.ts must be updated for AC-OBS-1. Unit tests must cover append/load/dismiss/prune round-trip including dedup invariant (AC-OBS-3)."
+    },
+    {
+      "id": "S3",
+      "name": "identity-transparency-panel",
+      "title": "Identity transparency panel in Settings",
+      "description": "Create `src/components/IdentityPanel.tsx` and add an 'Identity' tab to `src/components/SettingsModal.tsx`. The panel displays this device's clientId, current KP d-slot, per-relay KP event info, and a list of observed sibling slots with group-membership flags. All data is read from existing state via useMarmot(); no new state is introduced.",
+      "acceptance_criteria": ["AC-IDENT-1", "AC-IDENT-2", "AC-IDENT-3", "AC-OBS-2"],
+      "scope": {
+        "includes": [
+          "src/components/IdentityPanel.tsx",
+          "src/components/SettingsModal.tsx"
+        ],
+        "excludes": []
+      },
+      "complexity": "medium",
+      "status": "done",
+      "story_order": 4,
+      "dependencies": [],
+      "owning_module": "IdentityPanel.tsx",
+      "creates_seam": false,
+      "consumes_seams": [],
+      "lighter_path": false,
+      "notes": "IdentityPanel.tsx is a new file. Data source: client.keyPackages.clientId, client.keyPackages.list(), device-sync knownEvents map (sibling slots), groupHasKeyPackageLeaf from device-sync.ts. Sibling slot is_in_group flag reuses groupHasKeyPackageLeaf — no new state derivation. Component must render nothing (or a placeholder) when no signer is connected (AC-OBS-2). Check for overlap with the Devices tab from epic-multi-device-sync."
+    },
+    {
+      "id": "S4",
+      "name": "signin-time-probe",
+      "title": "Signin-time probe and one-time invitation banner",
+      "description": "Add a background one-shot probe to `src/marmot/client.tsx` that runs after the provider's critical init path completes. The probe fetches 14-day kind-1059 gift wraps, compares against loaded groups and failed-welcome records, and shows an inline banner if the gap is material. Gates on lastProbeAt in the notestr-identity IDB store to run at most once per 24 hours.",
+      "acceptance_criteria": ["AC-PROBE-1", "AC-PROBE-2", "AC-OBS-2", "AC-OBS-3"],
+      "scope": {
+        "includes": [
+          "src/marmot/client.tsx",
+          "src/marmot/client.test.ts"
+        ],
+        "excludes": []
+      },
+      "complexity": "medium",
+      "status": "done",
+      "story_order": 5,
+      "dependencies": ["S1"],
+      "owning_module": "client.tsx",
+      "creates_seam": false,
+      "consumes_seams": ["FailedWelcomesAPI"],
+      "lighter_path": false,
+      "notes": "Probe MUST NOT block setState({ loading: false }) — it runs as a background IIFE after that call. Banner uses the inline aria-live pattern from DevicesTab.tsx:274-288, not a toast. lastProbeAt is stored under key 'lastProbeAt' in the notestr-identity IDB store. Unit test must cover: probe runs when lastProbeAt is absent; probe runs when lastProbeAt < now - 24h; probe does NOT run when lastProbeAt is fresh (AC-OBS-3). client.test.ts exists on disk but may need new test blocks — it is a modification, not a new file."
+    },
+    {
+      "id": "S2",
+      "name": "pending-invitations-panel",
+      "title": "Pending Invitations panel",
+      "description": "Create `src/components/PendingInvitations.tsx` and add a 'Pending Invitations' tab to `src/components/SettingsModal.tsx`. The panel lists records from loadFailedWelcomes(), renders human-readable failure reasons with cold-recovery prompts, and supports per-record dismiss. Refresh is event-driven via notestr:failed-welcomes-changed.",
+      "acceptance_criteria": ["AC-UI-1", "AC-UI-2", "AC-UI-3", "AC-UI-4", "AC-OBS-2", "AC-OBS-4"],
+      "scope": {
+        "includes": [
+          "src/components/PendingInvitations.tsx",
+          "src/components/SettingsModal.tsx"
+        ],
+        "excludes": []
+      },
+      "complexity": "medium",
+      "status": "done",
+      "story_order": 6,
+      "dependencies": ["S1"],
+      "owning_module": "PendingInvitations.tsx",
+      "creates_seam": false,
+      "consumes_seams": ["FailedWelcomesAPI"],
+      "lighter_path": false,
+      "notes": "PendingInvitations.tsx is a new file. Panel must be reachable in at most two clicks from main navigation (AC-UI-1). Dismiss for decrypt_failed records must call both forgetFailedWelcome AND inviteReader.markAsRead (AC-UI-3). Empty state 'No pending invitations' must render when loadFailedWelcomes returns [] (AC-UI-4). No new external dependencies — use only existing package.json modules (AC-OBS-4). Component must be no-op when no signer is connected (AC-OBS-2)."
+    }
+  ]
+}

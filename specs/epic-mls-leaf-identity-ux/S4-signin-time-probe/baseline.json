@@ -1,0 +1,7 @@
+{
+  "test_files": 18,
+  "tests_passed": 160,
+  "tests_failed": 0,
+  "command": "npx vitest run",
+  "captured_at": "2026-05-19"
+}

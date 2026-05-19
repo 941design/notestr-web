@@ -1,0 +1,76 @@
+{
+  "story_id": "S6",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-19T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S6-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-SIGNOUT-1",
+      "question": "Does the implementation satisfy AC-SIGNOUT-1: does `handleDisconnect` in `app/page.tsx` present a two-path confirmation dialog, where the 'forget' path calls `forgetSelfDevice` from `src/marmot/forget-device.ts` before nulling `signer`/`pubkey` state? Provide (a) the relevant code block, (b) confirmation that `forgetSelfDevice` is called before state clear (not after), and (c) a test or manual trace showing both paths are reachable."
+    },
+    {
+      "question_id": "VQ-S6-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-SIGNOUT-2",
+      "question": "Does the implementation satisfy AC-SIGNOUT-2: does the non-forget path null signer/pubkey state and clear NIP-46 session exactly as before, with zero network side effects on KP or leaf state? Provide (a) a diff confirming the non-forget path is structurally unchanged from the pre-epic implementation, and (b) confirmation that `forgetSelfDevice` is NOT called on the plain sign-out path (`grep -n 'forgetSelfDevice' app/page.tsx` must show exactly one call site, inside the forget branch)."
+    },
+    {
+      "question_id": "VQ-S6-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-SIGNOUT-3",
+      "question": "Does the implementation satisfy AC-SIGNOUT-3: is the signout flow still reachable from Settings → Sign out button, with no regression to existing navigation paths? Confirm by tracing the component tree from `SettingsModal.tsx` (or wherever the sign-out button lives) to the `handleDisconnect` call, showing the path is unbroken."
+    },
+    {
+      "question_id": "VQ-S6-004",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Is `handleDisconnect` now async (required to accommodate `forgetSelfDevice`)? Confirm with `grep -n 'async.*handleDisconnect\\|handleDisconnect.*async' app/page.tsx`. Also confirm there are no unhandled-promise warnings: the AlertDialog `onConfirm` callback or equivalent must properly await or `.catch()` the async call."
+    },
+    {
+      "question_id": "VQ-S6-005",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does the forget-on-signout flow import `forgetSelfDevice` from `src/marmot/forget-device.ts` directly (consistent with the architecture note that `page.tsx` components may import `forgetSelfDevice` from `forget-device.ts` as the single declared exception to useMarmot()-only access)? Confirm no new marmot module imports are added beyond this one declared exception."
+    },
+    {
+      "question_id": "VQ-S6-006",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `page.tsx` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S6-007",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Are unit tests provided that cover both branches of the confirmation dialog? Specifically: (a) the forget path invokes `forgetSelfDevice` and then clears state, (b) the plain sign-out path does NOT invoke `forgetSelfDevice` and clears state via the original code path. Confirm the tests are not pure mock-spy proxies: they must assert observable state change (signer/pubkey cleared) not just that a mock was called."
+    },
+    {
+      "question_id": "VQ-S6-008",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Is there a guard preventing double-invocation of `forgetSelfDevice` (e.g. if the user clicks 'Forget' twice before the async call resolves)? Confirm whether a loading/disabled state is applied to the confirmation dialog's action button during the `forgetSelfDevice` await."
+    },
+    {
+      "question_id": "VQ-S6-009",
+      "phase": "post-impl",
+      "category": "RESILIENCE",
+      "question": "The forget path has a try/catch that falls back to `performDisconnect()` if `forgetSelfDevice` throws. Does this mean a partial forget (e.g. leaf removal succeeded but IDB cleanup threw) still signs the user out, potentially leaving orphaned local state? Is a partial-cleanup fallback better than letting the error surface so the user can retry?"
+    },
+    {
+      "question_id": "VQ-S6-010",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "The implementation introduces `ConnectedApp` as an inner component of `app/page.tsx` to access `useMarmot()` for `forgetSelfDevice`. Is the prop surface of `ConnectedApp` (14 props) a warning sign that the component boundary should be reconsidered in a future refactor? Confirm there are no prop-drilling cycles (a prop passed down that was itself received from a child via callback)."
+    },
+    {
+      "question_id": "VQ-S6-011",
+      "phase": "post-impl",
+      "category": "UX",
+      "question": "The `AlertDialogCancel` in the dialog calls `setShowSignOutDialog(false)` explicitly, but `onOpenChange` on `AlertDialog` also handles close. Are there two close-triggers for 'Cancel' (the explicit onClick and the radix close handler via onOpenChange)? Does this cause any double-state-update or re-render issue in practice?"
+    }
+  ]
+}

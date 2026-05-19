@@ -1,0 +1,53 @@
+{
+  "module_name": "PendingInvitations",
+  "purpose": "React component that renders failed welcome records from IDB, displays human-readable recovery instructions per failure reason, and supports per-record dismiss. Mounted as a 'Pending Invitations' tab inside SettingsModal.",
+  "public_api": [
+    {
+      "name": "PendingInvitations",
+      "signature": "function PendingInvitations(): JSX.Element",
+      "description": "React component. Loads FailedWelcomeRecord[] via loadFailedWelcomes(), renders each with inviter pubkey (short), group name if available, failure reason label, and recovery instruction. Dismiss calls forgetFailedWelcome and (for decrypt_failed) inviteReader.markAsRead. Refreshes on notestr:failed-welcomes-changed DOM event."
+    }
+  ],
+  "private_files": [
+    "src/components/PendingInvitations.tsx",
+    "src/components/pending-invitations-helpers.ts"
+  ],
+  "owned_data": [],
+  "dependencies_allowed": [
+    "@/marmot/failed-welcomes",
+    "@/marmot/client",
+    "@/components/ui/button",
+    "react"
+  ],
+  "dependencies_forbidden": [
+    "@nostr-dev-kit/ndk",
+    "idb-keyval",
+    "@internet-privacy/marmot-ts"
+  ],
+  "external_ports": [
+    {
+      "name": "loadFailedWelcomes",
+      "description": "Reads FailedWelcomeRecord[] from IDB. Consumed on mount and on notestr:failed-welcomes-changed."
+    },
+    {
+      "name": "forgetFailedWelcome",
+      "description": "Removes one record from IDB by giftWrapEventId. Called on dismiss."
+    },
+    {
+      "name": "inviteReader.markAsRead",
+      "description": "Marks the gift-wrap event as read via client.invites. Called ONLY for failureReason === 'decrypt_failed' on dismiss."
+    }
+  ],
+  "events_emitted": [],
+  "events_consumed": [
+    "notestr:failed-welcomes-changed"
+  ],
+  "test_targets": [
+    "recoveryInstruction() — maps failureReason string to human-readable instruction",
+    "failureReasonLabel() — maps failureReason string to display label",
+    "inviterShort() — returns first 8 chars of hex pubkey",
+    "Empty-state rendering when loadFailedWelcomes returns []",
+    "Dismiss path for decrypt_failed (calls markAsRead + forgetFailedWelcome)",
+    "Dismiss path for join-failure (calls forgetFailedWelcome only, NOT markAsRead)"
+  ]
+}

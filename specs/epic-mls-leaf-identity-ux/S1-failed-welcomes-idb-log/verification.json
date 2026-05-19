@@ -1,0 +1,106 @@
+{
+  "story_id": "S1",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-19T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S1-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-LOG-1",
+      "question": "Does the implementation satisfy AC-LOG-1: in `device-sync.ts`, does the `joinFromWelcomeInvite` catch block (a) append a `FailedWelcomeRecord` with all required fields (`recordedAt`, `giftWrapEventId`, `innerKind`, `inviterPubkey`, `groupId`, `kpRef`, `failureReason`, `failureDetail`), and (b) call `appendFailedWelcome()` BEFORE `inviteReader.markAsRead(invite.id)`? Show the exact call sequence with line numbers. A grep such as `grep -n 'appendFailedWelcome\\|markAsRead' src/marmot/device-sync.ts` must confirm `appendFailedWelcome` appears on a lower line number than `markAsRead` within the same catch block."
+    },
+    {
+      "question_id": "VQ-S1-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-LOG-2",
+      "question": "Does the implementation satisfy AC-LOG-2: does the `inviteReader.on('error', ...)` handler in `device-sync.ts` call `appendFailedWelcome` with `failureReason='decrypt_failed'` and `giftWrapEventId` set to the `eventId` argument from the error callback? Provide (a) the handler code, (b) confirmation that `failureReason` is exactly the string `'decrypt_failed'`, and (c) the test that exercises this path end-to-end."
+    },
+    {
+      "question_id": "VQ-S1-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-LOG-3",
+      "question": "Does the implementation satisfy AC-LOG-3: is the dedup invariant enforced such that calling `appendFailedWelcome` twice with the same `giftWrapEventId` results in exactly one IDB record (overwrite, not duplicate)? Provide (a) the IDB write implementation showing PUT-over-existing-key semantics (or equivalent upsert), and (b) the unit test that calls `appendFailedWelcome` with the same ID twice and asserts `(await loadFailedWelcomes()).length === 1`."
+    },
+    {
+      "question_id": "VQ-S1-004",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-LOG-4",
+      "question": "Does the implementation satisfy AC-LOG-4: does a `notestr:failed-welcomes-changed` DOM event fire after every `appendFailedWelcome`, `forgetFailedWelcome`, AND `pruneOlderThan` call? Provide (a) the event dispatch code in `failed-welcomes.ts`, (b) confirmation that all three mutating functions dispatch the event, and (c) a unit test that registers a listener and asserts the event fires for each of the three mutations."
+    },
+    {
+      "question_id": "VQ-S1-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-LOG-5",
+      "question": "Does the implementation satisfy AC-LOG-5: is `pruneOlderThan(30 * 86400 * 1000)` called exactly once per `MarmotProvider` mount? Identify where the call is placed in `client.tsx` (or the mount-time hook) and confirm it is not called on every re-render."
+    },
+    {
+      "question_id": "VQ-S1-006",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-OBS-1",
+      "question": "Does the implementation satisfy AC-OBS-1: is the store name exactly `'notestr-failed-welcomes'` (no variation in casing or separators), and is it added to `KNOWN_IDB_NAMES` in `e2e/fixtures/cleanup.ts`? Run `grep -n 'notestr-failed-welcomes' e2e/fixtures/cleanup.ts` — it must return at least one match."
+    },
+    {
+      "question_id": "VQ-S1-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-OBS-3",
+      "question": "Does the implementation satisfy AC-OBS-3: do the new unit tests in `failed-welcomes.test.ts` cover (a) the append/load/dismiss/prune round-trip, (b) the dedup invariant from AC-LOG-3 (same giftWrapEventId → one record), and (c) the `loadFailedWelcomes({ since: T })` time-filter semantics? Confirm `make test` exits 0 after these tests are added."
+    },
+    {
+      "question_id": "VQ-S1-008",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does `src/marmot/failed-welcomes.ts` have zero React imports and zero NDK imports? Run `grep -n 'from.*react\\|from.*ndk\\|from.*@nostr-dev-kit' src/marmot/failed-welcomes.ts` — the command must return no matches. Confirm the module also has no `'use client'` directive."
+    },
+    {
+      "question_id": "VQ-S1-009",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does `failed-welcomes.ts` access IDB exclusively via `createKVStore` imported from `./storage`, with no direct `idb-keyval` import? Run `grep -n 'idb-keyval' src/marmot/failed-welcomes.ts` — it must return zero matches. Confirm the `createKVStore` call follows the same pattern as `forgotten-slots.ts` (own store instance, no shared versioned DB)."
+    },
+    {
+      "question_id": "VQ-S1-010",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `failed-welcomes.ts` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list (i.e. `./storage`)? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S1-011",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Do the unit tests in `failed-welcomes.test.ts` use a `vi.hoisted` proxy or in-process Map/fake pattern rather than `fake-indexeddb` or a global IDB shim? Confirm the test file has no `import.*fake-indexeddb` statement. This matters because `fake-indexeddb` adds a transitive dependency (AC-OBS-4) and its version matrix must be managed."
+    },
+    {
+      "question_id": "VQ-S1-012",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does `appendFailedWelcome` sanitize or bound the `failureDetail` field before writing to IDB? The field is populated from a caught error's message, which may contain arbitrary relay or peer content. Confirm either (a) the field is capped at a reasonable length (e.g. 2000 chars), or (b) there is a documented decision that unbounded error strings are acceptable given the store is local-only."
+    }
+  ],
+  "post_impl_questions": [
+    {
+      "question_id": "VQ-S1-PI-001",
+      "phase": "post-impl",
+      "category": "REGRESSION",
+      "question": "Does the `device-sync.test.ts` mock for `./failed-welcomes` correctly suppress all four exports (`appendFailedWelcome`, `forgetFailedWelcome`, `loadFailedWelcomes`, `pruneOlderThan`)? Run `grep -n 'vi.mock.*failed-welcomes' src/marmot/device-sync.test.ts` — it must return one match. Confirm no test in `device-sync.test.ts` spies on the resolved value of `appendFailedWelcome` in a way that would produce false positives."
+    },
+    {
+      "question_id": "VQ-S1-PI-002",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "Does `pruneOlderThan` fire in the `useDeviceSync` useEffect (not at module load time) so it only runs once per MarmotProvider mount rather than on every render? Run `grep -n 'pruneOlderThan' src/marmot/device-sync.ts` — confirm it appears inside a `useEffect` body, not at module scope."
+    },
+    {
+      "question_id": "VQ-S1-PI-003",
+      "phase": "post-impl",
+      "category": "SECURITY",
+      "question": "The `readInviteGroupInfo` call in the `joinFromWelcomeInvite` catch block is guarded with `'readInviteGroupInfo' in client`. Does this guard also protect against the case where `client.readInviteGroupInfo` throws synchronously (rather than rejecting async)? Confirm there is a surrounding `try/catch` that covers both the guard check and the call so a synchronous throw in `readInviteGroupInfo` does not cause `appendFailedWelcome` to be skipped."
+    }
+  ]
+}

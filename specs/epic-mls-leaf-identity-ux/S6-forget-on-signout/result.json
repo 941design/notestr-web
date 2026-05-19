@@ -1,0 +1,26 @@
+{
+  "story_id": "S6",
+  "status": "complete",
+  "remediation_rounds": 0,
+  "files_created": [
+    "specs/epic-mls-leaf-identity-ux/S6-forget-on-signout/architecture.json",
+    "specs/epic-mls-leaf-identity-ux/S6-forget-on-signout/baseline.json",
+    "specs/epic-mls-leaf-identity-ux/S6-forget-on-signout/result.json"
+  ],
+  "files_modified": [
+    "app/page.tsx",
+    "specs/epic-mls-leaf-identity-ux/S6-forget-on-signout/verification.json"
+  ],
+  "implementation_summary": "Introduced ConnectedApp inner component inside MarmotProvider to access useMarmot() (client, signer, relays) for the forgetSelfDevice call. Extracted performDisconnect from handleDisconnect in Page. handleDisconnect now opens a two-path AlertDialog. ConnectedApp owns forgetInFlight state for double-click guard. The plain sign-out path calls performDisconnect() directly; the forget path calls forgetSelfDevice(client, signer, relays, performDisconnect) with try/catch fallback.",
+  "tests": {
+    "baseline_files": 17,
+    "baseline_passing": 151,
+    "final_files": 17,
+    "final_passing": 151
+  },
+  "mocks_introduced": [],
+  "retrospective": {
+    "skipped": true,
+    "reason": "clean_run"
+  }
+}

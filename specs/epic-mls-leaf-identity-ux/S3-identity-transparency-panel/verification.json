@@ -1,0 +1,84 @@
+{
+  "story_id": "S3",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-19T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S3-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-IDENT-1",
+      "question": "Does the implementation satisfy AC-IDENT-1: does the Identity panel display (a) the current device's `clientId` from `client.keyPackages.clientId` with a copy-to-clipboard button, (b) the current KP `d` slot rendered copy-friendly, and (c) per published kind-30443 event for the current slot: `event_id`, `relays_where_published`, and `created_at`? Provide the relevant JSX block and confirm each field is sourced from `useMarmot()` (not from a local variable computed outside the hook)."
+    },
+    {
+      "question_id": "VQ-S3-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-IDENT-2",
+      "question": "Does the implementation satisfy AC-IDENT-2: does the panel list all observed sibling slots (kind-30443 events by the current pubkey whose `d` tag differs from the current device's slot), and for each render `{d_slot, latest_event_id, latest_created_at, relays_seen_on, is_in_group: bool}`? Confirm `is_in_group` is derived from `groupHasKeyPackageLeaf` (not re-implemented inline), and that `is_in_group` is `false` for a slot whose KP is not in any loaded group."
+    },
+    {
+      "question_id": "VQ-S3-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-IDENT-3",
+      "question": "Does the implementation satisfy AC-IDENT-3: does the Identity panel render explainer text of at most 3 sentences in plain language (no MLS/NIP jargon) clarifying that each device is a separate MLS identity? Provide the exact rendered text and confirm it does not use the terms 'MLS', 'leaf', 'KeyPackage', or 'NIP' in its prose."
+    },
+    {
+      "question_id": "VQ-S3-004",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-OBS-2",
+      "question": "Does the implementation satisfy AC-OBS-2: does `IdentityPanel.tsx` render nothing (or a non-error placeholder) when no signer is connected? Confirm by tracing the `useMarmot()` return shape when `signer` is null — the component must not throw, and must not render any data that depends on `clientId` or signed-in state."
+    },
+    {
+      "question_id": "VQ-S3-005",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does `IdentityPanel.tsx` introduce any new state beyond what is already in `useMarmot()`? Confirm with `grep -n 'useState\\|useReducer\\|useRef' src/components/IdentityPanel.tsx` — any match must be justified (e.g. clipboard copy feedback timer is acceptable; derived data from marmot state is not)."
+    },
+    {
+      "question_id": "VQ-S3-006",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does `IdentityPanel.tsx` consume data exclusively via `useMarmot()`, with no direct imports from `src/marmot/*.ts` modules (other than types)? Run `grep -n \"from '@/marmot/\\|from '../marmot/\\|from './marmot/\" src/components/IdentityPanel.tsx` — the output must show no runtime-import of marmot functions (only type-only imports, if any, are acceptable)."
+    },
+    {
+      "question_id": "VQ-S3-007",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `IdentityPanel.tsx` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list (i.e. only `SettingsModal.tsx` wires it in)? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S3-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does the 'Identity' tab appear in `SettingsModal.tsx` without breaking existing tabs (Devices, Account, etc.)? Confirm by checking that the tab list in `SettingsModal.tsx` still includes all pre-existing tabs alongside the new 'Identity' tab. Run `grep -n 'TabsTrigger\\|value=' src/components/SettingsModal.tsx` to enumerate all tabs and verify no regressions."
+    },
+    {
+      "question_id": "VQ-S3-009",
+      "phase": "pre-impl",
+      "category": "BEST_PRACTICES",
+      "question": "Is the copy-to-clipboard button accessible? Confirm it has an `aria-label` or visible text label, is keyboard-focusable, and provides visible feedback (e.g. 'Copied!' state) after activation. A button that only shows an icon with no accessible name fails WCAG 2.1 SC 4.1.2."
+    },
+    {
+      "question_id": "VQ-S3-010",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "ac_id": "AC-IDENT-1",
+      "question": "The `relays_where_published` field for current-slot events is populated from `useMarmot().relays` (the relay list at load time), NOT from the stored KP's published event metadata. If the relay list changes between KP publish time and panel view time, the displayed relays may not match where the event was actually published. Is this divergence acceptable for the identity-transparency goal, or should the implementation capture relay URLs from the KP's stored `published` array (if that data is available)?"
+    },
+    {
+      "question_id": "VQ-S3-011",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "question": "The `useEffect` that loads sibling slots has `groups` in its dependency array, which means every time group state changes (e.g. a new task arrives), the relay request re-fires. With many groups and frequent updates this could generate noise relay traffic. Should the sibling-load effect be guarded by a stable snapshot (e.g. memoize the groups list by reference, or exclude `groups` from the dep array and instead recompute `is_in_group` synchronously in a derived memo without re-fetching relay data)?"
+    },
+    {
+      "question_id": "VQ-S3-012",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "The `_event` field on `SiblingSlot` stores the raw `NostrEvent` in React state to allow `is_in_group` to be recomputed without re-fetching. This means a potentially large byte payload is kept in component state. Confirm whether this is acceptable given the typical number of sibling slots (expected: ≤ ~10 devices per user) or whether the payload should be trimmed to just the fields needed for `groupHasKeyPackageLeaf`."
+    }
+  ]
+}

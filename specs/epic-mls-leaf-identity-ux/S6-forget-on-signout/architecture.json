@@ -1,0 +1,5 @@
+{
+  "decision": "dialog_extension",
+  "affected_files": ["app/page.tsx"],
+  "rationale": "AlertDialog intercepts handleDisconnect; extracts performDisconnect for forgetSelfDevice's onSignOut callback."
+}

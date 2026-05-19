@@ -1,0 +1,105 @@
+{
+  "created_at": "2026-05-19T14:54:03Z",
+  "paradigm": "Functional core + imperative shell with hexagonal seams at external boundaries (NDK, IDB, NIP-46 signer)",
+  "similar_features": {
+    "idb_pattern": {
+      "location": "src/marmot/storage.ts:24",
+      "description": "All IDB stores use createKVStore(name) which opens a separate idb-keyval database per store named 'notestr-<name>'. No versioned migrations — idb-keyval manages a fixed version-1 schema. The new notestr-failed-welcomes store follows this exact pattern.",
+      "existing_stores": [
+        "notestr-identity (storage.ts:68)",
+        "notestr-device-names (storage.ts:86)",
+        "notestr-invited-keys (storage.ts:87)",
+        "notestr-joined-groups (storage.ts:88)",
+        "notestr-group-sync (storage.ts:125)",
+        "notestr-key-packages (client.tsx:175)",
+        "notestr-group-state (client.tsx:174)",
+        "notestr-invite-store (client.tsx:176)",
+        "notestr-forgotten-slots (forgotten-slots.ts:19)"
+      ]
+    },
+    "dom_event_pattern": {
+      "location": "src/marmot/forgotten-slots.ts:36-40",
+      "description": "Write IDB first, then window.dispatchEvent(new CustomEvent('notestr:<name>-changed')). No detail payload — consumers re-read from IDB. Consumed via window.addEventListener in device-sync.ts:1052. Test shim: global.window = new EventTarget()."
+    },
+    "closest_analogue_module": "src/marmot/forgotten-slots.ts — IDB store + DOM event dispatch + listener. failed-welcomes.ts mirrors this structure exactly.",
+    "settings_modal": {
+      "location": "src/components/SettingsModal.tsx:53-114",
+      "tabs": ["connection", "devices"],
+      "extension_pattern": "Add <TabsTrigger> + <TabsContent> pair. No other wiring needed. Props available via useMarmot() inside child components."
+    },
+    "forgetSelfDevice": {
+      "location": "src/marmot/forget-device.ts:192",
+      "signature": "async function forgetSelfDevice(client: MarmotClient, signer: EventSigner, relays: string[], onSignOut: () => void): Promise<void>",
+      "note": "All four args available from useMarmot()."
+    },
+    "handleDisconnect": {
+      "location": "app/page.tsx:222-234",
+      "description": "Synchronous. Sets signer/pubkey/authMethod/selectedGroup to null. No MLS cleanup. SettingsModal receives it as onSignOut at page.tsx:574."
+    },
+    "no_toast_system": "No toast library installed. Use inline banner pattern from DevicesTab.tsx:274-288 (aria-live='polite' region, text-destructive div). The signin-time prompt must use this pattern or introduce a new component."
+  },
+  "architecture": {
+    "dominant_paradigm": "Functional core (marmot .ts modules — no React) + imperative shell (client.tsx, device-sync.ts — React hooks + subscriptions) + presentation layer (src/components/ — useMarmot() only)",
+    "joinFromWelcomeInvite": {
+      "location": "src/marmot/device-sync.ts:410-428",
+      "catch_block": "Lines 424-427: console.debug, inviteReader.markAsRead(invite.id), return null",
+      "data_available_at_catch": {
+        "invite": "Rumor (kind-444) — sufficient for client.readInviteGroupInfo(invite) to get group name/relays/admins",
+        "err": "Error with messages 'No matching KeyPackage found in local store...' or 'Failed to join group with any matching key package. Last error: ...'",
+        "client": "available in outer closure — can call client.readInviteGroupInfo(invite)",
+        "gift_wrap_event_id": "NOT available — the kind-1059 outer event was consumed before this function was called. invite.id is the Rumor ID. ARCHITECT MUST verify whether invite.id equals the gift-wrap ID (some invite managers store by gift-wrap ID) or whether a new field is needed."
+      },
+      "critical_ordering": "The failed-welcome record MUST be written BEFORE inviteReader.markAsRead(invite.id) — after mark-as-read, the invite will not be replayed."
+    },
+    "inviteReaderOnError": {
+      "location": "src/marmot/device-sync.ts:484-492",
+      "callback_signature": "(error: Error, eventId: string) — eventId IS the gift-wrap (kind-1059) event ID",
+      "description": "Fires when a gift wrap fails to decrypt/parse. Rumor NOT available (decryption failed). Only err + eventId accessible."
+    },
+    "client_init_lifecycle": {
+      "location": "src/marmot/client.tsx:144-402",
+      "loading_false_at": "line 243",
+      "background_iife_at": "lines 283-389 — runs after loading:false; KP creation/rotation, stale-KP deletion, kind-10051 publish",
+      "probe_insertion_point": "Add as a parallel IIFE after line 243 (loading:false) and alongside the existing background IIFE at line 283"
+    },
+    "nip46_perms": {
+      "location": "src/lib/nostr.ts:167",
+      "current": "\"sign_event:31337,nip44_encrypt,nip44_decrypt\"",
+      "actual_signed_kinds": [
+        "kind 5 (forget-device.ts:219-228)",
+        "kind 10051 (client.tsx:362-373)",
+        "kind 30078 (device-sync.ts:1313-1326)",
+        "kind 22242 via NDK AUTH (needs perms even though no direct signEvent call — NDK calls signer internally)"
+      ]
+    },
+    "sibling_slots_source": "Re-query relay for kind-30443 events by user pubkey — same query DevicesTab uses at lines 162-175. The internal knownEvents map in device-sync.ts is not exported.",
+    "groupHasKeyPackageLeaf": "Exported from device-sync.ts:394-408. Signature: groupHasKeyPackageLeaf(state: ClientState, keyPackageEvent: NostrEvent): boolean"
+  },
+  "testing_and_conventions": {
+    "test_runner": "Vitest 4.1.0, environment: node (not jsdom), globals: false — explicit import of describe/it/expect/vi from vitest",
+    "make_test": "npm run test:unit (vitest run) && npm run test:export",
+    "no_component_tests": "No .test.tsx files. All unit tests are .test.ts. Component verification via E2E (Playwright).",
+    "idb_mock_patterns": {
+      "simple": "module-level Map + vi.mock('./storage', ...) factory — see device-store.test.ts:3-37",
+      "proxy": "vi.hoisted() + proxy store + storeRef.current swap in beforeEach — see forgotten-slots.test.ts:22-53",
+      "in_memory": "storage.ts:144-169 exports createInMemoryKVStore<T>() for production-quality in-memory testing"
+    },
+    "mock_ordering": "vi.mock() calls must come before all imports (see forget-device.test.ts:15-59). Vitest hoists vi.mock but imports must come after.",
+    "window_shim": "global.window = new EventTarget() needed in node env when testing dispatchEvent (forgotten-slots.test.ts:73)",
+    "typescript": "ES2022 target, lib: [ES2022, DOM, DOM.Iterable], strict: true, isolatedModules: true. @/* alias → ./src/*.",
+    "styling": "Tailwind v4 + shadcn/ui components (src/components/ui/). cn() for class merging. No CSS modules.",
+    "file_naming": "kebab-case .ts for marmot modules. Co-located tests: <module>.test.ts. No barrel files anywhere.",
+    "conventions": [
+      "No barrel files — import specific module files",
+      "@/ alias for cross-directory imports from components to marmot",
+      "Relative imports within same directory",
+      "All marmot .ts modules: no React imports, no 'use client'",
+      "Components with hooks: 'use client' as first line",
+      "data-testid attributes on interactive elements",
+      "Named exports only — no default exports",
+      "JSDoc boundary rules block at top of each marmot module",
+      "AC reference tags in test names: it('does X (AC-LOG-1, AC-LOG-2)', ...)"
+    ],
+    "e2e_cleanup": "e2e/fixtures/cleanup.ts:16-28 KNOWN_IDB_NAMES — must add 'notestr-failed-welcomes' when the new store is created"
+  }
+}

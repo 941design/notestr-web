@@ -1,0 +1,97 @@
+{
+  "story_id": "S2",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-19T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S2-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-UI-1",
+      "question": "Does the implementation satisfy AC-UI-1: is a 'Pending Invitations' surface reachable from the main app navigation in at most two clicks, and does it render the contents of `loadFailedWelcomes()`? Trace the click path (e.g. Settings icon → 'Pending Invitations' tab) and confirm the component is mounted in `SettingsModal.tsx`."
+    },
+    {
+      "question_id": "VQ-S2-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-UI-2",
+      "question": "Does the implementation satisfy AC-UI-2: does each rendered failed-welcome card display (a) inviter pubkey in short form, (b) group name if available from the decrypted rumor, (c) a human-readable failure reason, and (d) exactly one concrete recovery instruction? Confirm none of these fields are omitted when `groupId` is null (decrypt-failure records where group name is unavailable must still render gracefully)."
+    },
+    {
+      "question_id": "VQ-S2-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-UI-3",
+      "question": "Does the implementation satisfy AC-UI-3: does the dismiss action for ALL records call `forgetFailedWelcome(giftWrapEventId)`, and for records where `failureReason === 'decrypt_failed'` specifically, does it ALSO call `inviteReader.markAsRead(giftWrapEventId)`? Critically, confirm that `markAsRead` is NOT called for join-failure records (those already had `markAsRead` called before appending — calling it again would be a double-mark). Show the branching code and the unit tests that cover both the decrypt-failure and join-failure dismiss paths."
+    },
+    {
+      "question_id": "VQ-S2-004",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-UI-4",
+      "question": "Does the implementation satisfy AC-UI-4: when `loadFailedWelcomes()` returns an empty array, does the panel render the text 'No pending invitations' (or equivalent empty-state copy) rather than rendering nothing? Provide (a) the JSX empty-state branch and (b) a unit test that mocks `loadFailedWelcomes` returning `[]` and asserts the empty-state text is present in the rendered output."
+    },
+    {
+      "question_id": "VQ-S2-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-OBS-2",
+      "question": "Does the implementation satisfy AC-OBS-2: is `PendingInvitations.tsx` a no-op (renders nothing or a placeholder without errors) when no signer is connected? Confirm the component guards on the signer/pubkey state from `useMarmot()` before calling `loadFailedWelcomes()`, and that it does not throw when `signer` is null."
+    },
+    {
+      "question_id": "VQ-S2-006",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-OBS-4",
+      "question": "Does the implementation satisfy AC-OBS-4: does `PendingInvitations.tsx` import only modules already present in `package.json`? Run `grep -n '^import' src/components/PendingInvitations.tsx` and cross-check each external import against `package.json` dependencies. No new `npm install` should be required."
+    },
+    {
+      "question_id": "VQ-S2-007",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Is panel refresh driven by the `notestr:failed-welcomes-changed` DOM event (not polling)? Confirm with `grep -n 'failed-welcomes-changed' src/components/PendingInvitations.tsx` — the event listener must be registered (and unregistered on unmount) rather than a `setInterval` or similar poll."
+    },
+    {
+      "question_id": "VQ-S2-008",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does `PendingInvitations.tsx` import `loadFailedWelcomes` and `forgetFailedWelcome` from `@/marmot/failed-welcomes` only (following the same pattern as `DevicesTab` importing `forgetSelfDevice` from `@/marmot/forget-device`), with no other direct marmot module imports? Confirm with `grep -n \"from '@/marmot/\" src/components/PendingInvitations.tsx`."
+    },
+    {
+      "question_id": "VQ-S2-009",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `PendingInvitations.tsx` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list (i.e. `SettingsModal.tsx` and `failed-welcomes.ts`)? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S2-010",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Do the unit tests for `PendingInvitations.tsx` cover the full round-trip: (a) component renders records returned by a mocked `loadFailedWelcomes`, (b) clicking dismiss calls `forgetFailedWelcome`, (c) clicking dismiss on a `decrypt_failed` record also calls `markAsRead`, (d) the `notestr:failed-welcomes-changed` event triggers a re-fetch? Confirm the tests are not pure mock-spy proxies: at minimum one test must assert visible DOM output (e.g. group name text, empty-state text) not just that a function was called."
+    },
+    {
+      "question_id": "VQ-S2-011",
+      "phase": "pre-impl",
+      "category": "BEST_PRACTICES",
+      "question": "Is each dismiss button accessible? Confirm the button has a unique accessible name per record (e.g. 'Dismiss invitation from [pubkey]' rather than a generic 'Dismiss' label duplicated across all cards). Identical accessible names on repeated interactive elements fail WCAG 2.1 SC 4.1.2 in list contexts."
+    },
+    {
+      "question_id": "VQ-S2-012",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "The pure helper functions (inviterShort, failureReasonLabel, recoveryInstruction) were extracted to `pending-invitations-helpers.ts` because the vitest node environment cannot parse JSX from .tsx files. Does the split create any risk of divergence between what the component uses and what the tests verify? Confirm both import from the same source module."
+    },
+    {
+      "question_id": "VQ-S2-013",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "The dismiss handler calls `client.invites.markAsRead(id)` where `id` is the `giftWrapEventId` field. For decrypt_failed records, that field is the kind-1059 gift-wrap event ID (set at failure time in device-sync). Does `client.invites.markAsRead` accept a gift-wrap event ID, or does it expect an invite/rumor ID? If the wrong ID is passed, markAsRead becomes a no-op and the invite could be replayed."
+    },
+    {
+      "question_id": "VQ-S2-014",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "The `notestr:failed-welcomes-changed` event listener re-calls `load()` via a useCallback. The load callback closes over `mountedRef` but NOT over `client` or `pubkey` — it always calls `loadFailedWelcomes()` unconditionally when triggered by the event. Is this correct when `client` or `pubkey` become null mid-session (e.g. after sign-out)? If `loadFailedWelcomes()` does not throw when unauthenticated, this is safe; if it depends on a valid client state, it could silently swallow errors."
+    }
+  ]
+}

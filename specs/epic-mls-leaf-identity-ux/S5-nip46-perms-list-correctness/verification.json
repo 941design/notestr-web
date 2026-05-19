@@ -1,0 +1,67 @@
+{
+  "story_id": "S5",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-19T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S5-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-PERMS-1",
+      "question": "Does the implementation satisfy AC-PERMS-1: is `sign_event:31337` absent from the `perms` string passed to `NDKNip46Signer.nostrconnect` in `src/lib/nostr.ts:167`, and is the string instead a comma-separated list of `sign_event:{kind}` entries for every signed kind plus `nip44_encrypt,nip44_decrypt`? Provide (a) the exact replacement string from the source, (b) a grep confirming `sign_event:31337` is gone (`grep -n 'sign_event:31337' src/lib/nostr.ts` must return zero matches), and (c) confirmation the tests exercise the new perms string."
+    },
+    {
+      "question_id": "VQ-S5-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-PERMS-2",
+      "question": "Does the implementation satisfy AC-PERMS-2: does the enumerated kind set cover every distinct literal kind passed to `signer.signEvent(...)` call sites across the codebase, including kind 22242 for NIP-42 AUTH? Provide (a) the grep command used to audit call sites (e.g. `grep -rn 'signEvent' src/ --include='*.ts' --include='*.tsx' | grep -v test | grep -v 'd.ts'`), (b) its output, and (c) confirmation that every kind found in that output also appears in the perms string in `src/lib/nostr.ts`."
+    },
+    {
+      "question_id": "VQ-S5-003",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Is the complete perms enumeration co-located in a single place in `src/lib/nostr.ts` with no fragment of it split into another file? Run `grep -rn 'nip44_encrypt\\|sign_event:[0-9]' src/ --include='*.ts' --include='*.tsx'` and confirm all matches reside in `src/lib/nostr.ts` only (test files excepted)."
+    },
+    {
+      "question_id": "VQ-S5-004",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does the change respect the architecture boundary rule that `src/lib/nostr.ts` is the sole owner of NIP-46 connection bootstrap configuration? Confirm no other file in `src/lib/` or `src/marmot/` redefines or overrides the `perms` string passed to `NDKNip46Signer`."
+    },
+    {
+      "question_id": "VQ-S5-005",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `nostr.ts` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S5-006",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does `src/lib/nostr.test.ts` include an automated check that scans source files for literal kinds passed to signing helpers and asserts they all appear in the perms string? Confirm the test is not a pure mock-spy proxy: it must actually parse or grep real source content (or import the perms constant and compare against a computed set of kinds)."
+    },
+    {
+      "question_id": "VQ-S5-007",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does the perms string include `sign_event:22242` (NIP-42 AUTH) explicitly? An NDK-internal AUTH request will be silently approved by a permissive bunker but silently rejected by a strict one; confirm the kind is enumerated so strict bunkers work correctly. Provide the exact substring match: `grep -n 'sign_event:22242' src/lib/nostr.ts`."
+    }
+  ],
+  "post_impl_questions": [
+    {
+      "question_id": "VQ-S5-PI-001",
+      "phase": "post-impl",
+      "category": "CORRECTNESS",
+      "question": "Is kind 13 (NIP-59 Seal) correctly included and justified? The story's architecture context listed kinds 443/444/445/30443 as marmot-ts signed kinds, but the actual signing analysis shows: kind 444 is an unsigned rumor, kind 445 is signed with an ephemeral key, kind 443 is only queried. Kind 13 (Seal) is the kind the user's signer actually signs during welcome invitation dispatch via applesauce-common's gift-wrap pipeline. Confirm by reading `node_modules/applesauce-common/dist/operations/gift-wrap.js:51` and tracing it back to marmot-ts `utils/nostr.js:19` (`createWelcomeGiftWrap`).",
+      "rationale": "The story's starting kind list was inaccurate; kind 13 was derived by reading marmot-ts and applesauce-common internals, not from the spec."
+    },
+    {
+      "question_id": "VQ-S5-PI-002",
+      "phase": "post-impl",
+      "category": "FUTURE_DRIFT",
+      "question": "If marmot-ts is upgraded to a version that adds new event kinds signed through the user's signer (e.g. a future group admin event), will the perms string be updated? The perms-audit unit test in `src/lib/nostr.test.ts` uses a static REQUIRED_KINDS list — it will NOT automatically catch new signing call sites added in upstream library code. Is this acceptable, and if so is there a process for reviewing marmot-ts release notes for new signed kinds?",
+      "rationale": "The source-scan test covers app-code call sites but not library internals; future marmot-ts upgrades could introduce new signed kinds without failing the test."
+    }
+  ]
+}

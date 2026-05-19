@@ -14,6 +14,15 @@ vi.mock("ts-mls", () => ({
   nodeTypes: { leaf: "leaf" },
 }));
 
+// Mock failed-welcomes so joinFromWelcomeInvite's appendFailedWelcome call
+// does not hit real IDB (which is unavailable in the vitest node environment).
+vi.mock("./failed-welcomes", () => ({
+  appendFailedWelcome: vi.fn().mockResolvedValue(undefined),
+  forgetFailedWelcome: vi.fn().mockResolvedValue(undefined),
+  loadFailedWelcomes: vi.fn().mockResolvedValue([]),
+  pruneOlderThan: vi.fn().mockResolvedValue(undefined),
+}));
+
 // Swap the trace singleton for a recording impl so the publish-task
 // bridge tests can inspect emitted trace events. Without this, the
 // no-op default would record nothing.

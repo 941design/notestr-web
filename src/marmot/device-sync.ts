@@ -36,6 +36,7 @@ import {
   persistInvitedKey,
 } from "./device-store";
 import { loadForgottenSlots } from "./forgotten-slots";
+import { appendFailedWelcome, pruneOlderThan, type FailedWelcomeRecord } from "./failed-welcomes";
 import { TASK_EVENT_KIND, type TaskEvent } from "../store/task-events";
 import { appendEvent, loadEvents } from "../store/persistence";
 import { replayEvents } from "../store/task-reducer";
@@ -423,6 +424,45 @@ export async function joinFromWelcomeInvite(
     return group;
   } catch (err) {
     console.debug("[device-sync] join from welcome failed:", err);
+
+    // Extract groupId best-effort (may fail if the Welcome is malformed).
+    let groupId: string | null = null;
+    try {
+      if ("readInviteGroupInfo" in client) {
+        const groupInfo = await (client as MarmotClient).readInviteGroupInfo(invite);
+        if (groupInfo != null) {
+          groupId = Buffer.from(groupInfo.groupContext.groupId).toString("hex");
+        }
+      }
+    } catch {
+      // Extraction is best-effort; ignore errors here.
+    }
+
+    // Classify the failure reason from the error message.
+    const errMsg = err instanceof Error ? err.message : String(err);
+    let failureReason: string;
+    if (/[Nn]o matching/i.test(errMsg)) {
+      failureReason = "no_matching_kp";
+    } else if (/ciphersuite/i.test(errMsg)) {
+      failureReason = "ciphersuite_mismatch";
+    } else {
+      failureReason = "unknown";
+    }
+
+    const record: FailedWelcomeRecord = {
+      recordedAt: Date.now(),
+      giftWrapEventId: invite.id,
+      innerKind: invite.kind ?? 444,
+      innerCreatedAt: invite.created_at ?? 0,
+      inviterPubkey: invite.pubkey ?? null,
+      groupId,
+      kpRef: null,
+      failureReason,
+      failureDetail: errMsg,
+    };
+
+    // AC-LOG-1: appendFailedWelcome BEFORE markAsRead.
+    await appendFailedWelcome(record);
     await inviteReader.markAsRead(invite.id);
     return null;
   }
@@ -468,6 +508,9 @@ export function useDeviceSync(
     mountedRef.current = true;
     const subs: Unsubscribable[] = [];
 
+    // AC-LOG-5: prune failed-welcome records older than 30 days once per mount.
+    pruneOlderThan(30 * 86400 * 1000).catch(console.error);
+
     // Barrier: resolves when the current join + pre-seed completes.
     // Set BEFORE joinGroupFromWelcome because that call fires the
     // synchronous "groupsUpdated" event which triggers syncGroup.
@@ -483,6 +526,18 @@ export function useDeviceSync(
 
       const onError = (err: Error, eventId: string) => {
         console.debug("[device-sync] invite decrypt error for", eventId, err);
+        // AC-LOG-2: log decrypt failures. Handler is synchronous; fire-and-forget.
+        appendFailedWelcome({
+          recordedAt: Date.now(),
+          giftWrapEventId: eventId,
+          innerKind: 0,
+          innerCreatedAt: 0,
+          inviterPubkey: null,
+          groupId: null,
+          kpRef: null,
+          failureReason: "decrypt_failed",
+          failureDetail: err.message,
+        }).catch(console.error);
       };
       inviteReader.on("error", onError);
       subs.push({

@@ -1,0 +1,83 @@
+{
+  "story_id": "S4",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-19T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S4-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-PROBE-1",
+      "question": "Does the implementation satisfy AC-PROBE-1: (a) is the probe launched as a background IIFE after `setState({ loading: false })` with no `await` in the main init sequence, (b) does it fetch kind-1059 gift wraps over the last 14 days from `DEFAULT_RELAYS`, (c) does it compare the count against `loadFailedWelcomes({ since: (now - 14*86400) * 1000 }).length` plus currently loaded groups, (d) does it surface an inline `aria-live='polite'` banner (not a toast) if the gap is material, and (e) does it write `lastProbeAt = now` to `notestr-identity` IDB store in all cases? Show the code block and point to the exact line where `setState({ loading: false })` is called versus where the IIFE is launched."
+    },
+    {
+      "question_id": "VQ-S4-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-PROBE-2",
+      "question": "Does the implementation satisfy AC-PROBE-2: does the probe demonstrably NOT block the `loading: false` transition? Provide (a) the code sequence showing `setState({ loading: false })` is called before the IIFE begins any async work, and (b) a unit test that asserts the `loading` state becomes `false` without waiting for the probe's network fetch to resolve."
+    },
+    {
+      "question_id": "VQ-S4-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-OBS-2",
+      "question": "Does the implementation satisfy AC-OBS-2: is the probe a complete no-op when no signer is connected? Confirm the probe early-exits (or is never launched) when `signer` / `pubkey` is null, and that no network fetch is attempted in the unauthenticated state."
+    },
+    {
+      "question_id": "VQ-S4-004",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-OBS-3",
+      "question": "Does the implementation satisfy AC-OBS-3: do the unit tests in `client.test.ts` cover all three `lastProbeAt` scenarios: (a) probe runs when `lastProbeAt` is absent from IDB, (b) probe runs when `lastProbeAt < now - 24h`, and (c) probe does NOT run when `lastProbeAt > now - 24h`? Provide the test case names and confirm each asserts a state difference (e.g. fetch called vs not called) rather than just that a mock was set up."
+    },
+    {
+      "question_id": "VQ-S4-005",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the probe's IIFE have error handling so an exception (network failure, IDB unavailable) does not bubble up to an unhandled-promise rejection? Confirm with `grep -n 'catch\\|\\.catch(' src/marmot/client.tsx` that the IIFE has a `.catch()` or a `try/catch` wrapping the async body."
+    },
+    {
+      "question_id": "VQ-S4-006",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does the probe in `client.tsx` use `loadFailedWelcomes` imported from `src/marmot/failed-welcomes.ts` (S1's seam contract), with no inline re-implementation of IDB reads? Confirm with `grep -n 'loadFailedWelcomes' src/marmot/client.tsx` — the import and call site must both appear."
+    },
+    {
+      "question_id": "VQ-S4-007",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `client.tsx` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S4-008",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does the banner rendered when the probe finds a material gap use `aria-live='polite'` and the inline pattern from `DevicesTab.tsx:274-288` (not a toast library)? Confirm with `grep -n 'aria-live\\|toast' src/marmot/client.tsx` — `aria-live` must appear and `toast` must not."
+    },
+    {
+      "question_id": "VQ-S4-009",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does the `lastProbeAt` gating use a monotonic comparison (`lastProbeAt < Date.now() - 24 * 3600 * 1000`) rather than a string comparison or locale-sensitive date parse? Confirm the value stored and retrieved from `notestr-identity` is a Unix timestamp in milliseconds (number), not an ISO string that could be mis-compared."
+    },
+    {
+      "question_id": "VQ-S4-010",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "The gating predicate was extracted to `src/marmot/probe-gate.ts` because `client.tsx` (JSX + vite:define) cannot be imported in the vitest node environment. Does `probe-gate.ts` have zero dependencies (no imports), making it safe to test in isolation? Verify that `client.tsx` correctly re-exports nothing from `probe-gate.ts` to outside callers — the module is internal."
+    },
+    {
+      "question_id": "VQ-S4-011",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "The probe stores `String(Date.now())` in IDB and reads it back with `Number(rawValue)`. If IDB returns `undefined` (key absent), the code sets `lastProbeAt = null` and always runs. If IDB returns the string `'NaN'` or a corrupt value, `Number('NaN')` is NaN, and `Date.now() - NaN` is also NaN, which is NOT >= PROBE_INTERVAL_MS — meaning the probe skips. Is this edge case acceptable, or should there be an explicit `isNaN` guard?"
+    },
+    {
+      "question_id": "VQ-S4-012",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "question": "The `network.request` call uses `{ kinds: [1059], '#p': [pubkey], since } as any` to bypass TypeScript's filter type. Does the actual relay query work correctly at runtime, or does marmot-ts strip the `#p` tag filter before sending to the relay? Verify by checking `src/marmot/network.ts` for any filter-normalization logic that might drop unknown tag filters."
+    }
+  ]
+}

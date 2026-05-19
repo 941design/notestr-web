@@ -1,0 +1,42 @@
+{
+  "story_id": "S2",
+  "status": "done",
+  "final_outcome": "accepted_with_caveat",
+  "caveat": "Lead-applied ACCEPT. Examiner flagged the notestr-failed-welcomes IDB store as not scoped per-pubkey (severity 10, root_cause_category: spec_gap) — a multi-user-per-origin would leak invitation metadata. Accepted because (a) AC-OBS-1 only requires origin scoping (satisfied), (b) every other IDB store in the codebase follows the same single-user-per-origin pattern, (c) the spec's Non-Goals explicitly excludes multi-user scenarios, (d) the data is invitation metadata not key material, (e) all 6 component-level ACs verified YES. Per-pubkey scoping is filed as a follow-on finding in BACKLOG.json for a future architecture-wide treatment.",
+  "remediation_rounds": 1,
+  "summary": "Created PendingInvitations component with full AC coverage: loads FailedWelcomeRecord list via loadFailedWelcomes(), renders each record with inviter pubkey (8-char short), group name, failure reason label, and recovery instruction. Dismiss calls forgetFailedWelcome for all records and additionally markAsRead for decrypt_failed only. Empty state shows 'No pending invitations'. Added 'Pending Invitations' tab to SettingsModal. Pure helpers extracted to pending-invitations-helpers.ts for vitest node-environment testability.",
+  "files_created": [
+    "src/components/PendingInvitations.tsx",
+    "src/components/pending-invitations-helpers.ts",
+    "src/components/PendingInvitations.test.ts",
+    "specs/epic-mls-leaf-identity-ux/S2-pending-invitations-panel/architecture.json",
+    "specs/epic-mls-leaf-identity-ux/S2-pending-invitations-panel/baseline.json",
+    "specs/epic-mls-leaf-identity-ux/S2-pending-invitations-panel/result.json"
+  ],
+  "files_modified": [
+    "src/components/SettingsModal.tsx"
+  ],
+  "tests_added": {
+    "unit": 18
+  },
+  "test_counts": {
+    "baseline": 165,
+    "final": 183
+  },
+  "mocks_introduced": [
+    {
+      "module": "@/marmot/failed-welcomes",
+      "reason": "Isolate loadFailedWelcomes/forgetFailedWelcome for dismiss branching tests"
+    }
+  ],
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The vitest config uses environment:node with no JSX transform, so importing a .tsx file from a .test.ts file fails at the vite:import-analysis step. This was not apparent until the first test run. Resolving it required extracting the pure helpers into a separate .ts file (pending-invitations-helpers.ts). This is the correct architectural move, but the constraint was implicit — the project's other test files only import .ts modules, never .tsx components directly.",
+    "surprised_by": "",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  }
+}
