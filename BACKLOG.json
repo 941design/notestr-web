@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-05-18T20:57:13Z",
+  "updated_at": "2026-05-19T05:53:24Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -54,8 +54,8 @@
     },
     {
       "path": "specs/epic-property-tests-l3-multi-device/",
-      "status": "PLANNED",
-      "next_action": "seeded by /base:backlog init 2026-05-12"
+      "status": "DONE",
+      "next_action": "completed 2026-05-19"
     },
     {
       "path": "specs/epic-property-tests-l3-three-party/",
@@ -174,6 +174,25 @@
       },
       "text": "Deferred L3 deliberate-regression verifications (AC-S5-4, AC-A14-6, AC-C0-5, AC-S6-4, AC-S10-4) remain unexercised — make test-property runs only L1/L2; the L3 behavioral checks require a live Playwright run with relay container up",
       "created_at": "2026-05-18"
+    },
+    {
+      "slug": "deferred-live-relay-acs-md-property",
+      "scope": "any",
+      "anchor": {
+        "path": "e2e/tests/multi-user-md.property.spec.ts"
+      },
+      "text": "Deferred live-relay ACs in MD property spec (AC-MD-ATTACH-6, AC-MD-RUN-5, AC-MD-WC-1/2/3, AC-VAL-MD-1/2) require a live relay container and were only compilation-verified — full runtime counterexample observation and wall-clock validation remain unexercised post-merge",
+      "created_at": "2026-05-19"
+    },
+    {
+      "slug": "authenticate-page-url-slot-slot-param",
+      "scope": "any",
+      "anchor": {
+        "path": "e2e/fixtures/two-party.ts",
+        "line": 64
+      },
+      "text": "authenticate(page, url, slot?) slot param is a silent correctness requirement when two contexts share the same bunker URL — omitting slot causes both contexts to derive the same KP slot from the bunker pubkey, so A2 never appears as a separate leaf; this is not visible from the optional type signature alone",
+      "created_at": "2026-05-19"
     }
   ],
   "archive": [

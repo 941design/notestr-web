@@ -1,0 +1,11 @@
+{
+  "captured_at": "2026-05-19T00:00:00Z",
+  "test_suite": "multi-user-md.property.spec.ts",
+  "test_count": 1,
+  "projects": 3,
+  "total_listed": 3,
+  "status": "1 test definition x 3 projects (skipped — S1 skeleton)",
+  "typescript_errors": 2,
+  "typescript_errors_note": "Pre-existing in src/marmot/forget-device.test.ts — unrelated to this story",
+  "off_limits_diff": "empty"
+}

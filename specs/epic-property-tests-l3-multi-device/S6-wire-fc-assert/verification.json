@@ -1,0 +1,132 @@
+{
+  "story_id": "S6",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S6-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Is the placeholder `test.skip()` body from S1 fully replaced with the real `fc.assert` invocation? Confirm that no `test.skip` call remains in the multi-device property test describe block. Evidence: `grep -n 'test.skip\\|it.skip' e2e/tests/multi-user-md.property.spec.ts`."
+    },
+    {
+      "question_id": "VQ-S6-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does the `fc.commands` array construction reference exactly the 13 command arbitraries listed in spec.md § Single test wiring, and does no command arbitrary import directly from `src/` or reference `e2e/tests/multi-user.property.spec.ts`? Confirm the commands array is self-contained within the MD file."
+    },
+    {
+      "question_id": "VQ-S6-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could the `MD property spec` module be deleted and rewritten without modifying any file outside its `dependencies_allowed` list after S6? Does the `fc.assert` wiring introduce any cross-module side effects beyond what was declared in the seam table?"
+    },
+    {
+      "question_id": "VQ-S6-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does `npx tsc --noEmit` pass after S6? Does `npx playwright test multi-user-md.property.spec.ts --list` still show exactly one test with `[A15,C0]` (or wider) in its title? Provide both outputs."
+    },
+    {
+      "question_id": "VQ-S6-005",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does the `FAST_CHECK_SEED` and `FAST_CHECK_PATH` env-var handling use the exact parse pattern `parseInt(env ?? '0') || undefined` (or equivalent), matching the 2-party file's pattern? Confirm via `grep -n 'FAST_CHECK_SEED\\|FAST_CHECK_PATH' e2e/tests/multi-user-md.property.spec.ts`."
+    },
+    {
+      "question_id": "VQ-S6-006",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-RUN-1",
+      "question": "Does the `fc.commands` array in `multi-user-md.property.spec.ts` contain exactly the command arbitraries listed in spec.md § Single test wiring? List each command arbitrary present and confirm the count matches the spec. Evidence: `grep -n 'fc.constantFrom\\|fc.record\\|fc.tuple\\|Command_MD' e2e/tests/multi-user-md.property.spec.ts` within the commands array construction."
+    },
+    {
+      "question_id": "VQ-S6-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-RUN-2",
+      "question": "Does the `fc.assert` call use `numRuns: 12` and does `fc.commands(..., { maxCommands: 8 })` set `maxCommands: 8`? Evidence: `grep -n 'numRuns\\|maxCommands' e2e/tests/multi-user-md.property.spec.ts` showing both values."
+    },
+    {
+      "question_id": "VQ-S6-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-RUN-3",
+      "question": "Are `FAST_CHECK_SEED` and `FAST_CHECK_PATH` env vars honoured? Show the parse code and confirm the pattern `parseInt(process.env.FAST_CHECK_SEED ?? '0') || undefined` (or equivalent) is used. Also confirm `FAST_CHECK_NUM_RUNS` env override follows `parseInt(process.env.FAST_CHECK_NUM_RUNS ?? '0') || 12`."
+    },
+    {
+      "question_id": "VQ-S6-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-RUN-4",
+      "question": "Does `test.setTimeout(720_000)` appear in the test body (not in `beforeAll`)? Evidence: `grep -n 'setTimeout\\|720' e2e/tests/multi-user-md.property.spec.ts` showing the exact value."
+    },
+    {
+      "question_id": "VQ-S6-010",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-RUN-5",
+      "question": "Is there evidence in the epic completion notes or PR description that a deliberate divergence reachable only after `A2.Attach` was injected, a counterexample chain containing `A2.Attach()` followed by an A2-targeted command was observed, and the injection was then reverted? Confirm the final committed code contains no divergence remnant via `git diff origin/master... -- e2e/`."
+    },
+    {
+      "question_id": "VQ-S6-011",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does `git diff --stat origin/master... -- src/ e2e/tests/multi-user.property.spec.ts` show zero changes after S6? Confirms AC-X-NO-PROD-CHANGE-MD-1 and AC-X-NO-2P-CHANGE-MD-1.",
+      "ac_id": "AC-X-NO-PROD-CHANGE-MD-1"
+    },
+    {
+      "question_id": "VQ-S6-012",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does `git diff --stat origin/master... -- e2e/tests/multi-user.property.spec.ts` show no changes after S6? Check AC-X-NO-2P-CHANGE-MD-1.",
+      "ac_id": "AC-X-NO-2P-CHANGE-MD-1"
+    },
+    {
+      "question_id": "VQ-S6-013",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Do the three preserved example-based spec files still exist on disk unmodified and without `.skip` additions after S6? Check AC-X-NO-EXAMPLE-DELETION-MD-1.",
+      "ac_id": "AC-X-NO-EXAMPLE-DELETION-MD-1"
+    },
+    {
+      "question_id": "VQ-S6-014",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does the test title in `multi-user-md.property.spec.ts` contain the full bracketed invariant set (at minimum `[A15,C0]`, ideally `[A15,C0,S5,S6,S10]` after S5 is wired)? Check AC-X-NAMING-MD-1 via `grep -n 'test.*\\[.*A15' e2e/tests/multi-user-md.property.spec.ts`.",
+      "ac_id": "AC-X-NAMING-MD-1"
+    },
+    {
+      "question_id": "VQ-S6-015",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does the `numRuns` computation honour `FAST_CHECK_NUM_RUNS` env override: `parseInt(process.env.FAST_CHECK_NUM_RUNS ?? '0') || 12`? Verify by reading the `numRuns` line and confirming the env-var fallback. Check AC-X-RUNS-MD-1.",
+      "ac_id": "AC-X-RUNS-MD-1"
+    },
+    {
+      "question_id": "VQ-S6-016",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does `make test` pass after S6 is merged (i.e. no unit-test regressions)? Run `make test` and capture exit code to check AC-X-CI-MD-1.",
+      "ac_id": "AC-X-CI-MD-1"
+    },
+    {
+      "question_id": "VQ-S6-P01",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "The `RdCommand_MD` arbitrary uses `fc.tuple(arbDevice, arbNewName)` rather than the simpler `arbDevice.map(d => new RdCommand_MD(d, arbNewName))`. Verify that `arbNewName` is sampled independently from `arbDevice` (not captured via closure) so fast-check's shrinker can independently minimise the device and the name. Evidence: read lines 1318 in `multi-user-md.property.spec.ts` and confirm the `fc.tuple` form is used."
+    },
+    {
+      "question_id": "VQ-S6-P02",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "The test title was updated from `[A15,C0]` to `[A15,C0,S5,S6,S10]` during S6 wiring. Does AC-X-NAMING-MD-1 still pass — is the full invariant set now reflected in the title? Evidence: `grep -n 'test.*\\[A15' e2e/tests/multi-user-md.property.spec.ts` showing the updated title."
+    },
+    {
+      "question_id": "VQ-S6-P03",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "The AC-MD-RUN-5 regression-and-revert ritual was performed offline (no live relay available). The regression was a `throw` inside `assertA15_MD` guarded by `m.membersA2 === true` — reachable only after `A2.Attach()` fires. `npx tsc --noEmit` confirmed the injection compiles cleanly. Was the revert confirmed by a second `tsc --noEmit` showing only the two pre-existing errors? Evidence: baseline.json + the S6 story notes."
+    }
+  ]
+}

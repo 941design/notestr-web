@@ -1,0 +1,67 @@
+{
+  "module_name": "MD property spec",
+  "purpose": "Five fc.AsyncCommand<ModelStateMD, RealSystemMD> classes for group lifecycle (create, invite, leave, rename-device, forget-device) in the multi-device same-pubkey property test harness.",
+  "public_api": [
+    {
+      "name": "CgCommand_MD",
+      "signature": "class CgCommand_MD implements fc.AsyncCommand<ModelStateMD, RealSystemMD>",
+      "description": "A1 creates the group on pageA1 only. check: m.groupId===null && !m.membersA1. run: createGroup(pageA1), captures groupId, sets membersA1, records epoch."
+    },
+    {
+      "name": "InCommand_MD",
+      "signature": "class InCommand_MD implements fc.AsyncCommand<ModelStateMD, RealSystemMD>",
+      "description": "A1 invites B from pageA1. check: m.membersA1 && !m.membersB. run: settle, inviteByNpub, reload B, selectGroup on B, sets membersB, records epoch."
+    },
+    {
+      "name": "LgCommand_MD",
+      "signature": "class LgCommand_MD implements fc.AsyncCommand<ModelStateMD, RealSystemMD> { constructor(device: Device) }",
+      "description": "Device leaves via its own page. check: m.deviceIsMember(device) && m.groupId!==null. run: locator-direct leave. Identity-A 2→1 semantics when A1 leaves while A2 still in."
+    },
+    {
+      "name": "RdCommand_MD",
+      "signature": "class RdCommand_MD implements fc.AsyncCommand<ModelStateMD, RealSystemMD> { constructor(device: Device, newName: string) }",
+      "description": "Renames the device on the device's own page. check: m.deviceIsMember(device) && m.groupId!==null. run: renameDevice(r.page(device), ...)."
+    },
+    {
+      "name": "FdCommand_MD",
+      "signature": "class FdCommand_MD implements fc.AsyncCommand<ModelStateMD, RealSystemMD>",
+      "description": "A1 forgets A2's leaf (multi-leaf same-pubkey case). check: m.membersA1 && m.membersA2 && m.groupId!==null. run: leafIndexesFor, pick non-self leaf, forgetLeafByIndex, poll leaf count drops by 1."
+    }
+  ],
+  "private_files": [
+    "e2e/tests/multi-user-md.property.spec.ts"
+  ],
+  "owned_data": [
+    "ModelStateMD.membersA1 (set by CgCommand_MD)",
+    "ModelStateMD.membersB (set by InCommand_MD)",
+    "ModelStateMD.groupId / groupName (set by CgCommand_MD)",
+    "ModelStateMD.epochSequenceA1/B (appended by Cg/In/Lg)",
+    "ModelStateMD.membersA1/A2/B cleared by LgCommand_MD",
+    "ModelStateMD.membersA2 cleared by FdCommand_MD"
+  ],
+  "dependencies_allowed": [
+    "e2e/fixtures/two-party.ts",
+    "e2e/fixtures/auth-helper-b.ts",
+    "e2e/fixtures/multi-device.ts",
+    "@playwright/test",
+    "fast-check"
+  ],
+  "dependencies_forbidden": [
+    "src/marmot/**",
+    "src/store/**",
+    "src/components/**",
+    "e2e/tests/multi-user.property.spec.ts"
+  ],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "AC-MD-CG-1",
+    "AC-MD-IN-1",
+    "AC-MD-LG-1",
+    "AC-MD-LG-2",
+    "AC-MD-FD-1",
+    "AC-MD-FD-2",
+    "AC-MD-RD-1"
+  ]
+}

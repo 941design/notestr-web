@@ -1,0 +1,15 @@
+{
+  "story_id": "S5",
+  "captured_at": "2026-05-19T00:00:00Z",
+  "ts_errors": {
+    "count": 2,
+    "files": ["src/marmot/forget-device.test.ts"],
+    "note": "Pre-existing errors, unrelated to S5"
+  },
+  "playwright_test_list": {
+    "file": "multi-user-md.property.spec.ts",
+    "total_listed": 3,
+    "projects": ["chromium", "Mobile Chrome", "Mobile Safari"],
+    "test_definitions": 1
+  }
+}

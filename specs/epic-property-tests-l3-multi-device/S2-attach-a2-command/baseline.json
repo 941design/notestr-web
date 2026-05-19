@@ -1,0 +1,11 @@
+{
+  "captured_at": "2026-05-19",
+  "e2e_test_count": 3,
+  "e2e_note": "3 entries = 1 test body x 3 Playwright projects (chromium, Mobile Chrome, Mobile Safari). Source: npx playwright test multi-user-md.property.spec.ts --list",
+  "unit_test_count": 137,
+  "tsc_errors_baseline": [
+    "src/marmot/forget-device.test.ts(388,58): error TS2345 — pre-existing, unrelated to S2",
+    "src/marmot/forget-device.test.ts(552,7): error TS2345 — pre-existing, unrelated to S2"
+  ],
+  "e2e_tsc_errors": 0
+}

@@ -1,0 +1,35 @@
+{
+  "module_name": "MD property spec",
+  "purpose": "Add 7 per-device fc.AsyncCommand classes (CtCommand_MD, UtCommand_MD, ScCommand_MD, AsCommand_MD, UnCommand_MD, DtCommand_MD, RlCommand_MD) to the multi-device property spec. Each accepts device:Device and dispatches via r.page(device).",
+  "public_api": [],
+  "private_files": [
+    "e2e/tests/multi-user-md.property.spec.ts"
+  ],
+  "owned_data": [
+    "ModelStateMD.tasks (modified by Ct/Ut/Sc/As/Un/Dt/Rl commands)",
+    "ModelStateMD.epochSequenceA1/A2/B (epoch recording per device)"
+  ],
+  "dependencies_allowed": [
+    "e2e/fixtures/two-party.ts (dispatchTaskEvent, reload, settle, selectGroup, getGroupEpochHook)",
+    "e2e/fixtures/multi-device.ts (awaitDeviceJoin)",
+    "fast-check (fc.AsyncCommand interface)",
+    "uuid (uuidv4 for task id generation)"
+  ],
+  "dependencies_forbidden": [
+    "src/**",
+    "e2e/tests/multi-user.property.spec.ts"
+  ],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "AC-MD-CT-1",
+    "AC-MD-UT-1",
+    "AC-MD-SC-1",
+    "AC-MD-AS-1",
+    "AC-MD-UN-1",
+    "AC-MD-DT-1",
+    "AC-MD-RL-1",
+    "AC-MD-CMD-TOSTRING-1"
+  ]
+}

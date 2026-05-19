@@ -1,0 +1,11 @@
+{
+  "captured_at": "2026-05-19T00:00:00Z",
+  "test_suite": "multi-user-md.property.spec.ts",
+  "test_count": 1,
+  "playwright_list_output": "1 test definition x 3 projects = 3 entries",
+  "tsc_errors": [
+    "src/marmot/forget-device.test.ts(388,58): pre-existing TS2345",
+    "src/marmot/forget-device.test.ts(552,7): pre-existing TS2345"
+  ],
+  "note": "Both TS errors are pre-existing in non-e2e files and are not introduced by this story."
+}

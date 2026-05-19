@@ -1,0 +1,122 @@
+{
+  "story_id": "S3",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S3-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Are all seven per-device commands (`CtCommand_MD`, `UtCommand_MD`, `ScCommand_MD`, `AsCommand_MD`, `UnCommand_MD`, `DtCommand_MD`, `RlCommand_MD`) present in `e2e/tests/multi-user-md.property.spec.ts` with no TODO/FIXME stub markers and no auto-firing (i.e. each has a `check` guard that returns false unless prerequisites are met)? Verify via `grep -n 'Command_MD\\|TODO\\|FIXME' e2e/tests/multi-user-md.property.spec.ts`."
+    },
+    {
+      "question_id": "VQ-S3-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Do all seven per-device commands dispatch exclusively via `r.page(device)` — never hardcoding `r.pageA1`, `r.pageA2`, or `r.pageB` directly inside the `run` method? Confirm via `grep -n 'r\\.pageA1\\|r\\.pageA2\\|r\\.pageB' e2e/tests/multi-user-md.property.spec.ts` within the per-device command classes. Any direct page reference is an architecture violation."
+    },
+    {
+      "question_id": "VQ-S3-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could the `MD property spec` module be deleted and rewritten without modifying any file outside its `dependencies_allowed` list after S3 lands? Do the per-device commands introduce any import from `src/` or modify `e2e/tests/multi-user.property.spec.ts`?"
+    },
+    {
+      "question_id": "VQ-S3-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does `npx tsc --noEmit` pass after S3 with no errors? The `device: Device` parameter in each command must satisfy the `Device = 'A1' | 'A2' | 'B'` type. Provide exit code."
+    },
+    {
+      "question_id": "VQ-S3-005",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does every per-device command's `check(m)` guard include `m.deviceIsMember(device)` (or an equivalent member-check) so that no command can fire on a device that is not yet a group member? Confirm via `grep -n 'deviceIsMember\\|check.*device' e2e/tests/multi-user-md.property.spec.ts`."
+    },
+    {
+      "question_id": "VQ-S3-006",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-CT-1",
+      "question": "Does `CtCommand_MD(device, title, desc).check(m)` return `true` only when `m.deviceIsMember(device) && m.groupId !== null`? Show the `check` body. Does `run` dispatch task creation on `r.page(device)` and record the postcondition (task visible, count +1 per invariant A3)?"
+    },
+    {
+      "question_id": "VQ-S3-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-UT-1",
+      "question": "Does `UtCommand_MD(device, ...)` accept `device: Device`, dispatch on `r.page(device)`, and follow the 2-party postcondition pattern for A2 (task update visible on all member pages)? Show the `check` guard and `run` dispatch."
+    },
+    {
+      "question_id": "VQ-S3-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-SC-1",
+      "question": "Does `ScCommand_MD(device, ...)` accept `device: Device`, dispatch on `r.page(device)`, and follow the A4 postcondition pattern? Show the check guard and run dispatch. Confirm `toString()` returns `${device}.Sc(...)`."
+    },
+    {
+      "question_id": "VQ-S3-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-AS-1",
+      "question": "Does `AsCommand_MD(device, ...)` accept `device: Device`, dispatch on `r.page(device)`, and follow the A4 postcondition pattern for assignee? Show the check guard and run dispatch."
+    },
+    {
+      "question_id": "VQ-S3-010",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-UN-1",
+      "question": "Does `UnCommand_MD(device, ...)` accept `device: Device`, dispatch on `r.page(device)`, and follow the A4 postcondition pattern? Show the check guard and run dispatch."
+    },
+    {
+      "question_id": "VQ-S3-011",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-DT-1",
+      "question": "Does `DtCommand_MD(device, ...)` accept `device: Device`, dispatch on `r.page(device)`, and follow the A5 postcondition pattern (task deleted / count -1)? Show the check guard and run dispatch."
+    },
+    {
+      "question_id": "VQ-S3-012",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-RL-1",
+      "question": "Does `RlCommand_MD(device)` reload `r.page(device)` and verify that post-reload the model and actual state still agree (invariant A11)? Show the `run` body including the post-reload assertion or quiescence wait."
+    },
+    {
+      "question_id": "VQ-S3-013",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-CMD-TOSTRING-1",
+      "question": "Does every per-device command's `toString()` return `${device}.Verb(args)` format? Provide evidence: `grep -n 'toString' e2e/tests/multi-user-md.property.spec.ts` showing all seven per-device command toString methods with their device-prefix interpolation."
+    },
+    {
+      "question_id": "VQ-S3-014",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does `git diff --stat origin/master... -- src/ e2e/tests/multi-user.property.spec.ts` show zero changes after S3? Confirms AC-X-NO-PROD-CHANGE-MD-1 and AC-X-NO-2P-CHANGE-MD-1.",
+      "ac_id": "AC-X-NO-PROD-CHANGE-MD-1"
+    },
+    {
+      "question_id": "VQ-S3-015",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does `git diff --stat origin/master... -- e2e/tests/multi-user.property.spec.ts` show no changes after S3? Check AC-X-NO-2P-CHANGE-MD-1.",
+      "ac_id": "AC-X-NO-2P-CHANGE-MD-1"
+    },
+    {
+      "question_id": "VQ-S3-016",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Do the three preserved example-based spec files still exist on disk unmodified and without `.skip` additions after S3? Check AC-X-NO-EXAMPLE-DELETION-MD-1.",
+      "ac_id": "AC-X-NO-EXAMPLE-DELETION-MD-1"
+    }
+  ],
+  "post_impl_questions": [
+    {
+      "question_id": "VQ-S3-PI-001",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "In `UnCommand_MD.run` (and similarly `DtCommand_MD.run`, `ScCommand_MD.run`, `UtCommand_MD.run`), `m.pubkeyOf(this.device)!` is called for `updatedBy` but the `check` guard does not assert `pubkeyOf !== null`. If `cachedPubkeyA` or `cachedPubkeyB` is null at runtime (e.g., `beforeAll` race), would the non-null assertion throw before `dispatchTaskEvent` is called, causing the test to fail with a null-dereference rather than a meaningful assertion failure? Verify that `cachedPubkeyA` and `cachedPubkeyB` are always non-null by the time any command fires (i.e., confirm that `CgCommand_MD.check` cannot return true unless `m.pubkeyA` is set)."
+    }
+  ]
+}

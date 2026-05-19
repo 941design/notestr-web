@@ -1,0 +1,42 @@
+{
+  "story_id": "S5",
+  "status": "complete",
+  "final_outcome": "accepted",
+  "remediation_rounds": 0,
+  "architect_skipped": false,
+  "implementation_summary": "Added five assertion functions to e2e/tests/multi-user-md.property.spec.ts: assertA15_MD, assertC0_MD, assertS5_MD, assertS6_MD, assertS10_MD. Also added getGroupMembersHook and getPubkeyLeafCountHook to the import list from e2e/fixtures/two-party.ts (they were present in the fixture but not yet imported by the MD file). All functions are in strict form (test hooks present per epic-property-tests-l3-completion) and include the required AC-MD-DEG-1/2 comment citing epic-property-tests-l3-completion.",
+  "files_created": [
+    "specs/epic-property-tests-l3-multi-device/S5-headline-assertions/architecture.json",
+    "specs/epic-property-tests-l3-multi-device/S5-headline-assertions/baseline.json",
+    "specs/epic-property-tests-l3-multi-device/S5-headline-assertions/result.json"
+  ],
+  "files_modified": [
+    "e2e/tests/multi-user-md.property.spec.ts",
+    "specs/epic-property-tests-l3-multi-device/S5-headline-assertions/verification.json"
+  ],
+  "test_counts": {
+    "baseline_ts_errors": 2,
+    "final_ts_errors": 2,
+    "baseline_playwright_tests_listed": 3,
+    "final_playwright_tests_listed": 3,
+    "note": "TS error count stable (pre-existing errors in forget-device.test.ts only). Test definition count stable at 1 × 3 projects."
+  },
+  "mocks_introduced": [],
+  "verification": {
+    "tsc_noEmit": "exit 2 — only the 2 pre-existing errors in src/marmot/forget-device.test.ts, zero new errors",
+    "playwright_list": "1 test definition × 3 projects (unchanged)",
+    "scope_guard": "git diff HEAD -- src/ docs/ e2e/tests/multi-user.property.spec.ts e2e/fixtures/ returns empty (no off-limits changes)",
+    "deg_citations": "grep confirms AC-MD-DEG-1/2 and epic-property-tests-l3-completion in all five function JSDoc blocks",
+    "no_direct_window_calls": "grep confirms no new window.__notestrTest* calls in assertion functions; only pre-existing calls in getTasks and beforeAll remain"
+  },
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The import list in the MD spec file was missing getGroupMembersHook and getPubkeyLeafCountHook even though those helpers were already present in two-party.ts and used in the 2-party spec. The story instructions called this out but required confirming it from the file. The omission is a minor pipeline gap: earlier stories (S1-S4) imported only the subset they needed and left the S5 helpers unimported, so S5 had to add them — expected but worth noting for stories that split imports across story boundaries.",
+    "surprised_by": "",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  }
+}

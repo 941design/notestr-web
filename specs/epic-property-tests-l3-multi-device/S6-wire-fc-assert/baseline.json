@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-05-19T00:00:00Z",
+  "tsc_errors": [
+    "src/marmot/forget-device.test.ts(388,58): error TS2345 — pre-existing, unrelated to S6",
+    "src/marmot/forget-device.test.ts(552,7): error TS2345 — pre-existing, unrelated to S6"
+  ],
+  "playwright_list": "1 test x 3 projects (SKIPPED — placeholder test.skip body)",
+  "notes": "Two pre-existing TS errors in forget-device.test.ts; S6 must not introduce additional errors."
+}

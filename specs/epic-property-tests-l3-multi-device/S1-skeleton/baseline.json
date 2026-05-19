@@ -1,0 +1,14 @@
+{
+  "captured_at": "2026-05-18T23:27:00Z",
+  "e2e_tests": {
+    "total": 369,
+    "files": 29
+  },
+  "unit_tests": {
+    "total": 137,
+    "files": 15,
+    "status": "all_passing"
+  },
+  "new_files_exist": false,
+  "notes": "Neither e2e/tests/multi-user-md.property.spec.ts nor e2e/fixtures/multi-device.ts existed at baseline capture."
+}

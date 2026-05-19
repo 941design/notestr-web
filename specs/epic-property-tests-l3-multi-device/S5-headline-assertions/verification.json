@@ -1,0 +1,147 @@
+{
+  "story_id": "S5",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S5-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Do all five assertion functions (`assertA15_MD`, `assertC0_MD`, `assertS5_MD`, `assertS6_MD`, `assertS10_MD`) have code comments in their degraded-form branches that explicitly name `AC-MD-DEG-1` and/or `AC-MD-DEG-2` and point to the `epic-property-tests-l3-completion` test-hook story? Confirm via `grep -n 'AC-MD-DEG\\|epic-property-tests-l3-completion' e2e/tests/multi-user-md.property.spec.ts`."
+    },
+    {
+      "question_id": "VQ-S5-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Do all five assertion functions import test hooks exclusively via `getGroupEpochHook`, `getGroupMembersHook`, and `getPubkeyLeafCountHook` from `e2e/fixtures/two-party.ts`? Confirm that no assertion function calls `window.__notestrTestGroupEpoch`, `window.__notestrTestGroupMembers`, or `window.__notestrTestPubkeyLeafCount` directly. Evidence: `grep -n 'window\\.__notestr\\|__notestrTest' e2e/tests/multi-user-md.property.spec.ts` must return no lines."
+    },
+    {
+      "question_id": "VQ-S5-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could the `MD property spec` module be deleted and rewritten without modifying any file outside its `dependencies_allowed` list after S5? Do the assertion functions introduce any direct `src/` imports or modify `e2e/fixtures/two-party.ts` beyond purely additive helpers?"
+    },
+    {
+      "question_id": "VQ-S5-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does `npx tsc --noEmit` pass cleanly after S5? Each assertion function signature (`assertA15_MD(m, r)`, etc.) must type-check against `ModelStateMD` and `RealSystemMD`. Provide exit code and any errors."
+    },
+    {
+      "question_id": "VQ-S5-005",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does each assertion function include an early-return skip guard that prevents execution when the precondition is not met (e.g. `if (!m.groupId || !m.membersA1 || !m.membersA2) return;` in `assertA15_MD`)? Confirm all five functions have documented skip guards via `grep -B1 -A3 'return;' e2e/tests/multi-user-md.property.spec.ts` scoped to each assertion."
+    },
+    {
+      "question_id": "VQ-S5-006",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-A15-1",
+      "question": "Does `assertA15_MD` return silently (without assertions) when `m.groupId === null || !m.membersA1 || !m.membersA2`? Show the guard condition at the top of the function. Confirm it is not a `throw` but a plain `return`."
+    },
+    {
+      "question_id": "VQ-S5-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-A15-2",
+      "question": "When `assertA15_MD` is triggered, does it assert that task-id sets are equal between A1 and A2, and that for each shared id the `status`, `assignee`, and `title` fields match? Show the assertion body covering this three-field comparison. Confirm it is not a pure mock-spy (it reads DOM or hook state from both pages)."
+    },
+    {
+      "question_id": "VQ-S5-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-A15-3",
+      "question": "Does `assertA15_MD` call `getGroupMembersHook(r.pageA1, m.groupId)` and `getGroupMembersHook(r.pageA2, m.groupId)` and assert the two arrays are equal? Show the member-equality assertion. Is it exercised end-to-end (not stubbed)?"
+    },
+    {
+      "question_id": "VQ-S5-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-A15-4",
+      "question": "Does `assertA15_MD` call `getGroupEpochHook(r.pageA1, m.groupId)` and `getGroupEpochHook(r.pageA2, m.groupId)` and assert the two epoch values are equal? Show the epoch-equality assertion."
+    },
+    {
+      "question_id": "VQ-S5-010",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-A15-5",
+      "question": "Does `assertA15_MD` call `getPubkeyLeafCountHook` for every member pubkey on both `pageA1` and `pageA2` and assert that the counts match? Show the leaf-count assertion loop or per-pubkey assertion."
+    },
+    {
+      "question_id": "VQ-S5-011",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-C0-1",
+      "question": "Does `assertC0_MD` run only when all three devices (A1, A2, B) are members of the same group (`m.membersA1 && m.membersA2 && m.membersB && m.groupId !== null`), and does it assert the four dimensions (tasks, members, epoch, leafCount) across all three pages? Show the guard and the three-way comparison."
+    },
+    {
+      "question_id": "VQ-S5-012",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-S5-1",
+      "question": "Does `assertS5_MD` assert the biconditional `(p ∈ members) ⟺ (leafCount >= 1)` for both `pubkeyA` and `pubkeyB` separately, scoped to `m.groupId`? Does it correctly expect `leafCount = 2` when both A1 and A2 are attached, and `leafCount = 1` after either leaves or is forgotten? Show the assertion body."
+    },
+    {
+      "question_id": "VQ-S5-013",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-S6-1",
+      "question": "Does `assertS6_MD` assert that each of `m.epochSequenceA1`, `m.epochSequenceA2`, and `m.epochSequenceB` is non-decreasing? Show how the non-decreasing check is implemented (e.g. iterates consecutive pairs and asserts `seq[i+1] >= seq[i]`)."
+    },
+    {
+      "question_id": "VQ-S5-014",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-S10-1",
+      "question": "Does `assertS10_MD` read `[data-testid=\"device-row\"]` count on `pageA1` and on `pageA2` separately, and assert each equals `getPubkeyLeafCountHook(page, m.groupId, m.pubkeyA)`? Show the DOM locator and the hook-call equality assertion for both pages."
+    },
+    {
+      "question_id": "VQ-S5-015",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-DEG-1",
+      "question": "In degraded form (when test hooks are absent), does `assertA15_MD` fall back to task-subset only, `assertC0_MD` likewise, `assertS5_MD` run the positive direction only, `assertS6_MD` use the proxy from the 2-party file, and `assertS10_MD` assert `>= 0`? Show each degraded branch."
+    },
+    {
+      "question_id": "VQ-S5-016",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-DEG-2",
+      "question": "Does a code comment at the top of each degraded assertion branch name `AC-MD-DEG-2` and point at `epic-property-tests-l3-completion`'s test-hook story? Provide evidence via `grep -n 'AC-MD-DEG-2' e2e/tests/multi-user-md.property.spec.ts` showing at least one match per assertion function."
+    },
+    {
+      "question_id": "VQ-S5-017",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does `git diff --stat origin/master... -- src/ e2e/tests/multi-user.property.spec.ts` show zero changes after S5? Confirms AC-X-NO-PROD-CHANGE-MD-1 and AC-X-NO-2P-CHANGE-MD-1.",
+      "ac_id": "AC-X-NO-PROD-CHANGE-MD-1"
+    },
+    {
+      "question_id": "VQ-S5-018",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does `git diff --stat origin/master... -- e2e/tests/multi-user.property.spec.ts` show no changes after S5? Check AC-X-NO-2P-CHANGE-MD-1.",
+      "ac_id": "AC-X-NO-2P-CHANGE-MD-1"
+    },
+    {
+      "question_id": "VQ-S5-019",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Do the three preserved example-based spec files still exist on disk unmodified and without `.skip` additions after S5? Check AC-X-NO-EXAMPLE-DELETION-MD-1.",
+      "ac_id": "AC-X-NO-EXAMPLE-DELETION-MD-1"
+    },
+    {
+      "question_id": "VQ-S5-PI-001",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "assertS10_MD adds a secondary skip-guard `(!m.membersA1 || !m.membersA2)` beyond the spec's stated `(!m.groupId || !m.pubkeyA)` guard, because the DeviceList is only meaningful when both A-devices are in the group. Is this guard correct, or does the spec intend S10 to fire even when only A1 is in (and A2 has not attached yet), in which case A2's row count would be 0 and its leaf-count also 0?"
+    },
+    {
+      "question_id": "VQ-S5-PI-002",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "assertC0_MD asserts task-id set equality with `expect(idsA1).toEqual(idsA2)` using Jest's Set equality semantics. Confirm that Playwright's `expect` from `@playwright/test` supports deep-Set equality in this version, or whether an intermediate `[...idsA1].sort()` comparison is needed for correctness."
+    }
+  ]
+}

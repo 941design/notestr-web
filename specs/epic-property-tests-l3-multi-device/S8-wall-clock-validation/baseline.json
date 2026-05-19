@@ -1,0 +1,4 @@
+{
+  "test_snapshot": "skipped",
+  "reason": "manual-validation-no-test-baseline; story is a runtime observation pass executed after merge against a live e2e relay"
+}

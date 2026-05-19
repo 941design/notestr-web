@@ -1,0 +1,127 @@
+{
+  "story_id": "S4",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S4-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Are all five group-lifecycle commands (`CgCommand_MD`, `InCommand_MD`, `LgCommand_MD`, `RdCommand_MD`, `FdCommand_MD`) present in `e2e/tests/multi-user-md.property.spec.ts` with no stub markers or unimplemented `run` bodies? Confirm via `grep -n 'Command_MD' e2e/tests/multi-user-md.property.spec.ts` showing all five class names."
+    },
+    {
+      "question_id": "VQ-S4-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Do `LgCommand_MD` and `FdCommand_MD` operate exclusively through `r.page(device)` and model state — not by calling production internals or bypassing the `RealSystemMD` wrapper? Confirm the `run` methods contain only Playwright `page.*` calls and model mutations."
+    },
+    {
+      "question_id": "VQ-S4-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could the `MD property spec` module be deleted and rewritten without modifying any file outside its `dependencies_allowed` list after S4 lands? If not, which cross-module dependencies were introduced by the five group-lifecycle commands, and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S4-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does `npx tsc --noEmit` pass cleanly after S4? The `device` parameter type in `LgCommand_MD(device: Device)` and `FdCommand_MD` must be resolved against the `Device = 'A1' | 'A2' | 'B'` alias. Provide exit code and any errors."
+    },
+    {
+      "question_id": "VQ-S4-005",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does `FdCommand_MD.check(m)` require both `m.membersA1 && m.membersA2 && m.groupId !== null` before allowing a forget operation? Confirm the zero-leaf branch (where both A1 and A2 have left) is unreachable given this gate. Show via `grep -A 5 'FdCommand_MD' e2e/tests/multi-user-md.property.spec.ts` the check method body."
+    },
+    {
+      "question_id": "VQ-S4-006",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-CG-1",
+      "question": "Does `CgCommand_MD.check(m)` return `true` only when `m.groupId === null && !m.membersA1`? Does `run` dispatch group creation on `pageA1`, set `m.membersA1 = true`, and assign `m.groupId`? Provide evidence by reading the `CgCommand_MD` class body showing both `check` and `run` methods."
+    },
+    {
+      "question_id": "VQ-S4-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-IN-1",
+      "question": "Does `InCommand_MD.check(m)` return `true` only when `m.membersA1 && !m.membersB`? Does `run` invite B from `pageA1`? Show the `InCommand_MD` class body confirming the check guard and the invitation dispatch."
+    },
+    {
+      "question_id": "VQ-S4-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-LG-1",
+      "question": "Does `LgCommand_MD(device)` let `device` leave through `r.page(device)` and set `m.deviceIsMember(device) = false` as a postcondition? Confirm for all three device values (`'A1'`, `'A2'`, `'B'`). Show the `run` and model-mutation logic."
+    },
+    {
+      "question_id": "VQ-S4-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-LG-2",
+      "question": "When `device = 'A1'` and `m.membersA2` is true, does the model correctly encode that identity A retains one leaf (A2) after A1 leaves? Specifically: does the leave set `m.membersA1 = false` while `m.membersA2` remains `true`, implying `leafCount(A) = 1`? Show the `LgCommand_MD` model-state mutation for the A1 case."
+    },
+    {
+      "question_id": "VQ-S4-010",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-FD-1",
+      "question": "Does `FdCommand_MD.check(m)` require exactly `m.membersA1 && m.membersA2 && m.groupId !== null`? Show the full `check` method. Confirm no weaker guard is used."
+    },
+    {
+      "question_id": "VQ-S4-011",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-FD-2",
+      "question": "Does `FdCommand_MD.run` assert that `leafCount(g, A)` drops by exactly 1 as a postcondition? Show the postcondition assertion. Confirm that the zero-leaf branch (leafCount reaching 0) is unreachable when both `m.membersA1` and `m.membersA2` are true before the command fires."
+    },
+    {
+      "question_id": "VQ-S4-012",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-RD-1",
+      "question": "Does `RdCommand_MD(device, name)` dispatch the rename on `r.page(device)` (the device's own page, not pageA1 generically)? Show the `run` dispatch and confirm the correct page is targeted."
+    },
+    {
+      "question_id": "VQ-S4-013",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does `git diff --stat origin/master... -- src/ e2e/tests/multi-user.property.spec.ts` show zero changes after S4? This confirms AC-X-NO-PROD-CHANGE-MD-1 and AC-X-NO-2P-CHANGE-MD-1.",
+      "ac_id": "AC-X-NO-PROD-CHANGE-MD-1"
+    },
+    {
+      "question_id": "VQ-S4-014",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does `git diff --stat origin/master... -- e2e/tests/multi-user.property.spec.ts` show no changes after S4? Check AC-X-NO-2P-CHANGE-MD-1.",
+      "ac_id": "AC-X-NO-2P-CHANGE-MD-1"
+    },
+    {
+      "question_id": "VQ-S4-015",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Do the three preserved example-based spec files still exist on disk unmodified and without `.skip` additions after S4? Check AC-X-NO-EXAMPLE-DELETION-MD-1.",
+      "ac_id": "AC-X-NO-EXAMPLE-DELETION-MD-1"
+    }
+  ],
+  "post_impl_questions": [
+    {
+      "question_id": "VQ-S4-P01",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "In `FdCommand_MD.run`, the last index from `leafIndexesFor` is used as the target leaf. Does this reliably select A2's leaf (not A1's own leaf) in the Cg → AttachA2 flow? If the ratchet-tree position of A2's leaf is ever at index 0 rather than last, would the wrong leaf be forgotten, and would that cause m.membersA2 to be incorrectly cleared while A1's own leaf is gone?"
+    },
+    {
+      "question_id": "VQ-S4-P02",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "In `LgCommand_MD.run`, epoch is recorded on the first remaining device in A1 → A2 → B priority order. If A1 has already left (m.membersA1 = false immediately after the locator leave), could a timing race cause getGroupEpochHook to be called on a page that has not yet processed the leave commit, resulting in a stale epoch being pushed to the wrong sequence?"
+    },
+    {
+      "question_id": "VQ-S4-P03",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "In `RdCommand_MD.run`, the rename targets `rows.first()` with a textbox regardless of device. If A2's page has the group selected but only B's device row is shown (because DeviceList shows 'other' devices, not self), does `rows.first()` reliably find a renameable row? Could the textbox count check (`inputCount === 0`) silently no-op more often than expected?"
+    }
+  ]
+}

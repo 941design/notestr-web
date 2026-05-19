@@ -1,0 +1,38 @@
+{
+  "story_id": "S3",
+  "status": "accepted",
+  "final_outcome": "accepted",
+  "architect_skipped": false,
+  "remediation_rounds": 0,
+  "files_created": [
+    "specs/epic-property-tests-l3-multi-device/S3-per-device-commands/architecture.json",
+    "specs/epic-property-tests-l3-multi-device/S3-per-device-commands/baseline.json",
+    "specs/epic-property-tests-l3-multi-device/S3-per-device-commands/result.json"
+  ],
+  "files_modified": [
+    "e2e/tests/multi-user-md.property.spec.ts"
+  ],
+  "implementation_summary": "Added 7 fc.AsyncCommand<ModelStateMD, RealSystemMD> classes (CtCommand_MD, UtCommand_MD, ScCommand_MD, AsCommand_MD, UnCommand_MD, DtCommand_MD, RlCommand_MD) to the MD property spec. Each accepts device:Device and dispatches exclusively via r.page(device). Added missing imports: dispatchTaskEvent, reload (from two-party.ts) and v4 as uuidv4 (from uuid). All check guards include m.deviceIsMember(device) and m.groupId !== null. All toString() methods return '${device}.Verb(args)' format. No changes to src/, docs/, fixtures, or the 2-party spec.",
+  "tests_added": {
+    "command_classes": 7,
+    "playwright_test_definitions": 0
+  },
+  "baseline_test_count": 1,
+  "final_test_count": 1,
+  "mocks_introduced": [],
+  "verification": {
+    "typescript_errors_new": 0,
+    "playwright_list_count": "1 test x 3 projects (unchanged)",
+    "off_limits_diff_empty": true
+  },
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The dispatchTaskEvent event shape differs slightly between the 2-party pattern and what the TypeScript types require — specifically the field names (task vs taskId, changes vs direct fields). The 2-party file uses these correctly and the MD implementation mirrors it, but the discrepancy is easy to miss when porting quickly from the spec's pseudocode (which uses 'id' and flat fields). TypeScript caught this before any runtime exposure.",
+    "surprised_by": "",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  }
+}

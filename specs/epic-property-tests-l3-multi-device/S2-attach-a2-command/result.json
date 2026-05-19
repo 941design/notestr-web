@@ -1,0 +1,52 @@
+{
+  "story_id": "S2",
+  "status": "complete",
+  "final_outcome": "accepted",
+  "architect_skipped": false,
+  "remediation_rounds": 0,
+  "files_created": [
+    "specs/epic-property-tests-l3-multi-device/S2-attach-a2-command/architecture.json",
+    "specs/epic-property-tests-l3-multi-device/S2-attach-a2-command/baseline.json",
+    "specs/epic-property-tests-l3-multi-device/S2-attach-a2-command/result.json"
+  ],
+  "files_modified": [
+    "e2e/fixtures/multi-device.ts",
+    "e2e/tests/multi-user-md.property.spec.ts",
+    "specs/epic-property-tests-l3-multi-device/S2-attach-a2-command/verification.json"
+  ],
+  "implementation_summary": "Replaced the S1 `awaitDeviceJoin` stub (4-param, throws 'not yet implemented') with the real 3-param implementation (Option A). The helper reads `pubkeyA` from `primaryPage` via `__notestrTestPubkey()`, then polls `leafIndexesFor(primaryPage, groupId, pubkeyA).length >= 2` with a 30-second timeout using `expect.poll(...).toBeGreaterThanOrEqual(2)`. Added `AttachA2Command_MD` class to the spec file implementing `fc.AsyncCommand<ModelStateMD, RealSystemMD>` with check gate `m.membersA1 && m.groupId !== null && !m.membersA2`, run body (authenticate SLOT_A2 → awaitDeviceJoin → m.membersA2=true → epoch capture → postcondition assert), and `toString()` returning `'A2.Attach()'`. Added `getGroupEpochHook` and `leafIndexesFor` to the two-party.ts import. Removed the `void (awaitDeviceJoin ...)` suppression (now used); retained `void (fc as typeof fc)` because `fc` is still only used as a type namespace until S6.",
+  "signature_choice": "Option A (3-param awaitDeviceJoin). Rationale: matches architecture.md seam contract and spec.md Technical Approach line 169. pubkeyA is self-contained inside the helper via __notestrTestPubkey() on primaryPage. The first param `_pageNew` is present but unused (underscore-prefixed, eslint-disable comment applied) so the call-site reads naturally and signals that A2 is online at that point.",
+  "ac_verification": {
+    "AC-MD-ATTACH-1": "PASS — check(m) returns m.membersA1 && m.groupId !== null && !m.membersA2 (line 217); single-fire gate via membersA2 flag",
+    "AC-MD-ATTACH-2": "PASS — run() calls authenticate(r.pageA2, E2E_BUNKER_URL, SLOT_A2) (line 224), then awaitDeviceJoin (line 227), then sets m.membersA2 = true (line 230), then captures epoch into m.epochSequenceA2 (lines 233-234)",
+    "AC-MD-ATTACH-3": "PASS — awaitDeviceJoin polls leafIndexesFor(primaryPage, groupId, pubkeyA).length with { timeout: 30000 } and .toBeGreaterThanOrEqual(2); expect.poll throws on timeout (Playwright's built-in behaviour)",
+    "AC-MD-ATTACH-4": "PASS — postcondition on line 239-240: leafIndexesFor(r.pageA1, m.groupId!, m.pubkeyA!) then expect(leaves.length).toBeGreaterThanOrEqual(2)",
+    "AC-MD-ATTACH-5": "PASS — toString() returns 'A2.Attach()' (line 244)",
+    "AC-MD-ATTACH-6": "PASS (compilation-level) — throw injected at top of awaitDeviceJoin body, compiled cleanly (npx tsc --noEmit -p tsconfig.json, e2e/ zero errors), then reverted. With the injection, AttachA2Command_MD.run() would throw immediately after authenticate(), causing fast-check to shrink the command chain to [CgCommand_MD (sets m.groupId + m.membersA1), AttachA2Command_MD (throws)] — ending with 'A2.Attach()' in the counterexample. Actual fast-check run not performed (requires live relay + 3 browser contexts); treat as manual verification step in epic completion notes per VQ-S2-PI-002.",
+    "AC-X-NO-PROD-CHANGE-MD-1": "PASS — git diff HEAD -- src/ shows no changes",
+    "AC-X-NO-2P-CHANGE-MD-1": "PASS — git diff HEAD -- e2e/tests/multi-user.property.spec.ts shows no changes",
+    "VQ-S2-004": "PASS — npx tsc --noEmit reports zero errors in e2e/ after S2"
+  },
+  "test_counts": {
+    "baseline_e2e": 3,
+    "final_e2e": 3,
+    "note": "Test count unchanged: 1 test body × 3 Playwright projects. The test still calls test.skip(true, 'S1 skeleton — body lands in S6'), which is correct — the fc.assert wiring is deferred to S6."
+  },
+  "mocks_introduced": [],
+  "ac_md_attach_6_regression_detail": {
+    "injection": "Added `throw new Error('awaitDeviceJoin: injected failure for AC-MD-ATTACH-6 verification')` at the start of the awaitDeviceJoin function body, before the pubkeyA read.",
+    "verification": "npx tsc --noEmit -p tsconfig.json reported zero errors in e2e/ with the injection in place. The throw is syntactically valid and type-correct.",
+    "expected_fc_behavior": "With the injection, AttachA2Command_MD.check() still passes when m.membersA1 && m.groupId !== null && !m.membersA2, but run() throws immediately. fast-check shrinks to the minimal chain that reaches the throw: [CgCommand_MD, AttachA2Command_MD]. The counterexample printout would show '1. A2.Attach()' as the last command in the shrunk sequence.",
+    "revert": "Injection removed. Final file compiles cleanly."
+  },
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The S1 4-param stub vs 3-param spec discrepancy required a deliberate reconciliation decision at the start of S2. The choice (Option A, 3-param) was clear once architecture.md's seam table was read, but the discrepancy added cognitive overhead that S1's retro had already flagged. The `_pageNew` underscore convention needed an eslint-disable comment because the project likely uses `argsIgnorePattern` or not — this is an open post-impl question (VQ-S2-PI-001).",
+    "surprised_by": "The AC-MD-ATTACH-6 ritual as written ('run this verification once during implementation, capture the counterexample printout in result.json') is not achievable in a CI-style implementation session that has no live relay. The ritual was performed at the TypeScript compilation level instead, which verifies the throw path is syntactically valid but not that fast-check actually prints the expected counterexample. This gap was surfaced as VQ-S2-PI-002.",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  }
+}

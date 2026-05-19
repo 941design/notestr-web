@@ -1,0 +1,65 @@
+{
+  "story_id": "S7",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S7-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does `git diff --stat origin/master... -- docs/two-party-permutation-matrix.md` show changes to exactly one file (the coverage matrix), and does `git diff --numstat origin/master...` show a line count consistent with a single-row edit plus one footnote (expected: a small number of added lines, zero deletions in unrelated rows)?"
+    },
+    {
+      "question_id": "VQ-S7-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could the `Coverage matrix` module (`docs/two-party-permutation-matrix.md`) be modified and reverted without touching any file outside its `dependencies_allowed` list (which for this story is only `docs/two-party-permutation-matrix.md` and `specs/epic-property-tests-l3-multi-device/**`)? Confirm `git diff --stat origin/master...` shows no changes to `e2e/`, `src/`, or other `docs/` files."
+    },
+    {
+      "question_id": "VQ-S7-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could the `Coverage matrix` module be reverted (the TP-80..82 row value and footnote removed) without modifying any test code or source file? This confirms the module boundary: the doc edit is a self-contained, orthogonal change."
+    },
+    {
+      "question_id": "VQ-S7-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does `make test` pass after S7 (no unit test is coupled to the doc content)? Provide exit code. This confirms the doc edit has no hidden test dependency."
+    },
+    {
+      "question_id": "VQ-S7-005",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does `git diff origin/master... -- docs/two-party-permutation-matrix.md` show no removal of existing rows, no change to any row other than TP-80..82, and no change to section headers? Confirm the edit is additive-only to the TP-80..82 cell and the footnote section."
+    },
+    {
+      "question_id": "VQ-S7-006",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-DOC-1",
+      "question": "Does `docs/two-party-permutation-matrix.md` now contain the string `A15, C0, S5, S6, S10 (multi-device at L3)` in the TP-80..82 row? Evidence: `grep -n 'A15.*S10\\|TP-80\\|TP-81\\|TP-82' docs/two-party-permutation-matrix.md` showing the updated row value. The old value `A15, C0` must no longer appear alone in that cell."
+    },
+    {
+      "question_id": "VQ-S7-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-DOC-2",
+      "question": "Does `docs/two-party-permutation-matrix.md` contain a footnote with the text `Leaf-count consequence asserted; full forget-self membership behaviour pending the (fixme) resolution in epic-multi-device-sync`? Evidence: `grep -n 'Leaf-count consequence\\|fixme\\|epic-multi-device-sync' docs/two-party-permutation-matrix.md`."
+    },
+    {
+      "question_id": "VQ-S7-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-DOC-3",
+      "question": "Are all other rows in the coverage table unmodified? Evidence: `git diff origin/master... -- docs/two-party-permutation-matrix.md` showing a diff where the only modified lines belong to the TP-80..82 row and the new footnote. Any line outside those two change areas is a violation."
+    },
+    {
+      "question_id": "VQ-S7-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does `git diff --stat origin/master... -- e2e/tests/multi-device-cross-npub.spec.ts e2e/tests/multi-device-sync.spec.ts e2e/tests/multi-user.spec.ts` show zero changes? Check AC-X-NO-EXAMPLE-DELETION-MD-1.",
+      "ac_id": "AC-X-NO-EXAMPLE-DELETION-MD-1"
+    }
+  ]
+}

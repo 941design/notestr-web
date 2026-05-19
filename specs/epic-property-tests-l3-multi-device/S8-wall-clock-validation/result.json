@@ -1,0 +1,19 @@
+{
+  "story_id": "S8",
+  "status": "done",
+  "final_outcome": "deferred",
+  "architect_skipped": true,
+  "files_modified": [],
+  "remediation_rounds": 0,
+  "completed_at": "2026-05-19T05:55:00Z",
+  "implementation_summary": "S8 is a manual one-shot validation story. All three ACs (AC-MD-WC-1/2/3) require executing the assembled MD property file against a live e2e relay (each run ~6.5 min per spec design decision 6) and observing post-merge CI behaviour. Neither prerequisite is reachable in this `/base:feature` session. The implementation work for the MD file is complete (S1-S6 + S7); S8 is the runtime observation pass that confirms the per-spec wall-clock budget (numRuns: 12, maxCommands: 8, test.setTimeout: 720_000 ms ≈ 12 min envelope). Deferred to a post-merge validation pass alongside AC-VAL-MD-1 (deliberate-divergence counterexample observation) and AC-VAL-MD-2 (leaf-count regression observation), which also require a live relay.",
+  "ac_verification": {
+    "AC-MD-WC-1": "DEFERRED — requires three local runs of `make e2e` against the MD file with live relay; record max wall-clock in epic completion notes post-merge",
+    "AC-MD-WC-2": "DEFERRED — if any of the three runs exceeds 720 seconds, reduce numRuns to 10 or maxCommands to 6 and repeat; capture final values in code comments. Wall-clock budget per spec design decision 6: 12 × 8 × ~4s/command ≈ 384 s ≈ 6.5 min, well within the 720s envelope on paper",
+    "AC-MD-WC-3": "DEFERRED — sustained CI breach (≥3 consecutive merges over 720s) triggers a follow-up epic to tune"
+  },
+  "retrospective": {
+    "skipped": true,
+    "reason": "manual-one-shot deferred to post-merge; no architect retro"
+  }
+}

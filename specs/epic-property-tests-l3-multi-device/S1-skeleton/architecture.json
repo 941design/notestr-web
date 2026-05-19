@@ -1,0 +1,63 @@
+{
+  "module_name": "md-property-spec",
+  "purpose": "Three-context / two-identity property test file for multi-device same-pubkey invariants (A15, C0, S5, S6, S10). Skeleton: file shell, context lifecycle, pubkey caches, one skip-placeholder test.",
+  "public_api": [
+    {
+      "name": "ModelStateMD",
+      "signature": "class ModelStateMD",
+      "description": "Tracks expected model state for the multi-device scenario: groupId, groupName, pubkeyA, pubkeyB, membersA1, membersA2, membersB, tasks, epochSequenceA1/A2/B, lastSwitched. Provides identityOf, pubkeyOf, deviceIsMember, identityIsMember helpers."
+    },
+    {
+      "name": "RealSystemMD",
+      "signature": "class RealSystemMD",
+      "description": "Wraps three Playwright Page instances (pageA1, pageA2, pageB). Provides page(d: Device): Page accessor and quiesce()."
+    }
+  ],
+  "private_files": [
+    "e2e/tests/multi-user-md.property.spec.ts",
+    "e2e/fixtures/multi-device.ts"
+  ],
+  "owned_data": [
+    "ModelStateMD state",
+    "RealSystemMD page references",
+    "cachedPubkeyA",
+    "cachedPubkeyB",
+    "contextA1, contextA2, contextB BrowserContext handles"
+  ],
+  "dependencies_allowed": [
+    "e2e/fixtures/multi-device.ts",
+    "e2e/fixtures/two-party.ts",
+    "e2e/fixtures/auth-helper.ts",
+    "e2e/fixtures/auth-helper-b.ts",
+    "@playwright/test",
+    "fast-check",
+    "uuid"
+  ],
+  "dependencies_forbidden": [
+    "src/marmot/",
+    "src/store/",
+    "src/components/",
+    "e2e/tests/multi-user.property.spec.ts"
+  ],
+  "external_ports": [
+    "window.__notestrTestPubkey (via getPubkeyHex)",
+    "window.__notestrTestGroupEpoch (via getGroupEpochHook)",
+    "window.__notestrTestGroupMembers (via getGroupMembersHook)",
+    "window.__notestrTestPubkeyLeafCount (via getPubkeyLeafCountHook)",
+    "window.__notestrTestTasks (via RealSystemMD.getTasks)"
+  ],
+  "events_emitted": [],
+  "events_consumed": [
+    "NIP-46 bunker auth events on ws://localhost:7777"
+  ],
+  "test_targets": [
+    "AC-MD-FILE-1",
+    "AC-MD-FILE-2",
+    "AC-MD-FILE-3",
+    "AC-MD-FILE-4",
+    "AC-MD-FILE-5",
+    "AC-MD-FILE-6",
+    "AC-MD-FILE-7",
+    "AC-MD-FILE-8"
+  ]
+}

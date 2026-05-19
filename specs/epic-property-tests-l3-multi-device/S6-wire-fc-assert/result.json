@@ -1,0 +1,54 @@
+{
+  "story_id": "S6",
+  "status": "accepted",
+  "final_outcome": "accepted",
+  "architect_skipped": false,
+  "remediation_rounds": 0,
+  "implementation_summary": "Replaced the placeholder `test.skip(true, 'S1 skeleton — body lands in S6')` body in `e2e/tests/multi-user-md.property.spec.ts` with the real fc.assert property-test wiring. The 13-command arbitraries array uses `fc.constant` for no-arg commands and `fc.tuple` + `.map` for device-parameterised commands (sharing the same arbDevice = `fc.constantFrom<Device>('A1', 'A2', 'B')`). Per-run setup seeds a fresh `ModelStateMD` with `cachedPubkeyA` and `cachedPubkeyB`, calls `fc.asyncModelRun`, then `real.quiesce()`, then the five assertion functions. The `void (USER_B_NPUB as string)` suppression was also removed since `USER_B_NPUB` is consumed directly by `InCommand_MD`. The test title was updated from `[A15,C0]` to `[A15,C0,S5,S6,S10]` to reflect the full invariant set now wired.",
+  "files_created": [
+    "specs/epic-property-tests-l3-multi-device/S6-wire-fc-assert/architecture.json",
+    "specs/epic-property-tests-l3-multi-device/S6-wire-fc-assert/baseline.json",
+    "specs/epic-property-tests-l3-multi-device/S6-wire-fc-assert/result.json"
+  ],
+  "files_modified": [
+    "e2e/tests/multi-user-md.property.spec.ts",
+    "specs/epic-property-tests-l3-multi-device/S6-wire-fc-assert/verification.json"
+  ],
+  "tests_added": {
+    "unit": 0,
+    "integration": 0,
+    "property": 1,
+    "note": "The property test replaces the placeholder. Count remains 1 test x 3 projects; the body is now real (was previously skip)."
+  },
+  "baseline_test_count": "1 test x 3 projects (skipped)",
+  "final_test_count": "1 test x 3 projects (active, not skipped)",
+  "tsc_errors_baseline": 2,
+  "tsc_errors_final": 2,
+  "mocks_introduced": [],
+  "ac_md_run_5_regression_ritual": {
+    "method": "offline_compile_variant",
+    "reason": "No live relay available in the verification environment; end-to-end Playwright execution was not performed.",
+    "regression_injected": "throw inside assertA15_MD guarded by `if (m.membersA2 === true)` — reachable only after AttachA2Command_MD fires and sets m.membersA2 = true.",
+    "reachability_rationale": "assertA15_MD's guard `if (!m.groupId || !(m.membersA1 && m.membersA2)) return` means the throw is only reached after CgCommand_MD + AttachA2Command_MD have both fired. In a live run, fast-check would shrink the counterexample to the minimal chain containing A2.Attach() followed by any assertion-triggering command.",
+    "compile_outcome": "npx tsc --noEmit with regression injected produced only the 2 pre-existing errors — no new errors. Regression reverted; second tsc --noEmit confirmed same 2 pre-existing errors only.",
+    "deferred_to": "AC-VAL-MD-1 — full runtime counterexample observation deferred to a live-relay environment."
+  },
+  "key_decisions": [
+    "Used `fc.tuple(arbDevice, arbTitle, arbDesc).map(...)` for CtCommand_MD and similar multi-arg commands to ensure fast-check's shrinker can minimise each argument independently.",
+    "Used `fc.tuple(arbDevice, arbNewName).map(...)` for RdCommand_MD — avoids closure capture of arbNewName.",
+    "arbDevice declared locally inside the test body, distinct from the 2-party file's arbActor (type Device vs ActorId).",
+    "No identity-restore step at end-of-run: MD has no SwCommand_MD so pubkeyA never changes (architecture.md constraint 11).",
+    "Test title updated from [A15,C0] to [A15,C0,S5,S6,S10] to match the assertions now wired.",
+    "void (USER_B_NPUB as string) suppression removed — symbol is consumed by InCommand_MD which is defined in the file."
+  ],
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The spec says to use `arbDevice.map(...)` for device-parameterised commands, but `CtCommand_MD` and `UtCommand_MD` also require string arguments (`title`, `desc`). The spec pseudocode at lines 239-247 shows placeholder comments (`/* + arbTitle/arbDesc */`) without specifying whether to use `fc.tuple` or a nested `.chain`. The 2-party reference file (lines 1052-1064) uses `fc.tuple(arbActor, arbTitle, arbDesc).map(...)`, making the intended pattern clear — but that required reading the reference to resolve the gap in the spec.",
+    "surprised_by": "The `void (USER_B_NPUB as string)` suppression at the file's end was left from S1 as a placeholder for a symbol not yet used. After S1–S5 `InCommand_MD` was implemented and directly imports/uses `USER_B_NPUB`, so the suppression became dead code. Removing it as part of S6 was correct per the story spec ('Trim S1's void(...) unused-import suppressions if any remain') but the suppression did not actually suppress an unused import — the symbol was already live. This was a no-op correctness fix, not a regression risk.",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  }
+}

@@ -1,0 +1,443 @@
+{
+  "epic_name": "property-tests-l3-multi-device",
+  "created_at": "2026-05-18T00:00:00Z",
+  "updated_at": "2026-05-19T05:49:49Z",
+  "total_stories": 8,
+  "story_order": [
+    "S1",
+    "S2",
+    "S4",
+    "S3",
+    "S5",
+    "S6",
+    "S7",
+    "S8"
+  ],
+  "dependency_notes": "S2 is the riser. Every story that references pageA2 or A2-scoped state — S3, S4, S5, S6, S8 — depends on S2. S4 (group-lifecycle) also depends on S1 because the skeleton must exist first. S3 (per-device commands) requires S4's CgCommand_MD to already be present so the check(m) guards compile against the correct model shape. S5 (assertions) depends on S2 and S3 because the assertion bodies reference command field names. S6 (wire fc.assert) depends on S5 so it can import the assertion functions inline. S7 (doc edit) depends only on S6 being done so the final invariant set (A15, C0, S5, S6, S10) is confirmed before the table row is updated. S8 (wall-clock validation) must run after all of S1–S7 have landed.",
+  "mock_resolution_plan": "No temporary mocks are introduced. The MD fixture helpers (awaitDeviceJoin) are permanent test infrastructure consumed via import. The test hooks from epic-property-tests-l3-completion are pre-shipped seams consumed here; no new seams introduced from the production side.",
+  "cross_cutting_acceptance_criteria": [
+    "AC-X-NO-PROD-CHANGE-MD-1",
+    "AC-X-NO-2P-CHANGE-MD-1",
+    "AC-X-NO-3P-CHANGE-MD-1",
+    "AC-X-NO-EXAMPLE-DELETION-MD-1",
+    "AC-X-CI-MD-1",
+    "AC-X-CI-MD-2",
+    "AC-X-NAMING-MD-1",
+    "AC-X-RUNS-MD-1"
+  ],
+  "manual_validation": [
+    "AC-VAL-MD-1",
+    "AC-VAL-MD-2"
+  ],
+  "seams": [
+    {
+      "data": "awaitDeviceJoin: polls leaf count for pubkeyA on primaryPage until >= 2, 30-second timeout",
+      "contract": {
+        "type_name": "AwaitDeviceJoin",
+        "fields": [
+          {
+            "name": "awaitDeviceJoin",
+            "type": "(pageNew: Page, primaryPage: Page, groupId: string) => Promise<void>"
+          }
+        ],
+        "invariants": [
+          "Polls leafIndexesFor(primaryPage, groupId, pubkeyA).length >= 2 in a loop",
+          "Throws after 30 seconds if the condition is not met",
+          "Does NOT authenticate pageNew — that is the caller's responsibility (AttachA2Command_MD.run)"
+        ]
+      },
+      "source": {
+        "story": "S2",
+        "artifact": "e2e/fixtures/multi-device.ts — awaitDeviceJoin"
+      },
+      "destination": {
+        "story": "S2",
+        "artifact": "AttachA2Command_MD.run in e2e/tests/multi-user-md.property.spec.ts"
+      }
+    },
+    {
+      "data": "NotestrTestHooksExtension — __notestrTestGroupEpoch, __notestrTestGroupMembers, __notestrTestPubkeyLeafCount (pre-shipped by epic-property-tests-l3-completion)",
+      "contract": {
+        "type_name": "NotestrTestHooksExtension",
+        "fields": [
+          {
+            "name": "__notestrTestGroupEpoch",
+            "type": "(groupIdStr: string) => number | null",
+            "optional": true
+          },
+          {
+            "name": "__notestrTestGroupMembers",
+            "type": "(groupIdStr: string) => string[] | null",
+            "optional": true
+          },
+          {
+            "name": "__notestrTestPubkeyLeafCount",
+            "type": "(groupIdStr: string, pubkeyHex: string) => number",
+            "optional": true
+          }
+        ],
+        "invariants": [
+          "All three hooks are installed inside the isTestRuntime() gate in src/marmot/client.tsx",
+          "__notestrTestGroupEpoch returns Number(epoch) or null if group absent",
+          "__notestrTestGroupMembers returns sorted hex pubkeys or null if group absent",
+          "__notestrTestPubkeyLeafCount returns leaf-node count, 0 for unknown pubkeys",
+          "None of the three hooks mutate state"
+        ]
+      },
+      "source": {
+        "story": "S4 (epic-property-tests-l3-completion)",
+        "artifact": "src/marmot/client.tsx + e2e/fixtures/two-party.ts — pre-shipped"
+      },
+      "destination": {
+        "story": "S5",
+        "artifact": "assertA15_MD, assertC0_MD, assertS5_MD, assertS6_MD, assertS10_MD in e2e/tests/multi-user-md.property.spec.ts"
+      }
+    }
+  ],
+  "stories": [
+    {
+      "id": "S1",
+      "name": "skeleton",
+      "title": "Skeleton: new MD file with three contexts, two identities, empty test body",
+      "directory": "S1-skeleton",
+      "description": "Create e2e/tests/multi-user-md.property.spec.ts and e2e/fixtures/multi-device.ts (empty fixture stub). The spec file declares Identity and Device type aliases, ModelStateMD and RealSystemMD class stubs, three browser contexts in test.beforeAll (pageB authenticated first, pageA1 second, pageA2 created but NOT authenticated), pubkey caches, and a single test.describe.serial block with one placeholder test whose title contains [A15,C0] and whose body calls test.skip. Confirms Playwright can discover and skip the file cleanly.",
+      "acceptance_criteria": [
+        "AC-MD-FILE-1",
+        "AC-MD-FILE-2",
+        "AC-MD-FILE-3",
+        "AC-MD-FILE-4",
+        "AC-MD-FILE-5",
+        "AC-MD-FILE-6",
+        "AC-MD-FILE-7",
+        "AC-MD-FILE-8"
+      ],
+      "scope": {
+        "includes": [
+          "e2e/tests/multi-user-md.property.spec.ts",
+          "e2e/fixtures/multi-device.ts",
+          "specs/epic-property-tests-l3-multi-device/**"
+        ],
+        "excludes": [
+          "e2e/tests/multi-user.property.spec.ts",
+          "e2e/fixtures/two-party.ts",
+          "e2e/fixtures/auth-helper.ts",
+          "e2e/fixtures/auth-helper-b.ts",
+          "src/**",
+          "docs/**"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "status": "done",
+      "owning_module": "MD property spec",
+      "story_order": 1,
+      "dependencies": [],
+      "creates_seam": false,
+      "lighter_path": false,
+      "notes": "Both files are new — checked non-existence at planning time. pageA2 MUST NOT be authenticated in beforeAll (AC-MD-FILE-5). Auth order is pageB before pageA1 (AC-MD-FILE-8). Explicit slot strings SLOT_A1 = 'A1' and SLOT_A2 = 'A2' declared as constants (AC-MD-FILE-7)."
+    },
+    {
+      "id": "S2",
+      "name": "attach-a2-command",
+      "title": "AttachA2Command_MD + awaitDeviceJoin: second-device entry path",
+      "directory": "S2-attach-a2-command",
+      "description": "Implement AttachA2Command_MD (check gate: m.membersA1 && m.groupId !== null && !m.membersA2; run: authenticate pageA2 with explicit slot A2, await awaitDeviceJoin, set m.membersA2 = true, push initial epoch to m.epochSequenceA2, assert leafIndexesFor length >= 2; toString: 'A2.Attach()'). Implement awaitDeviceJoin(pageNew, primaryPage, groupId) in e2e/fixtures/multi-device.ts: polls leafIndexesFor(primaryPage, groupId, pubkeyA).length >= 2 with 30-second timeout and throw on breach. This is the RISER — all subsequent command stories depend on it.",
+      "acceptance_criteria": [
+        "AC-MD-ATTACH-1",
+        "AC-MD-ATTACH-2",
+        "AC-MD-ATTACH-3",
+        "AC-MD-ATTACH-4",
+        "AC-MD-ATTACH-5",
+        "AC-MD-ATTACH-6"
+      ],
+      "scope": {
+        "includes": [
+          "e2e/tests/multi-user-md.property.spec.ts",
+          "e2e/fixtures/multi-device.ts",
+          "specs/epic-property-tests-l3-multi-device/**"
+        ],
+        "excludes": [
+          "e2e/tests/multi-user.property.spec.ts",
+          "e2e/fixtures/two-party.ts",
+          "e2e/fixtures/auth-helper.ts",
+          "e2e/fixtures/auth-helper-b.ts",
+          "src/**",
+          "docs/**"
+        ]
+      },
+      "complexity": "medium",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "status": "done",
+      "owning_module": "MD fixture helpers",
+      "story_order": 2,
+      "dependencies": [
+        "S1"
+      ],
+      "creates_seam": true,
+      "lighter_path": false,
+      "notes": "AC-MD-ATTACH-6 requires a deliberate regression test (throw inside welcome handler) to confirm counterexample printout ends with A2.Attach(), then revert. ~80 LOC."
+    },
+    {
+      "id": "S4",
+      "name": "group-lifecycle-commands",
+      "title": "Group-lifecycle commands: CgCommand_MD, InCommand_MD, LgCommand_MD, RdCommand_MD, FdCommand_MD",
+      "directory": "S4-group-lifecycle-commands",
+      "description": "Implement the five group-lifecycle commands. CgCommand_MD: check guard m.groupId === null && !m.membersA1, dispatches on pageA1, sets m.membersA1 = true and m.groupId. InCommand_MD: check guard m.membersA1 && !m.membersB, invites B from pageA1. LgCommand_MD(device): per-device leave, sets m.deviceIsMember(device) = false; when device is A1 and A2 is still a member, identity A retains one leaf (model encodes this). FdCommand_MD: check guard m.membersA1 && m.membersA2 && m.groupId !== null, A1 forgets one of A's leaves (A2's leaf by index), postcondition: leafCount(g, A) drops by 1. RdCommand_MD(device, name): renames device on its own page. Per spec, A14 wire (openNdkSubscriber) is deferred — leaf-count consequence only is asserted here.",
+      "acceptance_criteria": [
+        "AC-MD-CG-1",
+        "AC-MD-IN-1",
+        "AC-MD-LG-1",
+        "AC-MD-LG-2",
+        "AC-MD-FD-1",
+        "AC-MD-FD-2",
+        "AC-MD-RD-1"
+      ],
+      "scope": {
+        "includes": [
+          "e2e/tests/multi-user-md.property.spec.ts",
+          "specs/epic-property-tests-l3-multi-device/**"
+        ],
+        "excludes": [
+          "e2e/fixtures/multi-device.ts",
+          "e2e/tests/multi-user.property.spec.ts",
+          "e2e/fixtures/two-party.ts",
+          "src/**",
+          "docs/**"
+        ]
+      },
+      "complexity": "medium",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "status": "done",
+      "owning_module": "MD property spec",
+      "story_order": 3,
+      "dependencies": [
+        "S1",
+        "S2"
+      ],
+      "creates_seam": false,
+      "lighter_path": false,
+      "notes": "~200 LOC. LgCommand_MD's identity-A leaf semantics (AC-MD-LG-2) are the model-design subtlety: after A1.Lg while A2 is still a member, m.membersA1 = false but m.membersA2 = true, and identity A's leaf count is 1, not 0. FdCommand_MD's check guard requires BOTH A1 and A2 as members — the zero-leaf branch is unreachable under this gate (AC-MD-FD-2)."
+    },
+    {
+      "id": "S3",
+      "name": "per-device-commands",
+      "title": "Per-device commands: CtCommand_MD, UtCommand_MD, ScCommand_MD, AsCommand_MD, UnCommand_MD, DtCommand_MD, RlCommand_MD",
+      "directory": "S3-per-device-commands",
+      "description": "Implement the seven per-device commands adapted from the 2-party file. Each command accepts device: Device and dispatches on r.page(device). CtCommand_MD(device, title, desc): check guard m.deviceIsMember(device) && m.groupId !== null; postcondition A3. UtCommand_MD, ScCommand_MD, AsCommand_MD, UnCommand_MD, DtCommand_MD: each follows the 2-party postcondition pattern (A2/A4/A4/A4/A5 respectively). RlCommand_MD(device): reloads r.page(device), model and actual should still agree (A11). Every command's toString returns ${device}.Verb(args).",
+      "acceptance_criteria": [
+        "AC-MD-CT-1",
+        "AC-MD-UT-1",
+        "AC-MD-SC-1",
+        "AC-MD-AS-1",
+        "AC-MD-UN-1",
+        "AC-MD-DT-1",
+        "AC-MD-RL-1",
+        "AC-MD-CMD-TOSTRING-1"
+      ],
+      "scope": {
+        "includes": [
+          "e2e/tests/multi-user-md.property.spec.ts",
+          "specs/epic-property-tests-l3-multi-device/**"
+        ],
+        "excludes": [
+          "e2e/fixtures/multi-device.ts",
+          "e2e/tests/multi-user.property.spec.ts",
+          "e2e/fixtures/two-party.ts",
+          "src/**",
+          "docs/**"
+        ]
+      },
+      "complexity": "medium",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "status": "done",
+      "owning_module": "MD property spec",
+      "story_order": 4,
+      "dependencies": [
+        "S1",
+        "S2",
+        "S4"
+      ],
+      "creates_seam": false,
+      "lighter_path": false,
+      "notes": "~250 LOC. S3 depends on S4 because per-device commands' check guards reference m.deviceIsMember(device), which is defined in ModelStateMD and used by CgCommand_MD/InCommand_MD — having the group-lifecycle shape settled first avoids shape churn. The 2-party counterparts (Ct, Ut, Sc, As, Un, Dt) are adapted, not imported — per architecture boundary rule, the 2-party file is read-only."
+    },
+    {
+      "id": "S5",
+      "name": "headline-assertions",
+      "title": "Headline assertions: assertA15_MD, assertC0_MD, assertS5_MD, assertS6_MD, assertS10_MD",
+      "directory": "S5-headline-assertions",
+      "description": "Implement the five assertion functions. assertA15_MD: guard m.groupId !== null && m.membersA1 && m.membersA2; asserts task-id sets equal (status, assignee, title per shared id), members equal, epoch equal, per-pubkey leafCount equal between A1 and A2. assertC0_MD: runs when all three devices are members; three-way comparison of tasks, members, epoch, leafCount. assertS5_MD: biconditional (p ∈ members) ⇔ (leafCount >= 1) for pubkeyA (expected 2 when both attached, 1 after Lg/Fd) and pubkeyB. assertS6_MD: each of epochSequenceA1, epochSequenceA2, epochSequenceB is non-decreasing. assertS10_MD: device-row count on pageA1 and pageA2 each equals getPubkeyLeafCountHook(page, m.groupId, m.pubkeyA). All assertions ship in both strict form (hooks present) and degraded form (AC-MD-DEG-1/2).",
+      "acceptance_criteria": [
+        "AC-MD-A15-1",
+        "AC-MD-A15-2",
+        "AC-MD-A15-3",
+        "AC-MD-A15-4",
+        "AC-MD-A15-5",
+        "AC-MD-C0-1",
+        "AC-MD-S5-1",
+        "AC-MD-S6-1",
+        "AC-MD-S10-1",
+        "AC-MD-DEG-1",
+        "AC-MD-DEG-2"
+      ],
+      "scope": {
+        "includes": [
+          "e2e/tests/multi-user-md.property.spec.ts",
+          "specs/epic-property-tests-l3-multi-device/**"
+        ],
+        "excludes": [
+          "e2e/fixtures/multi-device.ts",
+          "e2e/tests/multi-user.property.spec.ts",
+          "e2e/fixtures/two-party.ts",
+          "src/**",
+          "docs/**"
+        ]
+      },
+      "complexity": "medium",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "status": "done",
+      "owning_module": "MD property spec",
+      "story_order": 5,
+      "dependencies": [
+        "S1",
+        "S2",
+        "S3",
+        "S4"
+      ],
+      "creates_seam": false,
+      "consumes_seams": [
+        "NotestrTestHooksExtension"
+      ],
+      "lighter_path": false,
+      "notes": "~150 LOC. Imports getGroupEpochHook, getGroupMembersHook, getPubkeyLeafCountHook from e2e/fixtures/two-party.ts — NOT calling window hooks directly (architecture boundary rule). Degraded form code comments MUST name AC-MD-DEG-1/2 and point at epic-property-tests-l3-completion's test-hook story per AC-MD-DEG-2."
+    },
+    {
+      "id": "S6",
+      "name": "wire-fc-assert",
+      "title": "Wire fc.assert: commands array, numRuns: 12, maxCommands: 8",
+      "directory": "S6-wire-fc-assert",
+      "description": "Assemble the fc.commands array with all 13 command arbitraries from spec.md § Single test wiring. Wire fc.assert with numRuns: 12, maxCommands: 8, verbose: true, FAST_CHECK_SEED and FAST_CHECK_PATH env-var handling. Set test.setTimeout(720_000). Replace the placeholder test body from S1 with the real fc.assert invocation. Confirm FAST_CHECK_NUM_RUNS env override is honoured (AC-X-RUNS-MD-1).",
+      "acceptance_criteria": [
+        "AC-MD-RUN-1",
+        "AC-MD-RUN-2",
+        "AC-MD-RUN-3",
+        "AC-MD-RUN-4",
+        "AC-MD-RUN-5"
+      ],
+      "scope": {
+        "includes": [
+          "e2e/tests/multi-user-md.property.spec.ts",
+          "specs/epic-property-tests-l3-multi-device/**"
+        ],
+        "excludes": [
+          "e2e/fixtures/multi-device.ts",
+          "e2e/tests/multi-user.property.spec.ts",
+          "e2e/fixtures/two-party.ts",
+          "src/**",
+          "docs/**"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "status": "done",
+      "owning_module": "MD property spec",
+      "story_order": 6,
+      "dependencies": [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5"
+      ],
+      "creates_seam": false,
+      "lighter_path": false,
+      "notes": "~50 LOC. AC-MD-RUN-5 requires a deliberate divergence injection (reachable only after A2.Attach) to confirm printed chain contains A2.Attach() followed by an A2-targeted command, then revert. numRuns override: fc.assert respects parseInt(process.env.FAST_CHECK_NUM_RUNS ?? '0') || 12 to satisfy AC-X-RUNS-MD-1."
+    },
+    {
+      "id": "S7",
+      "name": "coverage-table-edit",
+      "title": "Coverage table edit: update TP-80..82 row in two-party-permutation-matrix.md",
+      "directory": "S7-coverage-table-edit",
+      "description": "Edit docs/two-party-permutation-matrix.md § Property-test coverage: change the TP-80..82 row value from 'A15, C0' to 'A15, C0, S5, S6, S10 (multi-device at L3)'. Add a footnote capturing the TP-52 caveat: 'Leaf-count consequence asserted; full forget-self membership behaviour pending the (fixme) resolution in epic-multi-device-sync.' No other rows in the coverage table are modified.",
+      "acceptance_criteria": [
+        "AC-MD-DOC-1",
+        "AC-MD-DOC-2",
+        "AC-MD-DOC-3"
+      ],
+      "scope": {
+        "includes": [
+          "docs/two-party-permutation-matrix.md",
+          "specs/epic-property-tests-l3-multi-device/**"
+        ],
+        "excludes": [
+          "e2e/tests/multi-user-md.property.spec.ts",
+          "e2e/fixtures/multi-device.ts",
+          "e2e/tests/multi-user.property.spec.ts",
+          "e2e/fixtures/two-party.ts",
+          "src/**"
+        ]
+      },
+      "complexity": "trivial",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "status": "done",
+      "owning_module": "Coverage matrix",
+      "story_order": 7,
+      "dependencies": [
+        "S6"
+      ],
+      "creates_seam": false,
+      "lighter_path": true,
+      "notes": "Markdown-only edit. docs/two-party-permutation-matrix.md already exists on disk. lighter_path = true per explicit spec direction: single .md file target, no new file, no code. AC texts are descriptive (no MUST/MUST NOT normative form) — lighter_path is set by explicit instruction given the purely editorial nature of the change."
+    },
+    {
+      "id": "S8",
+      "name": "wall-clock-validation",
+      "title": "Wall-clock validation: three local runs, tune numRuns/maxCommands if envelope breaches",
+      "directory": "S8-wall-clock-validation",
+      "description": "Manual one-shot story. Run make e2e against the MD file alone three times locally. Record maximum observed wall-clock in epic completion notes. If any run exceeds 720 seconds, reduce numRuns to 10 (or maxCommands to 6) in e2e/tests/multi-user-md.property.spec.ts and repeat. Capture final values in code comments. On CI, verify the MD file's runtime appears in the post-merge log within the 720-second envelope.",
+      "acceptance_criteria": [
+        "AC-MD-WC-1",
+        "AC-MD-WC-2",
+        "AC-MD-WC-3"
+      ],
+      "scope": {
+        "includes": [
+          "e2e/tests/multi-user-md.property.spec.ts",
+          "specs/epic-property-tests-l3-multi-device/**"
+        ],
+        "excludes": [
+          "e2e/fixtures/multi-device.ts",
+          "e2e/tests/multi-user.property.spec.ts",
+          "e2e/fixtures/two-party.ts",
+          "src/**",
+          "docs/**"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "status": "done",
+      "owning_module": "MD property spec",
+      "story_order": 8,
+      "dependencies": [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5",
+        "S6",
+        "S7"
+      ],
+      "creates_seam": false,
+      "lighter_path": false,
+      "notes": "Manual one-shot story. The only code change allowed is a numRuns / maxCommands reduction if the wall-clock budget is exceeded. AC-MD-WC-3 covers CI sustained breach — triggers a follow-up epic, not an inline fix."
+    }
+  ]
+}

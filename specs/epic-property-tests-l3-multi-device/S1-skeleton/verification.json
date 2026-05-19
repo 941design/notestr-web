@@ -1,0 +1,145 @@
+{
+  "story_id": "S1",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S1-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does `e2e/tests/multi-user-md.property.spec.ts` contain no stub markers (e.g. `TODO`, `FIXME`, `throw new Error('not implemented')`) beyond the single intentional `test.skip()` placeholder body, and does `e2e/fixtures/multi-device.ts` contain no unintended dead exports?"
+    },
+    {
+      "question_id": "VQ-S1-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Do `e2e/tests/multi-user-md.property.spec.ts` and `e2e/fixtures/multi-device.ts` import exclusively from `e2e/fixtures/two-party.ts`, `e2e/fixtures/auth-helper.ts`, `e2e/fixtures/auth-helper-b.ts`, and `fast-check`? Confirm no import touches `src/marmot/`, `src/store/`, or `src/components/` directly. Verify via `grep -rn 'from.*src/'` on the two new files."
+    },
+    {
+      "question_id": "VQ-S1-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could the `MD property spec` module (`e2e/tests/multi-user-md.property.spec.ts`) be deleted and rewritten without modifying any file outside its `dependencies_allowed` list (`e2e/fixtures/multi-device.ts`, `e2e/fixtures/two-party.ts`, `e2e/fixtures/auth-helper.ts`, `e2e/fixtures/auth-helper-b.ts`)? If not, which cross-module dependencies exist and do they flow through the declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S1-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does `npx playwright test multi-user-md.property.spec.ts --list` discover exactly one test, and does running that test exit with status 0 (skipped, not failed)? Provide the output line count and exit code."
+    },
+    {
+      "question_id": "VQ-S1-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does `e2e/tests/multi-user-md.property.spec.ts` compile without TypeScript errors (`npx tsc --noEmit`)? Is `e2e/fixtures/multi-device.ts` included in the compilation? Provide the compiler exit code."
+    },
+    {
+      "question_id": "VQ-S1-006",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does `beforeAll` perform no network calls or bunker connections beyond the explicit `authenticate(pageB, ...)` and `authenticate(pageA1, ...)` calls? Confirm there is no implicit third-party auth attempt (e.g. no stray `goto` or `navigate` for pageA2)."
+    },
+    {
+      "question_id": "VQ-S1-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-FILE-1",
+      "question": "Does `e2e/tests/multi-user-md.property.spec.ts` exist on disk at that exact path? Provide evidence: `ls -la e2e/tests/multi-user-md.property.spec.ts` output showing the file exists, is non-empty, and is not a symlink. Also confirm `e2e/fixtures/multi-device.ts` exists as a companion stub."
+    },
+    {
+      "question_id": "VQ-S1-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-FILE-2",
+      "question": "Does `npx playwright test multi-user-md.property.spec.ts --list` output exactly one test entry? Provide the raw command output. A count of 0 or >1 is a failure."
+    },
+    {
+      "question_id": "VQ-S1-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-FILE-3",
+      "question": "Does the single test title contain the substring `[A15,C0]` (or a superset like `[A15,C0,S5,S6,S10]`)? Provide evidence via `grep -n 'A15.*C0\\|C0.*A15' e2e/tests/multi-user-md.property.spec.ts` showing the test title line."
+    },
+    {
+      "question_id": "VQ-S1-010",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-FILE-4",
+      "question": "Does `test.beforeAll` in `multi-user-md.property.spec.ts` create exactly three browser contexts — two against `E2E_BUNKER_URL` (for A1 and A2) and one against `E2E_BUNKER_B_URL` (for B) — and does `test.afterAll` close all three? Provide evidence via a `grep -n 'newContext\\|newPage\\|afterAll\\|close' e2e/tests/multi-user-md.property.spec.ts` excerpt showing all three context allocations and their teardown."
+    },
+    {
+      "question_id": "VQ-S1-011",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-FILE-5",
+      "question": "Is `pageA2` created in `beforeAll` but NOT authenticated there? Confirm that `authenticate` is called for `pageB` and `pageA1` in `beforeAll`, and that no `authenticate` call for `pageA2` appears in `beforeAll`. Evidence: `grep -n 'authenticate' e2e/tests/multi-user-md.property.spec.ts` with line-number context showing `beforeAll` block boundaries."
+    },
+    {
+      "question_id": "VQ-S1-012",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-FILE-6",
+      "question": "Are `cachedPubkeyA` and `cachedPubkeyB` both captured once in `beforeAll` via `getPubkeyHex(pageA1)` and `getPubkeyHex(pageB)` respectively? Is there no `cachedPubkeyA2` variable declared anywhere in the file? Evidence: `grep -n 'cachedPubkey' e2e/tests/multi-user-md.property.spec.ts`."
+    },
+    {
+      "question_id": "VQ-S1-013",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-FILE-7",
+      "question": "Does the `authenticate` call for `pageA1` in `beforeAll` pass an explicit slot string (e.g. `'A1'` or constant `SLOT_A1`)? Are the constants `SLOT_A1 = 'A1'` and `SLOT_A2 = 'A2'` declared near the top of the file? Evidence: `grep -n 'SLOT_A\\|authenticate.*A1\\|authenticate.*A2' e2e/tests/multi-user-md.property.spec.ts` showing both the constant declarations and their usage."
+    },
+    {
+      "question_id": "VQ-S1-014",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-FILE-8",
+      "question": "In `beforeAll`, does the `authenticate(pageB, ...)` call appear on a lower line number than the `authenticate(pageA1, ...)` call? Evidence: `grep -n 'authenticate' e2e/tests/multi-user-md.property.spec.ts` — the line number for pageB auth MUST be smaller than for pageA1 auth."
+    },
+    {
+      "question_id": "VQ-S1-015",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does `git diff --stat origin/master... -- e2e/tests/multi-user.property.spec.ts e2e/fixtures/two-party.ts e2e/fixtures/auth-helper.ts e2e/fixtures/auth-helper-b.ts src/` show zero changes? This confirms AC-X-NO-PROD-CHANGE-MD-1 and AC-X-NO-2P-CHANGE-MD-1 are satisfied by S1.",
+      "ac_id": "AC-X-NO-PROD-CHANGE-MD-1"
+    },
+    {
+      "question_id": "VQ-S1-016",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does `git diff --stat origin/master... -- e2e/tests/multi-user.property.spec.ts` show no changes? This is the direct check for AC-X-NO-2P-CHANGE-MD-1.",
+      "ac_id": "AC-X-NO-2P-CHANGE-MD-1"
+    },
+    {
+      "question_id": "VQ-S1-017",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does `git diff --stat origin/master... -- e2e/tests/multi-device-cross-npub.spec.ts e2e/tests/multi-device-sync.spec.ts e2e/tests/multi-user.spec.ts` show zero changes, and do all three files still exist on disk without `.skip` added to any test? This checks AC-X-NO-EXAMPLE-DELETION-MD-1.",
+      "ac_id": "AC-X-NO-EXAMPLE-DELETION-MD-1"
+    },
+    {
+      "question_id": "VQ-S1-018",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does the single test block's title follow the `[A15,C0]` (or wider) bracket convention required by AC-X-NAMING-MD-1? Confirm with `grep -n '\\[.*A15' e2e/tests/multi-user-md.property.spec.ts`.",
+      "ac_id": "AC-X-NAMING-MD-1"
+    },
+    {
+      "question_id": "VQ-S1-PI-001",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "The `awaitDeviceJoin` stub in `e2e/fixtures/multi-device.ts` currently throws `Error('awaitDeviceJoin: not yet implemented (S2)')`. When S2 replaces this body, does the 4-parameter signature `(pageNew, primaryPage, groupId, pubkeyA)` match the call sites in `AttachA2Command_MD.run`? The spec's Technical Approach shows 3 parameters; architecture.md § Seams shows 3; the AC-MD-ATTACH-3 shows 3. Confirm S2 author adopts the 4-parameter form (pubkeyA added for testability) or reconciles with 3-parameter callers before the stub is replaced."
+    },
+    {
+      "question_id": "VQ-S1-PI-002",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "The `void (fc as typeof fc)` and `void (awaitDeviceJoin ...)` suppression lines at the end of the spec file silence TS unused-import warnings for symbols consumed by S2..S6. When S2 actually uses `fc.commands` and `awaitDeviceJoin`, do these suppression lines need to be removed to avoid double-reference lint errors, or are they harmless? Verify before merging S2."
+    },
+    {
+      "question_id": "VQ-S1-PI-003",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "The `--list` output shows 3 tests (one per Playwright project: chromium, Mobile Chrome, Mobile Safari) but there is only 1 test definition in the file. AC-MD-FILE-2 says 'exactly one test'. Is the AC interpreted as 'one test body' (file-level) or 'one test entry in --list' (project-level)? If the latter, a `testIgnore` or project filter would be needed. Document the resolution so VQ-S1-008 can be answered unambiguously."
+    }
+  ]
+}

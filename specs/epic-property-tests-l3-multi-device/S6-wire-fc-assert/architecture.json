@@ -1,0 +1,31 @@
+{
+  "module_name": "MD property spec",
+  "purpose": "Replace the placeholder test.skip body in multi-user-md.property.spec.ts with the real fc.assert property-test wiring: commands array, numRuns/maxCommands parameters, per-run model setup, asyncModelRun call, quiesce, and the five assertion functions.",
+  "public_api": [],
+  "private_files": [
+    "e2e/tests/multi-user-md.property.spec.ts"
+  ],
+  "owned_data": [
+    "ModelStateMD (per-run instance, instantiated inside fc.asyncProperty callback)",
+    "RealSystemMD (per-test instance wrapping three Playwright pages)",
+    "fc.commands array (arbitraries constructed locally inside the test body)"
+  ],
+  "dependencies_allowed": [
+    "fast-check (fc)",
+    "e2e/fixtures/two-party.ts (all helpers — already imported)",
+    "e2e/fixtures/multi-device.ts (awaitDeviceJoin — already imported)",
+    "e2e/fixtures/auth-helper.ts (E2E_BUNKER_URL)",
+    "e2e/fixtures/auth-helper-b.ts (E2E_BUNKER_B_URL, USER_B_NPUB)"
+  ],
+  "dependencies_forbidden": [
+    "src/**",
+    "e2e/tests/multi-user.property.spec.ts"
+  ],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "npx tsc --noEmit -p tsconfig.json (zero new errors)",
+    "npx playwright test multi-user-md.property.spec.ts --list (1 test, NOT skipped)"
+  ]
+}

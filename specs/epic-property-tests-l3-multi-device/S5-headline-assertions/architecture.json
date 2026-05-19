@@ -1,0 +1,61 @@
+{
+  "module_name": "MD property spec",
+  "purpose": "Additive assertion functions inside e2e/tests/multi-user-md.property.spec.ts that check post-quiescence invariants across three Playwright pages (pageA1, pageA2, pageB) for the multi-device same-pubkey axis.",
+  "public_api": [
+    {
+      "name": "assertA15_MD",
+      "signature": "async function assertA15_MD(m: ModelStateMD, r: RealSystemMD): Promise<void>",
+      "description": "Multi-device same-pubkey self-converge: asserts task sets, members, epoch, and per-pubkey leaf counts are equal between A1 and A2. Skip-guard: !m.groupId || !(m.membersA1 && m.membersA2)."
+    },
+    {
+      "name": "assertC0_MD",
+      "signature": "async function assertC0_MD(m: ModelStateMD, r: RealSystemMD): Promise<void>",
+      "description": "Three-way C0: extends assertC0 to three pages (A1, A2, B). Asserts four dimensions across all pages. Skip-guard: requires all three to be members."
+    },
+    {
+      "name": "assertS5_MD",
+      "signature": "async function assertS5_MD(m: ModelStateMD, r: RealSystemMD): Promise<void>",
+      "description": "Biconditional (p in members) iff (leafCount >= 1) for pubkeyA and pubkeyB, scoped to m.groupId. Expected pubkeyA leaf count is 2 when both A1 and A2 are attached."
+    },
+    {
+      "name": "assertS6_MD",
+      "signature": "async function assertS6_MD(m: ModelStateMD): Promise<void>",
+      "description": "Model-only monotonicity: epochSequenceA1, epochSequenceA2, and epochSequenceB must each be non-decreasing."
+    },
+    {
+      "name": "assertS10_MD",
+      "signature": "async function assertS10_MD(m: ModelStateMD, r: RealSystemMD): Promise<void>",
+      "description": "DeviceList row count on pageA1 and pageA2 each equals getPubkeyLeafCountHook(page, groupId, pubkeyA). Skip-guard: !m.groupId || !m.pubkeyA."
+    }
+  ],
+  "private_files": [
+    "e2e/tests/multi-user-md.property.spec.ts"
+  ],
+  "owned_data": [],
+  "dependencies_allowed": [
+    "e2e/fixtures/two-party.ts",
+    "e2e/fixtures/multi-device.ts",
+    "e2e/fixtures/auth-helper.ts",
+    "e2e/fixtures/auth-helper-b.ts"
+  ],
+  "dependencies_forbidden": [
+    "src/**",
+    "e2e/tests/multi-user.property.spec.ts",
+    "e2e/tests/multi-user-3p.property.spec.ts"
+  ],
+  "external_ports": [
+    "getGroupEpochHook (two-party.ts) — wraps window.__notestrTestGroupEpoch",
+    "getGroupMembersHook (two-party.ts) — wraps window.__notestrTestGroupMembers",
+    "getPubkeyLeafCountHook (two-party.ts) — wraps window.__notestrTestPubkeyLeafCount"
+  ],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "AC-MD-A15-1", "AC-MD-A15-2", "AC-MD-A15-3", "AC-MD-A15-4", "AC-MD-A15-5",
+    "AC-MD-C0-1",
+    "AC-MD-S5-1",
+    "AC-MD-S6-1",
+    "AC-MD-S10-1",
+    "AC-MD-DEG-1", "AC-MD-DEG-2"
+  ]
+}

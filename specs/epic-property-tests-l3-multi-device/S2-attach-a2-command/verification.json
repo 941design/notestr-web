@@ -1,0 +1,125 @@
+{
+  "story_id": "S2",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S2-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does `AttachA2Command_MD` have no dead code paths — specifically, is there no fallback authentication path that would allow the command to succeed without the explicit `'A2'` slot string? Confirm no commented-out alternative auth calls remain in the committed code."
+    },
+    {
+      "question_id": "VQ-S2-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Is `awaitDeviceJoin` defined in `e2e/fixtures/multi-device.ts` (not inline in the spec file) and exported from there? Does `multi-user-md.property.spec.ts` import it from `e2e/fixtures/multi-device.ts`? Confirm via `grep -n 'awaitDeviceJoin' e2e/fixtures/multi-device.ts e2e/tests/multi-user-md.property.spec.ts` showing declaration in fixture and import/usage in spec."
+    },
+    {
+      "question_id": "VQ-S2-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could the `MD fixture helpers` module (`e2e/fixtures/multi-device.ts`) be deleted and rewritten without modifying any file outside its `dependencies_allowed` list (`e2e/fixtures/two-party.ts`, `e2e/fixtures/auth-helper.ts`)? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S2-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does `npx tsc --noEmit` pass cleanly after S2 is implemented? The `awaitDeviceJoin` function signature `(pageNew: Page, primaryPage: Page, groupId: string) => Promise<void>` must be type-correct with the call-site in `AttachA2Command_MD.run`. Provide compiler exit code and any errors."
+    },
+    {
+      "question_id": "VQ-S2-005",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does `awaitDeviceJoin` enforce the 30-second timeout with an explicit `throw` on breach, not a silent resolve? Confirm the throw path is present via `grep -n 'throw\\|timeout\\|30' e2e/fixtures/multi-device.ts`."
+    },
+    {
+      "question_id": "VQ-S2-006",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-ATTACH-1",
+      "question": "Does `AttachA2Command_MD.check(m)` return `true` only when `m.membersA1 && m.groupId !== null && !m.membersA2`? Show the `check` method body via `grep -A 5 'check.*m.*membersA1' e2e/tests/multi-user-md.property.spec.ts`. Confirm no other conditions are evaluated (e.g. no `m.membersB` guard) and that this exact triple-conjunction appears."
+    },
+    {
+      "question_id": "VQ-S2-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-ATTACH-2",
+      "question": "Does `AttachA2Command_MD.run` call `authenticate(r.pageA2, E2E_BUNKER_URL, 'A2')` with the explicit `'A2'` slot, then call `awaitDeviceJoin`, then set `m.membersA2 = true`, then push the initial epoch to `m.epochSequenceA2`? Provide evidence by reading the `run` method body. Confirm the order matches the AC description."
+    },
+    {
+      "question_id": "VQ-S2-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-ATTACH-3",
+      "question": "Does `awaitDeviceJoin(pageNew, primaryPage, groupId)` poll `leafIndexesFor(primaryPage, groupId, pubkeyA).length >= 2` (or `getPubkeyLeafCountHook(primaryPage, groupId, pubkeyA) >= 2`) in a loop, and does it throw after 30 seconds if the condition is not met? Provide the full function body from `e2e/fixtures/multi-device.ts`. Confirm the poll does NOT authenticate `pageNew`."
+    },
+    {
+      "question_id": "VQ-S2-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-ATTACH-4",
+      "question": "Does `AttachA2Command_MD.run` include a postcondition assertion `leafIndexesFor(r.pageA1, m.groupId, m.pubkeyA).length >= 2`? Provide evidence via `grep -n 'leafIndexesFor.*pageA1\\|leafIndexesFor.*A1' e2e/tests/multi-user-md.property.spec.ts` showing the assertion line."
+    },
+    {
+      "question_id": "VQ-S2-010",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-ATTACH-5",
+      "question": "Does `AttachA2Command_MD.toString()` return exactly `'A2.Attach()'`? Show via `grep -n 'toString\\|A2.Attach' e2e/tests/multi-user-md.property.spec.ts` the toString method of AttachA2Command_MD."
+    },
+    {
+      "question_id": "VQ-S2-011",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-ATTACH-6",
+      "question": "Is there evidence in the epic completion notes or PR description that a deliberate regression (e.g. throw inside the welcome handler) was introduced, a counterexample was observed whose chain ended in `A2.Attach()`, and the regression was reverted? The final committed code must NOT contain the regression. Confirm via `git diff origin/master... -- e2e/fixtures/multi-device.ts` showing no throw-injection remnant."
+    },
+    {
+      "question_id": "VQ-S2-012",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does `git diff --stat origin/master... -- src/ e2e/tests/multi-user.property.spec.ts` show zero changes after S2? This confirms AC-X-NO-PROD-CHANGE-MD-1 and AC-X-NO-2P-CHANGE-MD-1 remain clean after the RISER story.",
+      "ac_id": "AC-X-NO-PROD-CHANGE-MD-1"
+    },
+    {
+      "question_id": "VQ-S2-013",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does `git diff --stat origin/master... -- e2e/tests/multi-user.property.spec.ts` show no changes after S2? Check AC-X-NO-2P-CHANGE-MD-1.",
+      "ac_id": "AC-X-NO-2P-CHANGE-MD-1"
+    },
+    {
+      "question_id": "VQ-S2-014",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Do `e2e/tests/multi-device-cross-npub.spec.ts`, `e2e/tests/multi-device-sync.spec.ts`, and `e2e/tests/multi-user.spec.ts` still exist on disk, are unmodified (per `git diff`), and contain no newly added `.skip`? This checks AC-X-NO-EXAMPLE-DELETION-MD-1.",
+      "ac_id": "AC-X-NO-EXAMPLE-DELETION-MD-1"
+    },
+    {
+      "question_id": "VQ-S2-015",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does `make test` exit with the same pass/fail status as before S2 was merged? Run `make test` and capture exit code. This checks AC-X-CI-MD-1.",
+      "ac_id": "AC-X-CI-MD-1"
+    },
+    {
+      "question_id": "VQ-S2-PI-001",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "Option A (3-param) was chosen for awaitDeviceJoin, converting the S1 4-param stub. The first parameter is named `_pageNew` (underscore prefix) since it is unused inside the helper body. Does the ESLint no-unused-vars rule tolerate underscore-prefixed parameters in this project's config? If not, the eslint-disable comment on line 53 of multi-device.ts must be retained. Verify by checking `e2e/.eslintrc.*` or the root eslint config for the `argsIgnorePattern` setting."
+    },
+    {
+      "question_id": "VQ-S2-PI-002",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "The AC-MD-ATTACH-6 regression ritual was performed at the TypeScript compilation level (throw injection compiled cleanly, revert confirmed). It was NOT performed as an actual fast-check run because the property test requires a live relay and three authenticated browser contexts. Is this acceptable, or does the AC require an observed counterexample printout from an actual `npx playwright test` run? If an actual run is required, document that as a one-shot manual step in the epic completion notes (not in committed code)."
+    },
+    {
+      "question_id": "VQ-S2-PI-003",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "question": "The `awaitDeviceJoin` helper calls `expect.poll(...)` which is a Playwright `expect` assertion. Inside `AttachA2Command_MD.run`, the postcondition also calls `expect(leaves.length).toBeGreaterThanOrEqual(2)`. This means two distinct assertion styles are used in the same command's run path. Is there a risk that the `expect.poll` timeout (30 s) overlaps with a Playwright test timeout in a way that produces a confusing error message — e.g. `expect.poll` times out at 30 s but the overall test timeout also fires at 720 s, and the error says 'Test timeout of 720000ms exceeded' rather than 'awaitDeviceJoin timed out'? Review Playwright's error-message behavior for nested poll timeouts inside a command run."
+    }
+  ]
+}

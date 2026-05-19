@@ -1,0 +1,52 @@
+{
+  "epic_name": "property-tests-l3-multi-device",
+  "status": "done",
+  "phase": "COMPLETE",
+  "created_at": "2026-05-18T21:09:30Z",
+  "updated_at": "2026-05-19T05:49:49Z",
+  "pre_existing_dirty_files": [
+    ".claude/skills/e2e-triage/SKILL.md",
+    ".claude/skills/e2e-triage/learnings.md",
+    ".claude/verification-results.csv",
+    ".clauded.yaml",
+    "docs/quizzl-report.md",
+    "docs/shophop-report.md",
+    "e2e/.triage-phase-a.log",
+    "e2e/.triage/device.md",
+    "e2e/.triage/findings-merged.md",
+    "e2e/.triage/multi-party.md",
+    "e2e/.triage/run.log",
+    "e2e/.triage/tasks.md",
+    "specs/epic-property-tests-l3-multi-device/acceptance-criteria.md",
+    "specs/epic-property-tests-l3-three-party/acceptance-criteria.md"
+  ],
+  "completed_stories": [
+    "S1",
+    "S2",
+    "S4",
+    "S3",
+    "S5",
+    "S6",
+    "S7",
+    "S8"
+  ],
+  "escalated_stories": [],
+  "phase_history": [
+    {
+      "phase": "SPEC_VALIDATED",
+      "timestamp": "2026-05-18T21:09:30Z",
+      "trigger": "validation_passed"
+    },
+    {
+      "phase": "STORY_IN_PROGRESS",
+      "timestamp": "2026-05-19T04:59:32Z",
+      "trigger": "S1_complete"
+    },
+    {
+      "phase": "COMPLETE",
+      "timestamp": "2026-05-19T05:49:49Z",
+      "trigger": "all_stories_done"
+    }
+  ],
+  "completed_at": "2026-05-19T05:49:49Z"
+}

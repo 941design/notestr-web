@@ -1,0 +1,41 @@
+{
+  "story_id": "S4",
+  "status": "accepted",
+  "final_outcome": "accepted",
+  "architect_skipped": false,
+  "remediation_rounds": 0,
+  "files_created": [
+    "specs/epic-property-tests-l3-multi-device/S4-group-lifecycle-commands/architecture.json",
+    "specs/epic-property-tests-l3-multi-device/S4-group-lifecycle-commands/baseline.json",
+    "specs/epic-property-tests-l3-multi-device/S4-group-lifecycle-commands/result.json"
+  ],
+  "files_modified": [
+    "e2e/tests/multi-user-md.property.spec.ts",
+    "specs/epic-property-tests-l3-multi-device/S4-group-lifecycle-commands/verification.json"
+  ],
+  "implementation_summary": "Added five fc.AsyncCommand<ModelStateMD, RealSystemMD> classes to e2e/tests/multi-user-md.property.spec.ts: CgCommand_MD (A1 creates group, sets groupId+membersA1+epoch), InCommand_MD (A1 invites B, settle+inviteByNpub+reloadB+selectGroup, sets membersB+epoch), LgCommand_MD(device) (locator-direct leave on device page, identity-A 2→1 semantics for A1-while-A2-in), RdCommand_MD(device, newName) (first-textbox pattern on device page), FdCommand_MD (A1 forgets A2's last leaf index, poll for leafCount-1, clears membersA2). A14 wire check deferred per spec (leaf-count consequence only). No production changes.",
+  "test_counts": {
+    "baseline_definitions": 1,
+    "final_definitions": 1,
+    "baseline_projects": 3,
+    "final_projects": 3,
+    "note": "Test body remains skipped (S1 skeleton) — S6 wires fc.assert"
+  },
+  "mocks_introduced": [],
+  "verification": {
+    "tsc_errors_new": 0,
+    "tsc_errors_pre_existing": 2,
+    "playwright_list_count": 3,
+    "scope_diff_clean": true
+  },
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The 2-party LgCommand uses `openNdkSubscriber` for A14 wire checks, which is not imported in the MD file and not part of the MD invariant set. The story spec is explicit about deferring A14, but the 2-party source code that was the reference template interleaves A14 inline — reader must consciously skip that block. Minor but non-obvious.",
+    "surprised_by": "FdCommand_MD targets the 'last' leaf index as a proxy for A2's leaf. The ratchet-tree does not guarantee insertion order maps to array position — A2 could appear at any index. This is a latent test reliability concern surfaced while implementing (captured in VQ-S4-P01).",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  }
+}

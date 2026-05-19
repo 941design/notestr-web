@@ -1,0 +1,49 @@
+{
+  "module_name": "MD property spec + MD fixture helpers",
+  "purpose": "Implement AttachA2Command_MD (the RISER command) and replace the awaitDeviceJoin stub with a real welcome-propagation poll. AttachA2Command_MD is the fc.AsyncCommand that authenticates the second device of identity A, waits for the MLS welcome to land (leaf count >= 2 on primaryPage), and sets m.membersA2 = true so subsequent S3/S4 commands can target device A2.",
+  "public_api": [
+    {
+      "name": "awaitDeviceJoin",
+      "signature": "async function awaitDeviceJoin(pageNew: Page, primaryPage: Page, groupId: string): Promise<void>",
+      "description": "Polls leafIndexesFor(primaryPage, groupId, pubkeyA) until length >= 2, with a 30-second timeout. pubkeyA is read from primaryPage via __notestrTestPubkey(). Throws on timeout so fast-check shrinks to the minimal failing chain. This is Option A (3-param) matching the seam contract in architecture.md."
+    },
+    {
+      "name": "AttachA2Command_MD",
+      "signature": "class AttachA2Command_MD implements fc.AsyncCommand<ModelStateMD, RealSystemMD>",
+      "description": "check(m) returns true only when m.membersA1 && m.groupId !== null && !m.membersA2. run(m, r) authenticates r.pageA2 with SLOT_A2, calls awaitDeviceJoin, sets m.membersA2 = true, captures initial epoch into m.epochSequenceA2, asserts leafIndexesFor(r.pageA1, m.groupId!, m.pubkeyA!).length >= 2. toString() returns 'A2.Attach()'."
+    }
+  ],
+  "private_files": [
+    "e2e/tests/multi-user-md.property.spec.ts",
+    "e2e/fixtures/multi-device.ts"
+  ],
+  "owned_data": [
+    "awaitDeviceJoin implementation in e2e/fixtures/multi-device.ts",
+    "AttachA2Command_MD class in e2e/tests/multi-user-md.property.spec.ts"
+  ],
+  "dependencies_allowed": [
+    "e2e/fixtures/two-party.ts (leafIndexesFor, authenticate, getGroupEpochHook)",
+    "e2e/fixtures/auth-helper.ts (E2E_BUNKER_URL)",
+    "@playwright/test (Page, expect)",
+    "fast-check (fc.AsyncCommand)"
+  ],
+  "dependencies_forbidden": [
+    "src/**",
+    "e2e/fixtures/auth-helper-b.ts (not needed by awaitDeviceJoin or AttachA2Command_MD directly)",
+    "e2e/tests/multi-user.property.spec.ts"
+  ],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": [
+    "MLS welcome event — propagation observed by polling leafIndexesFor on primaryPage"
+  ],
+  "test_targets": [
+    "AC-MD-ATTACH-1: check() gate",
+    "AC-MD-ATTACH-2: authenticate + awaitDeviceJoin + membersA2 + epochSequenceA2",
+    "AC-MD-ATTACH-3: 30s timeout poll in awaitDeviceJoin",
+    "AC-MD-ATTACH-4: postcondition leafIndexesFor assertion",
+    "AC-MD-ATTACH-5: toString() = 'A2.Attach()'",
+    "AC-MD-ATTACH-6: regression-and-revert ritual (documented in result.json)"
+  ],
+  "signature_choice": "Option A (3-param awaitDeviceJoin) — matches architecture.md seam contract and spec.md Technical Approach line 169. pubkeyA is read inside the helper via __notestrTestPubkey() on primaryPage. The S1 stub used 4 params (Option B); this story replaces it with the 3-param canonical form."
+}

@@ -1,0 +1,62 @@
+{
+  "computed_at": "2026-05-18T21:09:30Z",
+  "focuses": {
+    "template": {
+      "summary": "The 2-party property file e2e/tests/multi-user.property.spec.ts (1111 LOC) is the structural template. ModelState (lines 75-132), RealSystem (138-214), 14 command classes (231-861), 5 assertion functions (862-985), fc.assert wiring with numRuns:20/maxCommands:10 (1025-1111). All DSL helpers re-exportable from e2e/fixtures/two-party.ts.",
+      "key_files": [
+        "e2e/tests/multi-user.property.spec.ts:1-1111",
+        "e2e/fixtures/two-party.ts:1-485",
+        "e2e/fixtures/auth-helper.ts:1-56",
+        "e2e/fixtures/auth-helper-b.ts:1-29"
+      ],
+      "command_classes": {
+        "Cg": "no args; only fires once; A creates group",
+        "In": "no args; A invites B (B fixed)",
+        "Lg": "actor: ActorId; per-actor leave; embeds A14 wire check when last leaf",
+        "Fd": "no args; A forgets B's leaf-by-index; embeds A14 + A10 polling",
+        "Rd": "no args; A renames first device-row",
+        "Ct/Ut/Sc/As/Un/Dt": "actor + payload; dispatch on r.page(actor); embed A1-A5 inline expects",
+        "Rl": "actor: ActorId; reloads page + asserts pre-reload tasks preserved (A11)",
+        "Sw": "no args; switches A's context to bunker B; clears m.memberA/groupIdA/epochSequenceA"
+      },
+      "assertions": {
+        "assertC0": "tasks + members + epoch + per-pubkey leaf counts equal across A and B; skip if !memberA||!memberB",
+        "assertS5": "biconditional p ∈ members ⇔ leafCount>=1 for pubkeyA + pubkeyB; scoped to groupIdA",
+        "assertS6": "model-only; both epoch sequences non-decreasing",
+        "assertS7": "post-Sw, no priorGroupIds in switched context",
+        "assertS10": "device-row count == getPubkeyLeafCountHook(pageA, groupIdA, pubkeyA)"
+      },
+      "fc_wiring": {
+        "numRuns": 20,
+        "maxCommands": 10,
+        "test_setTimeout_ms": 600000,
+        "env_vars": ["FAST_CHECK_SEED", "FAST_CHECK_PATH"],
+        "per_run_reset": "new ModelState() seeded with cachedPubkeyA/B (no browser re-auth); switchIdentity restore only if pubkeyA drifted"
+      },
+      "fixture_exports": {
+        "two_party_ts": ["authenticate", "createGroup", "currentGroupId", "dispatchTaskEvent", "forgetLeafByIndex", "getGroupEpochHook", "getGroupMembersHook", "getNostrGroupIdHex", "getPubkeyHex", "getPubkeyLeafCountHook", "inviteByNpub", "leafIndexesFor", "leaveGroup", "pinClientSlot", "projectIsMobile", "quiesceFor", "reload", "renameDevice", "selectGroup", "settle", "switchIdentity"],
+        "missing": ["awaitDeviceJoin (must be authored in S2)"]
+      }
+    },
+    "welcome_and_multi_device": {
+      "summary": "Two contexts on the same bunker only produce distinct MLS leaves if pinClientSlot is given an explicit slot string. The canonical leaf-join wait pattern is expect.poll(() => leafIndexesFor(primaryPage, groupId, pubkey), {timeout:30000}).toHaveLength(2), already used in forget-device-sibling.spec.ts:136-138. data-testid='device-row' lives in src/components/DeviceList.tsx:210 (one li per leaf of LOCAL identity only).",
+      "key_files": [
+        "e2e/tests/multi-device-cross-npub.spec.ts:47-83",
+        "e2e/tests/forget-device-sibling.spec.ts:99-138",
+        "e2e/tests/multi-device-sync.spec.ts:60-114",
+        "e2e/fixtures/two-party.ts:36-46",
+        "src/marmot/client.tsx:569-620",
+        "src/components/DeviceList.tsx:199-210",
+        "e2e/fixtures/bunker.mjs:23-25"
+      ],
+      "critical_constraints": {
+        "slot_pinning": "authenticate(page, E2E_BUNKER_URL, 'A1') and authenticate(page, E2E_BUNKER_URL, 'A2') — explicit slot mandatory; without it both contexts derive the same slot from the bunker pubkey and only one KP lands on the relay",
+        "auth_order": "B authenticates before A; KP must be on the relay before A invites. For lazy A2 auth via AttachA2Command_MD, the welcome wait absorbs the post-CgCommand_MD KP-publish delay",
+        "pubkey_hex_gate": "getPubkeyHex requires window.__notestrTestPubkey hook, installed only after MarmotProvider auth completes (client.tsx:417-620). Do not call on pageA2 before authenticate() finishes its hook poll. Spec uses cachedPubkeyA from A1 instead — correct.",
+        "init_script_timing": "pinClientSlot uses page.addInitScript() and must precede the first page.goto. authenticate handles this; do not pre-goto pageA2 in beforeAll.",
+        "device_row_scope": "device-row count on a given page reflects the local identity's leaves only. On pageA1/pageA2 it shows pubkeyA's leaves; on pageB it shows pubkeyB's leaves.",
+        "indexeddb_isolation": "Each browser.newContext() gets its own IndexedDB. No cross-context state sharing."
+      }
+    }
+  }
+}

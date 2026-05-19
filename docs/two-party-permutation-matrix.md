@@ -314,8 +314,10 @@ asserted for each scenario family.
 | TP-50..53 (forget)    | A10, A14, S5, S10, C0              |
 | TP-60..62 (rename)    | (UI-local; out of property scope)  |
 | TP-70..72 (3-party)   | (covered by 2-party C0 + induction)|
-| TP-80..82 (multi-dev) | A15, C0                            |
+| TP-80..82 (multi-dev) | A15, C0, S5, S6, S10 (multi-device at L3) [^tp52] |
 | TP-90..91 (concurrent)| D1                                 |
+
+[^tp52]: Leaf-count consequence asserted; full forget-self membership behaviour pending the `(fixme)` resolution in `epic-multi-device-sync`.
 
 ## Updating this document
 

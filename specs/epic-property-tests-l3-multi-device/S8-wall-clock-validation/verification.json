@@ -1,0 +1,93 @@
+{
+  "story_id": "S8",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-18T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S8-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "If `numRuns` or `maxCommands` was reduced during S8 to fit the 720-second envelope, do the updated values appear in code comments that explain WHY the reduction was made (naming the wall-clock observation)? Confirm via `grep -n 'numRuns\\|maxCommands\\|wall.clock\\|seconds' e2e/tests/multi-user-md.property.spec.ts`."
+    },
+    {
+      "question_id": "VQ-S8-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does S8 confine all code changes (if any) exclusively to `e2e/tests/multi-user-md.property.spec.ts`? Specifically: no changes to `src/`, no changes to `e2e/tests/multi-user.property.spec.ts`, no changes to `e2e/fixtures/`. Evidence: `git diff --stat origin/master... -- src/ e2e/tests/multi-user.property.spec.ts e2e/fixtures/`."
+    },
+    {
+      "question_id": "VQ-S8-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could the `MD property spec` module's `numRuns`/`maxCommands` values be tuned and the file rewritten without modifying any file outside its `dependencies_allowed` list? If any extra file was changed during S8 tuning, list it and explain why it was necessary per the architecture boundary rules."
+    },
+    {
+      "question_id": "VQ-S8-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Are the three local wall-clock run results recorded in the epic completion notes (or PR description)? The notes must include: run 1 duration, run 2 duration, run 3 duration, maximum observed, and the final `numRuns`/`maxCommands` values used. Provide the evidence location."
+    },
+    {
+      "question_id": "VQ-S8-005",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "If the maximum observed wall-clock was > 720 seconds and `numRuns` was reduced, does the final `numRuns` value remain >= 10 (per AC-MD-WC-2: reduce to 10, not below)? Confirm via `grep -n 'numRuns' e2e/tests/multi-user-md.property.spec.ts` showing the value used."
+    },
+    {
+      "question_id": "VQ-S8-006",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-WC-1",
+      "question": "Are exactly three local runs of `make e2e` against the MD file documented? Do the epic completion notes record the maximum observed wall-clock? Provide a direct link or excerpt from the epic completion notes showing all three run durations."
+    },
+    {
+      "question_id": "VQ-S8-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-WC-2",
+      "question": "If any of the three runs exceeded 720 seconds: was `numRuns` reduced to 10 (or `maxCommands` to 6), and was the validation repeated until all runs stayed within the envelope? Show the before/after values. If no run exceeded 720 seconds, confirm this is stated explicitly in the completion notes."
+    },
+    {
+      "question_id": "VQ-S8-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MD-WC-3",
+      "question": "Does the CI post-merge log for the commit that lands S1-S8 show the MD file's runtime within the 720-second envelope? Provide the log excerpt. If the log is not yet available (pre-merge), mark this as pending-CI-evidence with a note that sustained breach (>=3 consecutive merges) would trigger a follow-up epic, not an inline fix."
+    },
+    {
+      "question_id": "VQ-S8-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does `git diff --stat origin/master... -- src/ e2e/tests/multi-user.property.spec.ts` show zero changes after S8? Confirms AC-X-NO-PROD-CHANGE-MD-1 and AC-X-NO-2P-CHANGE-MD-1.",
+      "ac_id": "AC-X-NO-PROD-CHANGE-MD-1"
+    },
+    {
+      "question_id": "VQ-S8-010",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does `git diff --stat origin/master... -- e2e/tests/multi-user.property.spec.ts` show no changes after S8? Check AC-X-NO-2P-CHANGE-MD-1.",
+      "ac_id": "AC-X-NO-2P-CHANGE-MD-1"
+    },
+    {
+      "question_id": "VQ-S8-011",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Do the three preserved example-based spec files still exist on disk unmodified and without `.skip` additions after S8? Check AC-X-NO-EXAMPLE-DELETION-MD-1.",
+      "ac_id": "AC-X-NO-EXAMPLE-DELETION-MD-1"
+    },
+    {
+      "question_id": "VQ-S8-012",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does the `numRuns` computation in the final committed code honour the `FAST_CHECK_NUM_RUNS` env override (`parseInt(process.env.FAST_CHECK_NUM_RUNS ?? '0') || <final_value>`) even after any tuning done in S8? Confirm via `grep -n 'FAST_CHECK_NUM_RUNS' e2e/tests/multi-user-md.property.spec.ts`. Check AC-X-RUNS-MD-1.",
+      "ac_id": "AC-X-RUNS-MD-1"
+    },
+    {
+      "question_id": "VQ-S8-013",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does `make test` pass after S8 (no unit-test regressions from any numRuns/maxCommands edit)? Run `make test` and capture exit code. Check AC-X-CI-MD-1.",
+      "ac_id": "AC-X-CI-MD-1"
+    }
+  ]
+}

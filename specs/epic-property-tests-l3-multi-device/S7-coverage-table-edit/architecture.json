@@ -1,0 +1,5 @@
+{
+  "decision": "lighter_path",
+  "architect_skipped": true,
+  "reason": "Single markdown table edit in docs/two-party-permutation-matrix.md; all file targets in scope; AC-MD-DOC-1/2/3 are unambiguous text changes; no new file, no code."
+}

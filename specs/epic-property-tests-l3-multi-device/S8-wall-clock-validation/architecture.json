@@ -1,0 +1,11 @@
+{
+  "decision": "manual_one_shot_deferred",
+  "architect_skipped": true,
+  "reason": "AC-MD-WC-1/2/3 require running `make e2e` against the MD file three times locally (each ~6.5 min per spec design decision 6) AND observing post-merge CI behaviour. Both prerequisites need a live e2e relay + post-merge timeline, neither of which can be exercised inside this `/base:feature` session. Story is structurally a follow-up manual validation, not implementation work — same pattern as AC-MD-ATTACH-6 and AC-MD-RUN-5 deferrals to AC-VAL-MD-1.",
+  "deferred_acceptance_criteria": [
+    "AC-MD-WC-1",
+    "AC-MD-WC-2",
+    "AC-MD-WC-3"
+  ],
+  "deferral_target": "post-merge manual validation pass (alongside AC-VAL-MD-1 and AC-VAL-MD-2)"
+}
