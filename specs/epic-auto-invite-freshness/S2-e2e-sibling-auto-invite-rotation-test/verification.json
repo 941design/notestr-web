@@ -1,0 +1,79 @@
+{
+  "story_id": "S2",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-19T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S2-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-TEST-1",
+      "question": "Does `e2e/tests/sibling-auto-invite-rotation-race.spec.ts` exist, use `authenticate()` from `e2e/fixtures/two-party.ts` with two distinct explicit slot strings (not derived from the bunker pubkey), sign both contexts into the same bunker URL, create Group A, wait for Group A to appear in the sibling's sidebar, then create Group B and assert Group B appears in the sibling's sidebar within 60 seconds? Show: (a) the import line for `authenticate`, (b) both `authenticate(page, bunkerUrl, '<slot>')` call sites with their slot string arguments, (c) the Group A wait assertion, and (d) the Group B wait assertion.",
+      "evidence_required": "Run `grep -n 'authenticate' e2e/tests/sibling-auto-invite-rotation-race.spec.ts` and confirm two calls each with a distinct non-derived slot string. Run `grep -n 'Group A\\|Group B\\|sidebar\\|toBeVisible' e2e/tests/sibling-auto-invite-rotation-race.spec.ts` to confirm both assertions are present."
+    },
+    {
+      "question_id": "VQ-S2-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-TEST-2",
+      "question": "Is the primary pass/fail assertion for Group B visibility `expect(page2.locator('aside').getByText('Group B')).toBeVisible({ timeout: 60_000 })` — or a semantically equivalent assertion targeting the sibling page's sidebar element with a 60-second timeout — rather than an IDB `failedCount === 0` check alone? Show the exact assertion line(s). If an IDB belt-and-braces check is also present, confirm it is supplementary and not the sole assertion.",
+      "evidence_required": "Run `grep -n 'toBeVisible\\|failedCount\\|notestr-failed-welcomes' e2e/tests/sibling-auto-invite-rotation-race.spec.ts` and confirm `toBeVisible` with `timeout: 60_000` (or `60000`) appears for the Group B assertion. If `failedCount` appears, confirm `toBeVisible` also appears and comes first in the assertion sequence."
+    },
+    {
+      "question_id": "VQ-S2-003",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the new test file contain any inline auth helper (e.g. a local `signInSameBunker` function or equivalent that bypasses the `slot` parameter), any skipped test blocks (`test.skip`, `it.skip`), any hardcoded waits (`page.waitForTimeout`) that substitute for event-driven assertions, or any leftover debug `console.log` calls?",
+      "evidence_required": "Run `grep -n 'signInSameBunker\\|waitForTimeout\\|test\\.skip\\|it\\.skip\\|console\\.log' e2e/tests/sibling-auto-invite-rotation-race.spec.ts` and confirm the result is empty."
+    },
+    {
+      "question_id": "VQ-S2-004",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Is the new test file self-contained within `e2e/tests/` with no modifications to `e2e/fixtures/two-party.ts` or any other pre-existing fixture file, and does it import `authenticate` from the existing fixture path without creating a second copy of the function?",
+      "evidence_required": "Run `git diff --name-only` and confirm only `e2e/tests/sibling-auto-invite-rotation-race.spec.ts` is a new or modified file (no fixture file changes). Run `grep -n 'from.*two-party' e2e/tests/sibling-auto-invite-rotation-race.spec.ts` to confirm the canonical import path."
+    },
+    {
+      "question_id": "VQ-S2-005",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `sibling-auto-invite-rotation-race.spec.ts` be deleted and rewritten without modifying any file outside `e2e/tests/`? The architecture.md declares no cross-module seams for this story. If any dependency on a new helper was introduced, does it already exist in `e2e/fixtures/two-party.ts` rather than requiring a new shared file?",
+      "evidence_required": "Show the import block of `sibling-auto-invite-rotation-race.spec.ts`. Confirm every import resolves to either `e2e/fixtures/two-party.ts`, `@playwright/test`, or another pre-existing path — no new shared files were added."
+    },
+    {
+      "question_id": "VQ-S2-006",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does the test fail on `master` HEAD (i.e. before S1's freshness-collapse fix is applied), producing a timeout or missing-element failure on the Group B `toBeVisible` assertion rather than passing trivially? And does it pass after S1's fix is applied?",
+      "evidence_required": "Show the test-run output against both the pre-fix branch (Group B assertion times out or fails) and the post-fix branch (test passes end-to-end). If CI artifacts are unavailable, show a local run against both states. A test that passes on master HEAD before the fix is disqualified — it does not gate the regression."
+    },
+    {
+      "question_id": "VQ-S2-007",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Are the two slot strings passed to `authenticate()` genuinely distinct non-derived values (e.g. `'sibling-fresh-1'` and `'sibling-fresh-2'`, or any two strings that differ from each other and from the pubkey-derived default)? If both contexts receive the same slot string, both browser contexts publish to the same KP slot, the `getKeyPackageIdentifier` dedup key collapses them to one entry, and the test passes for the wrong reason regardless of the fix.",
+      "evidence_required": "Show the two `authenticate(...)` call sites. Confirm the third argument to each call is a string literal that differs between the two calls and does not match the pattern `e2e-<pubkeyPrefix>` (which is the derived default from `two-party.ts:42`)."
+    },
+    {
+      "question_id": "VQ-S2-008",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does the test correctly isolate relay state so that leftover Group A or Group B KP events from a prior run do not cause the test to pass spuriously? Specifically: does the test use the ephemeral relay (port 7777 from `docker-compose.e2e.yml`) rather than the long-running dev relay, or does it otherwise ensure relay-state independence?",
+      "evidence_required": "Confirm the test's Playwright config or env setup routes to the ephemeral relay. Run `grep -n 'localhost:7777\\|E2E_RELAY\\|RELAY_URL' e2e/tests/sibling-auto-invite-rotation-race.spec.ts` to confirm no hardcoded dev-relay URL (e.g. port 7000 or 4848) is used."
+    },
+    {
+      "question_id": "VQ-S2-POST-001",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "The IDB `failedCount === 0` assertion was removed because the ephemeral relay accumulates old Welcome events from prior test runs that cause unrelated `no_matching_kp` failures on fresh contexts (old group IDs, same slot names). The sidebar assertion is the sole gate. Is this behavior documented clearly in the test's comment block so a future reader understands why the IDB read is diagnostic-only rather than a hard assertion?",
+      "evidence_required": "Run `grep -n 'belt-and-braces\\|Diagnostic only\\|prior-run\\|not a test assertion' e2e/tests/sibling-auto-invite-rotation-race.spec.ts` and confirm explanatory comments are present adjacent to the IDB read."
+    },
+    {
+      "question_id": "VQ-S2-POST-002",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "The test uses `settle(page1, 5000)` after Group A appears in page2's sidebar to allow the rotated KP event to propagate from page2 to the relay and then from the relay to page1's `knownEvents` cache before Group B is created. If relay propagation takes longer than 5 seconds in a slow CI environment, the freshness-collapse fix might not have the rotated KP available yet and the test could still fail. Is the 5-second drain sufficient, or should it be `settle(page1, 8000)` (as used in forget-device-sibling.spec.ts)?",
+      "evidence_required": "Review the `settle(page1, 5000)` call site in the test and assess whether it should be increased to 8000ms for CI reliability. Compare with the 8000ms used by `forget-device-sibling.spec.ts` for the analogous relay-drain wait."
+    }
+  ]
+}

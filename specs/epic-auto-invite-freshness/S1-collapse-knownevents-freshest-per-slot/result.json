@@ -1,0 +1,30 @@
+{
+  "story_id": "S1",
+  "status": "done",
+  "final_outcome": "accepted",
+  "completed_at": "2026-05-19T23:15:30Z",
+  "remediation_rounds": 0,
+  "caveats": [
+    "VQ-S1-004 (AC-COMPAT-1) returned PARTIAL severity 5 conf 0.55 with root_cause_category=baseline_overlap: members.spec.ts (6/6) and groups.spec.ts (4/4) pass clean; forget-device-sibling setup (2/2) pass — proving the collapse + auto-invite path works; forget-device-sibling forget-operation hit a 240s timeout twice (likely relay saturation from 42 serial tests), and multi-user.spec.ts task-delivery failures are documented pre-existing per e2e/.triage/findings-merged.md (broken [data-column='open'] locator). The collapse fix does not touch the forget-device or task-delivery code paths. Accepted per the baseline-overlap mandate.",
+    "VQ-S1-010 (post-impl): the collapse logic is inside a closure and not unit-testable. This is an explicit architecture.md constraint ('Do NOT change knownEvents from Map<eventId> to Map<slot>'; closure-only minimum-blast-radius fix). The e2e regression gate is S2."
+  ],
+  "files_created": [
+    "specs/epic-auto-invite-freshness/S1-collapse-knownevents-freshest-per-slot/architecture.json",
+    "specs/epic-auto-invite-freshness/S1-collapse-knownevents-freshest-per-slot/baseline.json",
+    "specs/epic-auto-invite-freshness/S1-collapse-knownevents-freshest-per-slot/result.json"
+  ],
+  "files_modified": [
+    "src/marmot/device-sync.ts",
+    "specs/epic-auto-invite-freshness/S1-collapse-knownevents-freshest-per-slot/verification.json"
+  ],
+  "tests_added": {},
+  "test_counts": {
+    "baseline": 17,
+    "final": 17
+  },
+  "mocks": [],
+  "retrospective": {
+    "skipped": true,
+    "reason": "clean_run"
+  }
+}

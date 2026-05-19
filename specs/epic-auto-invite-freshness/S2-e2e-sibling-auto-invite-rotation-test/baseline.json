@@ -1,0 +1,7 @@
+{
+  "story_id": "S2",
+  "captured_at": "2026-05-19T00:00:00Z",
+  "status": "TEST_FILE_ABSENT",
+  "note": "npx playwright test e2e/tests/sibling-auto-invite-rotation-race.spec.ts returned 'No tests found' — the file does not yet exist. Baseline test count: 0.",
+  "test_count": 0
+}

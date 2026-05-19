@@ -1,0 +1,20 @@
+{
+  "module_name": "device-sync.ts",
+  "purpose": "Multi-device sync hook — KP subscription, auto-invite, welcome-join. This story patches the syncKnownKeyPackages closure to collapse knownEvents to one event per slot (highest created_at) before iterating, fixing the rotation-race stale-KP bug.",
+  "public_api": [],
+  "private_files": ["src/marmot/device-sync.ts"],
+  "owned_data": ["knownEvents Map<string, NostrEvent> (local to runKeyPackageSync closure, keyed by event.id — unchanged)"],
+  "dependencies_allowed": ["getKeyPackageIdentifier (already imported from @internet-privacy/marmot-ts)"],
+  "dependencies_forbidden": ["any cross-module import not already present"],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": ["src/marmot/device-sync.test.ts"],
+  "decisions": [
+    "Read-time collapse only — build latestBySlot Map<slot, NostrEvent> inside syncKnownKeyPackages before the iteration loop",
+    "knownEvents remains Map<eventId, NostrEvent> with no write-time structural change",
+    "Slot key: getKeyPackageIdentifier(event) ?? event.id — matches inviteToAllGroups dedup key at line 1223",
+    "syncKnownKeyPackages remains a closure, not exported",
+    "No new imports required"
+  ]
+}

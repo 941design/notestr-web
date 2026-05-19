@@ -1248,7 +1248,29 @@ export function useDeviceSync(
         // stale empty flag, leading to a duplicate-invite cascade.
         if (joinBarrier) await joinBarrier;
         const local = await getLocalKnownIds();
+
+        // Collapse to one event per slot, preferring the freshest (highest
+        // created_at). The raw `knownEvents` Map is keyed by event id, so
+        // both old and rotated events for the same `d` slot coexist after a
+        // sibling rotates its KeyPackage. Map iteration is insertion order, so
+        // the oldest event would win without this collapse. The resulting stale
+        // Welcome would target a KP the invitee has since rotated and can no
+        // longer enumerate during decrypt — marmot-ts `list()` semantics
+        // exclude deprecated entries, so the invitee's joinGroupFromWelcome
+        // call throws "no_matching_kp" and the Welcome is silently dropped.
+        //
+        // Mirrors the freshness sort at GroupManager.tsx:165-170 (manual
+        // invite path).
+        const latestBySlot = new Map<string, NostrEvent>();
         for (const event of knownEvents.values()) {
+          const slot = getKeyPackageIdentifier(event) ?? event.id;
+          const prev = latestBySlot.get(slot);
+          if (!prev || (event.created_at ?? 0) > (prev.created_at ?? 0)) {
+            latestBySlot.set(slot, event);
+          }
+        }
+
+        for (const event of latestBySlot.values()) {
           if (!mountedRef.current) return;
           if (isLocalDevice(event, local)) continue;
           if (getKeyPackageNostrPubkey(event) !== pubkey) continue;

@@ -1,0 +1,12 @@
+{
+  "captured_at": "2026-05-19T23:14:22Z",
+  "test_command": "npx vitest run src/marmot/device-sync.test.ts",
+  "unit_tests": {
+    "files": 1,
+    "total": 17,
+    "passed": 17,
+    "failed": 0,
+    "skipped": 0
+  },
+  "status": "PASS"
+}

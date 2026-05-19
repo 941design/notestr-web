@@ -1,0 +1,112 @@
+{
+  "created_at": "2026-05-19T00:00:00Z",
+  "similar_features": {
+    "key_files": [
+      {
+        "path": "src/marmot/device-sync.ts",
+        "lines": "1115",
+        "notes": "knownEvents declared as Map<string, NostrEvent> keyed by event.id — multiple events per slot can coexist after rotations"
+      },
+      {
+        "path": "src/marmot/device-sync.ts",
+        "lines": "1191-1241",
+        "notes": "inviteToAllGroups: dedup via `${groupId}:${inviteeSlot ?? kpEvent.id}`; two-tier guard: invited (IDB-persisted) + pendingInvites (in-flight Set)"
+      },
+      {
+        "path": "src/marmot/device-sync.ts",
+        "lines": "1243-1259",
+        "notes": "syncKnownKeyPackages: iterates knownEvents.values() with no slot-level selection before invoking inviteToAllGroups — BUGGY: older rotated events can win insertion-order race"
+      },
+      {
+        "path": "src/marmot/device-sync.ts",
+        "lines": "1261-1275",
+        "notes": "handleKeyPackageEvent: stores event by event.id then calls inviteToAllGroups directly (not syncKnownKeyPackages)"
+      },
+      {
+        "path": "src/components/GroupManager.tsx",
+        "lines": "165-170",
+        "notes": "Correct freshness-sort pattern for manual invite: .slice().sort((a,b) => (b.created_at??0)-(a.created_at??0))[0]"
+      },
+      {
+        "path": "node_modules/@internet-privacy/marmot-ts/dist/core/key-package-event.js",
+        "lines": "548-579",
+        "notes": "selectBestKeyPackage: canonical per-slot picker (last-resort filter → newest created_at → lex-smallest id). NOT used in device-sync.ts"
+      },
+      {
+        "path": "node_modules/@internet-privacy/marmot-ts/dist/core/key-package-event.d.ts",
+        "lines": "109",
+        "notes": "getKeyPackageIdentifier: returns d-tag value for kind-30443, undefined for kind-443"
+      },
+      {
+        "path": "src/marmot/device-sync.test.ts",
+        "lines": "369-421",
+        "notes": "Only invite-path test suite; covers isSlotForgotten only. Zero tests for syncKnownKeyPackages or inviteToAllGroups (inner functions, not exported)"
+      }
+    ],
+    "patterns": [
+      "slot-as-stable-identity: d-tag (getKeyPackageIdentifier) is the device identity key stable across rotations; event.id is transient",
+      "two-tier in-flight dedup: invited (IDB-persisted) + pendingInvites (closure Set) both keyed on ${groupId}:${slot}",
+      "event-id keyed cache with slot-level semantics at usage: knownEvents holds N events per slot in insertion order; no slot-level winner selection before inviteToAllGroups"
+    ],
+    "risks": [
+      "syncKnownKeyPackages iterates knownEvents.values() in insertion order; if same slot has old+new events, older may win and invite uses stale KP",
+      "syncKnownKeyPackages and inviteToAllGroups are inner functions, not exported; no unit tests exist for them"
+    ]
+  },
+  "architecture": {
+    "key_files": [
+      {
+        "path": "src/marmot/device-sync.ts",
+        "lines": "1385 total",
+        "notes": "Main file. Five sections: (A) publish-tracking exports (86-290), (B) pure helpers (300-410), (C) joinFromWelcomeInvite (411-468), (D) useDeviceSync hook with runWelcomeSync/refreshGroupSync/runKeyPackageSync (486-1339), (E) publishTaskSnapshot (1347-1385)"
+      },
+      {
+        "path": "src/marmot/forgotten-slots.ts",
+        "notes": "IDB notestr-forgotten-slots store and DOM event notestr:forgotten-slots-changed for cache invalidation. isSlotForgotten/loadForgottenSlots boundary."
+      },
+      {
+        "path": "src/marmot/device-store.ts",
+        "notes": "loadInvitedKeys/persistInvitedKey/clearInvitedKeysForGroup for the invited Set. Key format: groupIdStr:slotOrEventId"
+      }
+    ],
+    "data_flows": [
+      "knownEvents is local to runKeyPackageSync closure, never exported. Written at two points: bulk relay fetch (line ~1280) and handleKeyPackageEvent (line 1262). Read at exactly one point: syncKnownKeyPackages (line 1251)",
+      "syncKnownKeyPackages triggered by: (a) after initial bulk relay fetch (line 1282), (b) client.groups 'updated' event via handleGroupsUpdated (line 1298). handleKeyPackageEvent calls inviteToAllGroups directly, NOT syncKnownKeyPackages",
+      "forgottenSlots: Set<string> of slot values (d-tags), shared between syncKnownKeyPackages and handleKeyPackageEvent via closure. Refreshed on 'notestr:forgotten-slots-changed' DOM event",
+      "invited Set: seeded from IDB at startup, keyed by '{group.idStr}:{slot}'. Survives across syncKnownKeyPackages calls. Dedup is slot-stable across KP rotations"
+    ],
+    "boundary_rules": [
+      "knownEvents strictly local to runKeyPackageSync — not exported, not shared with other closures",
+      "knownEvents keyed by event.id; slot-level semantics expected at usage — mismatch is root cause of the bug",
+      "invited set loaded once at startup from IDB; in-memory only after that"
+    ]
+  },
+  "testing": {
+    "key_files": [
+      {
+        "path": "e2e/fixtures/two-party.ts",
+        "notes": "Canonical multi-party helper: authenticate(page, bunkerUrl, slot?) — SLOT IS MANDATORY when two contexts share a bunker URL"
+      },
+      {
+        "path": "e2e/fixtures/auth-helper.ts",
+        "notes": "Exports E2E_BUNKER_URL (User A bunker). Single-context use."
+      },
+      {
+        "path": "e2e/tests/forget-device-sibling.spec.ts",
+        "notes": "Reference: exact pattern for same-pubkey two-context setup using authenticate(page, E2E_BUNKER_URL, SLOT) with distinct slot strings"
+      }
+    ],
+    "patterns": [
+      "authenticate(page, bunkerUrl, slot) from two-party.ts: includes pinClientSlot + clearAppState + pubkey poll. MANDATORY slot when sharing bunker URL",
+      "describe.serial for outcome-coupled steps",
+      "Date.now() group name prefix for relay state isolation",
+      "expect.poll for MLS convergence (async commit propagation)",
+      "settle(page, ms) for relay drain after authenticate"
+    ],
+    "same_bunker_setup": "browser.newContext() x2, then authenticate(page1, E2E_BUNKER_URL, 'slot-1') + authenticate(page2, E2E_BUNKER_URL, 'slot-2') with distinct explicit slots. Slot drives pinClientSlot -> getOrCreateClientId returning notestr-<slot>, giving each context a distinct KP d-tag.",
+    "risks": [
+      "Spec draft uses inline signInSameBunker() without slot — must replace with canonical authenticate() from two-party.ts with distinct slots",
+      "Omitting slot causes both contexts to derive same KP slot, A2 never appears as separate leaf, test passes for wrong reason"
+    ]
+  }
+}

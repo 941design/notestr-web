@@ -1,0 +1,38 @@
+{
+  "story_id": "S2",
+  "status": "done",
+  "final_outcome": "accepted",
+  "completed_at": "2026-05-19T00:00:00Z",
+  "remediation_rounds": 0,
+  "caveats": [
+    "VQ-S2-POST-002 returned PARTIAL (severity 4, conf 0.75): the test originally used settle(page1, 5000) for the post-rotation relay-drain wait, while the analogous forget-device-sibling.spec.ts uses settle(page1, 8000). Lead applied a boy-scout one-line adjustment to 8000ms matching the established pattern; re-verified 3/3 passing in 57.7s. No re-engagement of architect/examiner — literal-constant change with no design implication."
+  ],
+  "files_created": [
+    "e2e/tests/sibling-auto-invite-rotation-race.spec.ts",
+    "specs/epic-auto-invite-freshness/S2-e2e-sibling-auto-invite-rotation-test/architecture.json",
+    "specs/epic-auto-invite-freshness/S2-e2e-sibling-auto-invite-rotation-test/baseline.json",
+    "specs/epic-auto-invite-freshness/S2-e2e-sibling-auto-invite-rotation-test/result.json"
+  ],
+  "files_modified": [
+    "specs/epic-auto-invite-freshness/S2-e2e-sibling-auto-invite-rotation-test/verification.json"
+  ],
+  "tests_added": {
+    "e2e": 3
+  },
+  "test_counts": {
+    "baseline": 0,
+    "final": 3
+  },
+  "mocks": [],
+  "implementation_summary": "Created e2e/tests/sibling-auto-invite-rotation-race.spec.ts — a 3-step describe.serial spec that reproduces the KP-rotation-race bug and gates S1's fix. Both contexts authenticate to the same bunker URL with distinct slot strings ('sibling-fresh-1', 'sibling-fresh-2') via the canonical authenticate() from two-party.ts. Group names embed Date.now() for relay-state-independence. The primary assertion is sidebar visibility of Group B on page2 within 60 seconds (AC-TEST-2). The IDB failedCount read is present as diagnostic commentary but is NOT a hard assertion — the ephemeral relay accumulates stale Welcome events from prior runs that cause unrelated failures and would produce false negatives. All 3 steps passed in 44.9s with S1's freshness-collapse fix in place.",
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The spec draft's IDB `failedCount === 0` assertion seemed straightforward but failed even with the fix applied. The ephemeral relay is not wiped between runs, so old Welcome events from prior test runs for the same slot names are re-delivered to fresh contexts and recorded as `no_matching_kp` failures unrelated to the Group B scenario. This is a project-specific relay-statefulness trap that the spec draft did not account for.",
+    "surprised_by": "Group B appeared in page2's sidebar (sidebar assertion passed) while the IDB store still had 4 failed-welcome records — confirming the fix works for Group B but also that the ephemeral relay carries stale Welcome baggage from prior runs. The fix is correct; the IDB assertion was the problem.",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  }
+}

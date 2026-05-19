@@ -1,0 +1,83 @@
+{
+  "story_id": "S1",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-19T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S1-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-FRESHNESS-1",
+      "question": "Does `syncKnownKeyPackages` build a `Map<slot, NostrEvent>` from `knownEvents.values()` before the loop, keeping only the event with the highest `created_at` per slot, and does the outer iteration loop iterate that collapsed map rather than the raw `knownEvents` map? Show: (a) the collapse block code in `device-sync.ts`, (b) the for-of line that iterates the collapsed map, and (c) confirm that `knownEvents` itself remains `Map<eventId, NostrEvent>` with no structural change at write time.",
+      "evidence_required": "Paste the collapse block and the loop header from the final `src/marmot/device-sync.ts`. Run `grep -n 'knownEvents.set' src/marmot/device-sync.ts` and confirm the existing `knownEvents.set(event.id, event)` call sites at lines ~1262 and ~1280 are unchanged."
+    },
+    {
+      "question_id": "VQ-S1-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-FRESHNESS-2",
+      "question": "Is the slot key expression in the collapse block exactly `getKeyPackageIdentifier(event) ?? event.id`, matching the fallback used by `inviteToAllGroups` at line 1223? Show the collapse block line that computes the key and confirm no alternative expression (e.g. bare `getKeyPackageIdentifier(event)` without the `?? event.id` fallback) is used.",
+      "evidence_required": "Run `grep -n 'getKeyPackageIdentifier(event) ?? event.id' src/marmot/device-sync.ts` and confirm at least two hits: the existing dedup line near 1223 and the new collapse line inside `syncKnownKeyPackages`."
+    },
+    {
+      "question_id": "VQ-S1-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-FRESHNESS-3",
+      "question": "Does the comment block immediately preceding or wrapping the `latestBySlot` construction satisfy all four required content points: (1) `knownEvents` is keyed by event id and retains both old and rotated events; (2) Map iteration is insertion-order so the oldest event wins without the collapse; (3) the stale Welcome targets a KP the invitee has since rotated and can no longer enumerate during decrypt; (4) the manual-invite freshness sort at `GroupManager.tsx` is referenced as the mirrored pattern? Show the full comment text. A comment that says only 'prefer freshest' without the rotation-race mechanism explanation MUST NOT be accepted.",
+      "evidence_required": "Paste the exact comment text from `device-sync.ts`. Run `grep -n 'GroupManager' src/marmot/device-sync.ts` to confirm the cross-reference is present. Run `grep -n 'insertion.order\\|insertion order' src/marmot/device-sync.ts` to confirm point (2) is stated."
+    },
+    {
+      "question_id": "VQ-S1-004",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-COMPAT-1",
+      "question": "Do all four pre-existing e2e test files (`members.spec.ts`, `groups.spec.ts`, `forget-device-sibling.spec.ts`, `multi-user.spec.ts`) complete with zero failing tests against the fixed code? The sibling forget-device flow is the highest-risk regression surface because it exercises same-pubkey two-context setup with slot-keyed dedup.",
+      "evidence_required": "Show the final test-run output (or CI artifact) for each of the four files, confirming zero failures. Specifically confirm `forget-device-sibling.spec.ts` passes end-to-end."
+    },
+    {
+      "question_id": "VQ-S1-005",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the inserted collapse block contain any dead code, leftover `console.log` statements, commented-out experimental variants, or TODO/FIXME markers that were not present before the fix?",
+      "evidence_required": "Run `grep -n 'console\\.log\\|TODO\\|FIXME\\|debugger' src/marmot/device-sync.ts` and show that no new occurrences were introduced by the fix. Show the git diff of `device-sync.ts` restricted to the `syncKnownKeyPackages` closure."
+    },
+    {
+      "question_id": "VQ-S1-006",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Is the freshness-collapse logic contained entirely within the `syncKnownKeyPackages` closure and does it operate only on the existing `knownEvents` Map before the `inviteToAllGroups` loop — with no changes to `inviteToAllGroups` internals, no extraction of `syncKnownKeyPackages` to a module-level export, and no new imports beyond what the file already uses?",
+      "evidence_required": "Run `git diff --name-only` and confirm only `src/marmot/device-sync.ts` is modified. Show the function signature of `syncKnownKeyPackages` and confirm it remains a closure (not exported). Run `grep -n '^export' src/marmot/device-sync.ts` against the post-fix file and confirm no new export lines were added."
+    },
+    {
+      "question_id": "VQ-S1-007",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `device-sync.ts` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? The architecture.md declares no cross-module seams for this story. If any cross-module dependency was introduced by the fix, does it flow through a declared seam contract in architecture.md?",
+      "evidence_required": "Run `git diff src/marmot/device-sync.ts | grep '^+.*import'` and confirm no new import paths were introduced. Confirm `inviteToAllGroups` internals were not touched by checking its body in the post-fix file."
+    },
+    {
+      "question_id": "VQ-S1-008",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Do the unit tests in `src/marmot/device-sync.test.ts` all pass against the fixed code, with no tests skipped, no `test.skip` added, and no assertions softened to accommodate the new collapse logic?",
+      "evidence_required": "Show the test-run output for `src/marmot/device-sync.test.ts`. Run `grep -n 'test\\.skip\\|it\\.skip\\|xit\\|xtest' src/marmot/device-sync.test.ts` and confirm the result is empty or unchanged from pre-fix."
+    },
+    {
+      "question_id": "VQ-S1-009",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does the collapse block correctly handle the case where `getKeyPackageIdentifier(event)` returns `undefined` (kind-443 events without a `d` tag), ensuring each such event is treated as its own slot via the `?? event.id` fallback and is not silently dropped or coalesced with another event?",
+      "evidence_required": "Show the collapse block's slot-key computation line and confirm the `?? event.id` guard is present. If a unit test covers the undefined-slot case, cite it. Otherwise note the absence and flag it as a gap."
+    }
+  ],
+  "post_impl_questions": [
+    {
+      "question_id": "VQ-S1-010",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "The collapse logic is inside an inner closure and is therefore untested by unit tests (the module exports only pure helpers). Is the absence of a unit test for the `latestBySlot` collapse acceptable given the e2e test in S2 covers the end-to-end scenario, or should a dedicated unit test be added to `device-sync.test.ts` by refactoring the collapse into a pure helper?",
+      "evidence_required": "Run `grep -n 'latestBySlot\\|syncKnownKeyPackages' src/marmot/device-sync.test.ts` and confirm no test exercises the collapse directly. Note whether the e2e test in S2 is treated as the sole regression gate for this logic."
+    }
+  ]
+}

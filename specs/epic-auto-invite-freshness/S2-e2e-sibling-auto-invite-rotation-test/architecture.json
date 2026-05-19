@@ -1,0 +1,33 @@
+{
+  "module_name": "sibling-auto-invite-rotation-race.spec.ts",
+  "purpose": "E2E regression test that reproduces the KP-rotation-race bug (stale auto-invite uses old KeyPackage after sibling rotates on first group join) and gates the fix. The test fails on master HEAD without S1's freshness-collapse fix and passes once the fix is applied.",
+  "public_api": [],
+  "private_files": [
+    "e2e/tests/sibling-auto-invite-rotation-race.spec.ts"
+  ],
+  "owned_data": [],
+  "dependencies_allowed": [
+    "@playwright/test",
+    "e2e/fixtures/two-party.ts",
+    "e2e/fixtures/auth-helper.ts"
+  ],
+  "dependencies_forbidden": [
+    "e2e/fixtures/auth-helper-b.ts",
+    "src/*"
+  ],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "AC-TEST-1",
+    "AC-TEST-2"
+  ],
+  "design_notes": {
+    "slot_discipline": "Two distinct slot strings ('sibling-fresh-1' and 'sibling-fresh-2') passed to authenticate() so each context publishes to a different KP d-tag. Omitting the slot would cause both contexts to derive the same slot from the bunker pubkey, collapsing them to one leaf and making the test pass for the wrong reason.",
+    "primary_assertion": "expect(page2.locator('aside').getByText(GROUP_B_NAME)).toBeVisible({ timeout: 60_000 }) — sidebar visibility of Group B on the sibling page.",
+    "belt_and_braces": "Optional IDB failedCount === 0 check is present but is explicitly secondary to the sidebar assertion.",
+    "relay_isolation": "Group names embed Date.now() so each test run operates on distinct group names even if the ephemeral relay is not wiped between runs.",
+    "skipMobile": "propagated via beforeAll / workerInfo.project.use.isMobile per the forget-device-sibling.spec.ts reference pattern",
+    "describe_serial": "describe.serial enforces sequential step execution since each step depends on the outcome of the previous one"
+  }
+}

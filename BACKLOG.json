@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-05-19T16:23:05Z",
+  "updated_at": "2026-05-19T21:56:43Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -84,6 +84,11 @@
     },
     {
       "path": "specs/epic-mls-leaf-identity-ux/",
+      "status": "DONE",
+      "next_action": "completed 2026-05-19"
+    },
+    {
+      "path": "specs/epic-auto-invite-freshness/",
       "status": "DONE",
       "next_action": "completed 2026-05-19"
     }
@@ -240,6 +245,19 @@
         "path": "src/marmot/probe-gate.ts"
       },
       "text": "vitest node env cannot import .tsx or NEXT_PUBLIC-bearing modules — pure logic must be extracted to .ts sidecar files for unit testability (established pattern: probe-gate.ts, pending-invitations-helpers.ts)",
+      "created_at": "2026-05-19"
+    },
+    {
+      "slug": "e2e-tests-cannot-use-idb-notestr",
+      "scope": "any",
+      "anchor": {
+        "path": "e2e/tests/sibling-auto-invite-rotation-race.spec.ts",
+        "range": [
+          151,
+          188
+        ]
+      },
+      "text": "E2E tests cannot use IDB notestr-failed-welcomes count as a pass/fail assertion: the ephemeral relay accumulates Welcome events from prior runs that produce unrelated no_matching_kp records on fresh contexts; sidebar visibility is the correct gate for KP-freshness regressions.",
       "created_at": "2026-05-19"
     }
   ],

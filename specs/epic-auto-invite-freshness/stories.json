@@ -1,0 +1,46 @@
+{
+  "stories": [
+    {
+      "id": "S1",
+      "name": "collapse-knownevents-freshest-per-slot",
+      "description": "Fix the latent stale-KeyPackage bug in syncKnownKeyPackages: before iterating knownEvents, build an intermediate Map<slot, NostrEvent> keyed by getKeyPackageIdentifier(event) ?? event.id, retaining only the event with the highest created_at per slot. Iterate this collapsed map instead of the raw knownEvents map. Wrap the collapse block in a code comment explaining the rotation-race root cause and the marmot-ts grace-window relationship.",
+      "owning_module": "device-sync.ts",
+      "scope": {
+        "includes": [
+          "src/marmot/device-sync.ts"
+        ],
+        "excludes": []
+      },
+      "acceptance_criteria": [
+        "AC-FRESHNESS-1",
+        "AC-FRESHNESS-2",
+        "AC-FRESHNESS-3",
+        "AC-COMPAT-1"
+      ],
+      "story_order": 1,
+      "status": "done",
+      "lighter_path": false
+    },
+    {
+      "id": "S2",
+      "name": "e2e-sibling-auto-invite-rotation-test",
+      "description": "Add a new Playwright e2e regression test at e2e/tests/sibling-auto-invite-rotation-race.spec.ts that reproduces the stale-KP failure mode: sign in two browser contexts with the same bunker URL using authenticate() with distinct slot strings, create Group A and wait for it to appear in the sibling's sidebar (confirming the first auto-invite works), then create Group B and assert it appears in the sibling's sidebar within 60 seconds. The test must fail on master HEAD before the fix and pass after.",
+      "owning_module": "sibling-auto-invite-rotation-race.spec.ts",
+      "scope": {
+        "includes": [
+          "e2e/tests/sibling-auto-invite-rotation-race.spec.ts"
+        ],
+        "excludes": []
+      },
+      "acceptance_criteria": [
+        "AC-TEST-1",
+        "AC-TEST-2"
+      ],
+      "story_order": 2,
+      "status": "done",
+      "lighter_path": false
+    }
+  ],
+  "story_order": ["S1", "S2"],
+  "seams": []
+}
