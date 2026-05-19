@@ -387,6 +387,7 @@ describe("forgetSelfDevice", () => {
 
     vi.mocked(client.network.publish).mockImplementation(async () => {
       callOrder.push("publish");
+      return {};
     });
     vi.mocked(clearIdentityStore).mockImplementation(async () => {
       callOrder.push("clearIdentity");
@@ -549,7 +550,7 @@ describe("forgetSiblingDevice", () => {
     const nonAdminGroup = makeSiblingGroup("nonadmin-kp", false, "target-slot");
 
     vi.mocked(isAdmin).mockImplementation(
-      (gd: { _adminResult: boolean }) => gd._adminResult,
+      (gd) => (gd as unknown as { _adminResult: boolean })._adminResult,
     );
 
     const client = makeSiblingClient([adminGroup, nonAdminGroup]);
