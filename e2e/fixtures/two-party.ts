@@ -18,31 +18,42 @@ import { clearAppState } from "./cleanup.js";
 /**
  * Pin the marmot clientId (KP slot identifier) for this page so the same
  * logical role across test sessions publishes to the same kind 30443 slot.
- * Without this, each fresh browser context generates a new random UUID and
- * the relay accumulates one ghost KP per past session — every accumulated
+ * Without this, each fresh browser context generates a new random hex slot
+ * and the relay accumulates one ghost KP per past session — every accumulated
  * ghost looks like a sibling device the auto-invite scan should pull into
  * every new group, and the per-ghost MLS commits drown the test timeout.
  *
  * `getOrCreateClientId` (`src/marmot/storage.ts`) reads
- * `window.__notestrTestClientId` when `NEXT_PUBLIC_E2E === "1"`. Replaceable
- * event semantics on kind 30443 then collapse repeated publishes at the same
- * slot to a single entry on the relay.
+ * `window.__notestrTestClientId` when `NEXT_PUBLIC_E2E === "1"`. The override
+ * is validated against MIP-00's 64-hex shape (MDK enforces this hard) so
+ * fixtures here must produce a deterministic 64-char lowercase hex string.
+ * We derive it by SHA-256 of the human-readable slot label, which gives a
+ * stable hex value while keeping the labels readable in test diagnostics.
  *
  * Default: derive from the bunker pubkey so single-context-per-role tests
  * implicitly share a slot per role (A → one slot, B → one slot, etc.).
  * Tests that spawn multiple contexts on the same bunker (multi-device) must
  * pass an explicit `slot` to disambiguate.
  */
+async function hashToHex64(input: string): Promise<string> {
+  const enc = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest("SHA-256", enc);
+  let out = "";
+  for (const b of new Uint8Array(digest)) out += b.toString(16).padStart(2, "0");
+  return out;
+}
+
 export async function pinClientSlot(
   page: Page,
   bunkerUrl: string,
   slot?: string,
 ): Promise<void> {
   const bunkerPubkey = bunkerUrl.replace(/^bunker:\/\//, "").split("?", 1)[0]!;
-  const effectiveSlot = slot ?? `e2e-${bunkerPubkey.slice(0, 8)}`;
+  const label = slot ?? `e2e-${bunkerPubkey.slice(0, 8)}`;
+  const slotHex = await hashToHex64(`notestr-${label}`);
   await page.addInitScript((s: string) => {
     (window as { __notestrTestClientId?: string }).__notestrTestClientId = s;
-  }, `notestr-${effectiveSlot}`);
+  }, slotHex);
 }
 
 /**

@@ -7,6 +7,7 @@ import {
   createStore,
   type UseStore,
 } from "idb-keyval";
+import { generateKeyPackageSlot } from "@internet-privacy/marmot-ts";
 
 /** Matches the KeyValueStoreBackend interface expected by marmot-ts */
 export interface KeyValueStoreBackend<T> {
@@ -92,17 +93,31 @@ export const joinedGroupsStore = createKVStore<true>("joined-groups");
  * Generated once and persisted in IndexedDB so it survives page reloads
  * but is unique per browser/device.
  *
+ * Per MIP-00 the `d` tag MUST be 32 random bytes encoded as a 64-char
+ * lowercase hex string; `marmot-ts@0.6.0`'s `createKeyPackageEvent` now
+ * throws on non-conforming slots and MDK rejects them on the network
+ * ("d tag must be exactly 64 hex characters"). We delegate minting to
+ * `generateKeyPackageSlot()` so the definition of "valid slot" lives
+ * in exactly one place (upstream).
+ *
  * E2E tests can pin the slot deterministically by setting
  * `window.__notestrTestClientId` (via `page.addInitScript`) before the app
- * boots. Without that, every fresh browser context generates a new UUID,
- * and across many test sessions the relay accumulates ghost slots under
- * the shared bunker pubkey — each one a "device" the auto-invite scan will
- * try to pull into every new group. With the override, contexts that play
- * the same logical role across tests publish to the same slot, kind 30443's
- * replaceable semantics collapse them on the relay, and the scan sees one
- * KP per intended device. Gated on `NEXT_PUBLIC_E2E` so production builds
+ * boots. The override is validated against the 64-hex shape; non-conforming
+ * values are rejected so test fixtures cannot accidentally reintroduce a
+ * format that MDK refuses. Gated on `NEXT_PUBLIC_E2E` so production builds
  * never honor the window var.
+ *
+ * Legacy slots (pre-2026-05 `notestr-<uuid>` and bare-uuid forms) are
+ * migrated on read: detected by failing the 64-hex shape check, replaced
+ * with a fresh 64-hex slot in IDB. Without this migration, an existing
+ * notestr-web user upgrading to marmot-ts@0.6.0 would hit the new
+ * `createKeyPackageEvent` throw the first time the background KP-readiness
+ * task ran. The relay-side ghost under the old slot ages out via kind
+ * 30443's replaceable semantics — or is tombstoned by the stale-KP
+ * cleanup in client.tsx if extended for the addressable case.
  */
+const CLIENT_ID_RE = /^[0-9a-f]{64}$/;
+
 export async function getOrCreateClientId(): Promise<string> {
   if (
     process.env.NEXT_PUBLIC_E2E === "1" &&
@@ -110,14 +125,14 @@ export async function getOrCreateClientId(): Promise<string> {
   ) {
     const override = (window as { __notestrTestClientId?: unknown })
       .__notestrTestClientId;
-    if (typeof override === "string" && override.length > 0) {
+    if (typeof override === "string" && CLIENT_ID_RE.test(override)) {
       await identityStore.setItem("clientId", override);
       return override;
     }
   }
   const existing = await identityStore.getItem("clientId");
-  if (existing) return existing;
-  const id = `notestr-${crypto.randomUUID()}`;
+  if (existing && CLIENT_ID_RE.test(existing)) return existing;
+  const id = generateKeyPackageSlot();
   await identityStore.setItem("clientId", id);
   return id;
 }
