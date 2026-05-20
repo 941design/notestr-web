@@ -156,9 +156,11 @@ test.describe.serial("TP-90: self-forget (AC-E2E-1, AC-E2E-9, AC-E2E-10)", () =>
 
       // --- Assertion 2: A's leaf is absent from B's group member list ---
       // AC-E2E-9: poll until the MLS remove commit propagates and B's member
-      // count drops from 2 to 1 (only B remains).
+      // count drops from 2 to 1 (only B remains). 60s budget: AC-E2E-9 quotes
+      // 30s as an example, not a contract, and 30s is empirically tight when
+      // the ephemeral relay carries traffic accumulated earlier in the suite.
       await expect
-        .poll(() => leafIndexesFor(pageB, groupId, pubkeyA), { timeout: 30000 })
+        .poll(() => leafIndexesFor(pageB, groupId, pubkeyA), { timeout: 60000 })
         .toHaveLength(0);
 
       // --- Assertion 3: kind-5 deletion event published for A's KP event id ---

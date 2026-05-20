@@ -1,12 +1,41 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import { writeFileSync } from 'fs';
+import { generateSecretKey, getPublicKey, nip19 } from 'nostr-tools';
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 
 // Store child process PIDs so teardown can kill them
 const STATE_FILE = path.join(PROJECT_ROOT, 'e2e', '.state.json');
+// Per-session bunker keys (regenerated every globalSetup run so the relay's
+// historical kind-30443 KPs for prior pubkeys cannot contaminate this run).
+const KEYS_FILE = path.join(PROJECT_ROOT, 'e2e', '.bunker-keys.json');
+
+interface BunkerKey {
+  privkeyHex: string;
+  pubkeyHex: string;
+  npub: string;
+  bunkerUrl: string;
+}
+
+function generateBunkerKey(relayUrl: string): BunkerKey {
+  const sk = generateSecretKey();
+  const privkeyHex = bytesToHex(sk);
+  const pubkeyHex = getPublicKey(sk);
+  const npub = nip19.npubEncode(pubkeyHex);
+  return {
+    privkeyHex,
+    pubkeyHex,
+    npub,
+    bunkerUrl: `bunker://${pubkeyHex}?relay=${encodeURIComponent(relayUrl)}`,
+  };
+}
 
 async function spawnAndWaitForOutput(
   cmd: string,
@@ -141,7 +170,24 @@ export default async function globalSetup() {
   });
   console.log('[setup] Build complete.');
 
-  // 2. Start the NIP-46 bunkers (User A + User B)
+  // 2. Generate fresh per-session bunker keypairs. Writing them to KEYS_FILE
+  //    BEFORE spawning bunkers (and before any test file is imported) means the
+  //    auth-helper modules can synchronously load this file at import time and
+  //    expose the per-session bunker URLs / npubs as ordinary constants.
+  //    Rationale: prior sessions accumulate kind-30443 key packages on the
+  //    relay under whatever pubkey they used; using fresh pubkeys per session
+  //    structurally isolates this run from that historical state, so the
+  //    auto-invite scan never picks up phantom "sibling" devices belonging to
+  //    a defunct browser. See docs commit message accompanying this change.
+  const RELAY_URL = 'ws://localhost:7777';
+  const bunkerAKey = generateBunkerKey(RELAY_URL);
+  const bunkerBKey = generateBunkerKey(RELAY_URL);
+  const bunkerCKey = generateBunkerKey(RELAY_URL);
+  writeFileSync(
+    KEYS_FILE,
+    JSON.stringify({ A: bunkerAKey, B: bunkerBKey, C: bunkerCKey }, null, 2),
+  );
+
   console.log('[setup] Starting bunker A...');
   const bunkerProc = await spawnAndWaitForOutput(
     'node',
@@ -149,6 +195,10 @@ export default async function globalSetup() {
     'Ready',
     10000,
     PROJECT_ROOT,
+    {
+      BUNKER_PRIVATE_KEY: bunkerAKey.privkeyHex,
+      BUNKER_LABEL: 'bunker-A',
+    },
   );
   console.log('[setup] Bunker A ready.');
 
@@ -160,7 +210,7 @@ export default async function globalSetup() {
     10000,
     PROJECT_ROOT,
     {
-      BUNKER_PRIVATE_KEY: '645b5c22a215745146817311d96e09cd0e4890e9c9dae7774a6e517d468523b4',
+      BUNKER_PRIVATE_KEY: bunkerBKey.privkeyHex,
       BUNKER_LABEL: 'bunker-B',
     },
   );
@@ -174,7 +224,7 @@ export default async function globalSetup() {
     10000,
     PROJECT_ROOT,
     {
-      BUNKER_PRIVATE_KEY: '8b7561c728b13b8de18ce9202d4aab674e2a2780b5c2270362a194457856252f',
+      BUNKER_PRIVATE_KEY: bunkerCKey.privkeyHex,
       BUNKER_LABEL: 'bunker-C',
     },
   );
@@ -216,7 +266,6 @@ export default async function globalSetup() {
   console.log('[setup] HTTP health check passed.');
 
   // 5. Save PIDs for teardown
-  const { writeFileSync } = await import('fs');
   writeFileSync(
     STATE_FILE,
     JSON.stringify({

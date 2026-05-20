@@ -1,19 +1,36 @@
 /**
  * Auth helper for the second E2E test identity (User B).
  *
- * Uses the same bunker.mjs script but with BUNKER_PRIVATE_KEY set to the
- * second deterministic test keypair from ndk-client.ts.
+ * Bunker URL and npub are loaded from `e2e/.bunker-keys.json`, which is
+ * regenerated every `globalSetup` run with a fresh keypair. See
+ * `e2e/fixtures/auth-helper.ts` for the rationale.
  */
 
 import type { Page } from '@playwright/test';
+import { readFileSync } from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-// User B's bunker pubkey (derived from private key 645b5c22..., rotated 2026-04-30).
-const BUNKER_B_PUBKEY_HEX = '05b9cae746cd7f029084feac706bf67c28448ff0eab15a5c223e3b7a73a68bc8';
-const RELAY_URL = 'ws://localhost:7777';
-export const E2E_BUNKER_B_URL = `bunker://${BUNKER_B_PUBKEY_HEX}?relay=${encodeURIComponent(RELAY_URL)}`;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const KEYS_FILE = path.resolve(__dirname, '..', '.bunker-keys.json');
+
+interface BunkerKey {
+  privkeyHex: string;
+  pubkeyHex: string;
+  npub: string;
+  bunkerUrl: string;
+}
+
+const keys = JSON.parse(readFileSync(KEYS_FILE, 'utf-8')) as {
+  A: BunkerKey;
+  B: BunkerKey;
+  C: BunkerKey;
+};
+
+export const E2E_BUNKER_B_URL = keys.B.bunkerUrl;
 
 /** User B's npub (for invite input) */
-export const USER_B_NPUB = 'npub1qkuu4e6xe4ls9yyyl6k8q6lk0s5yfrlsa2c45hpz8cah5uax30yqcurp9j';
+export const USER_B_NPUB = keys.B.npub;
 
 /**
  * Authenticate as User B via bunker:// URL.

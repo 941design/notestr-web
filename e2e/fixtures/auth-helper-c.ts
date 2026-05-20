@@ -1,21 +1,38 @@
 /**
  * Auth helper for the third E2E test identity (User C).
  *
- * Used by tests that require a third-party (e.g. invite-chain tests where
- * A invites B, then B invites C). Same bunker.mjs script with a third
- * deterministic private key.
+ * Used by tests that require a third party (e.g. invite-chain tests where
+ * A invites B, then B invites C). Bunker URL and npub are loaded from
+ * `e2e/.bunker-keys.json`, regenerated every `globalSetup` run with a
+ * fresh keypair. See `e2e/fixtures/auth-helper.ts` for the rationale.
  */
 
 import type { Page } from '@playwright/test';
+import { readFileSync } from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-// User C's bunker pubkey (derived from private key 8b7561c7..., rotated 2026-04-30).
-export const E2E_BUNKER_C_PUBKEY_HEX =
-  '837f2b3061d526d73e7581c9bef47ebcd474dd7bf3db4d509256381de490aa1e';
-const RELAY_URL = 'ws://localhost:7777';
-export const E2E_BUNKER_C_URL = `bunker://${E2E_BUNKER_C_PUBKEY_HEX}?relay=${encodeURIComponent(RELAY_URL)}`;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const KEYS_FILE = path.resolve(__dirname, '..', '.bunker-keys.json');
+
+interface BunkerKey {
+  privkeyHex: string;
+  pubkeyHex: string;
+  npub: string;
+  bunkerUrl: string;
+}
+
+const keys = JSON.parse(readFileSync(KEYS_FILE, 'utf-8')) as {
+  A: BunkerKey;
+  B: BunkerKey;
+  C: BunkerKey;
+};
+
+export const E2E_BUNKER_C_PUBKEY_HEX = keys.C.pubkeyHex;
+export const E2E_BUNKER_C_URL = keys.C.bunkerUrl;
 
 /** User C's npub (for invite input) */
-export const USER_C_NPUB = 'npub1sdljkvrp65ndw0n4s8ymaar7hn28fhtm70d565yj2cupmeys4g0q30l7f7';
+export const USER_C_NPUB = keys.C.npub;
 
 /**
  * Authenticate as User C via bunker:// URL.

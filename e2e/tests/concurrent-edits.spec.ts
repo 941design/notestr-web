@@ -111,14 +111,6 @@ test.describe("TP-90: title race with deterministic LWW (B wins by 1s)", () => {
   test("both pages converge to the later-updatedAt title", async () => {
     test.skip(skipMobile, SKIP_MOBILE_REASON);
 
-    // Let device-sync drain stale welcomes before firing the race. Later in
-    // the suite the relay has accumulated many invites from prior groups;
-    // joinFromWelcomeInvite runs sequentially on the event loop and can
-    // starve the NDK subscription that delivers B's kind-445 to A. 30s is
-    // empirically enough for ~20 stale welcomes; if the relay state grows
-    // beyond that, the failure mode is "tA never converges to tB".
-    await Promise.all([settle(pageA, 30000), settle(pageB, 30000)]);
-
     const tA = `A-wins-${Date.now()}`;
     const tB = `B-wins-${Date.now() + 1}`;
     const baseAt = Math.floor(Date.now() / 1000);

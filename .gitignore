@@ -11,6 +11,7 @@ public/workbox-*.js
 *~
 test-results/
 e2e/.state.json
+e2e/.bunker-keys.json
 .ssl/
 .mcp.json
 .claude/worktrees/

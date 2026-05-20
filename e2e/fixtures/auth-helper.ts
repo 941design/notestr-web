@@ -3,15 +3,37 @@
  *
  * Performs the NIP-46 bunker authentication flow via the app UI.
  * Re-use this in any test that requires an authenticated session.
+ *
+ * Bunker URLs / pubkeys are freshly generated per `globalSetup` run and
+ * read from `e2e/.bunker-keys.json`. This isolates every test session
+ * from kind-30443 KeyPackages left on the relay by prior sessions —
+ * which the auto-invite scan would otherwise treat as sibling devices
+ * and add as phantom leaves in every group.
  */
 
 import type { Page } from '@playwright/test';
+import { readFileSync } from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-// Imported from bunker.mjs — keep in sync with that file.
-// Derived from private key 7d556f5a... (User A; rotated 2026-04-30).
-export const E2E_BUNKER_PUBKEY_HEX = '571871490c16e0e2faf878c2bd78d6caf8af825a04e8438169c3dbabdde028a0';
-const RELAY_URL = 'ws://localhost:7777';
-export const E2E_BUNKER_URL = `bunker://${E2E_BUNKER_PUBKEY_HEX}?relay=${encodeURIComponent(RELAY_URL)}`;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const KEYS_FILE = path.resolve(__dirname, '..', '.bunker-keys.json');
+
+interface BunkerKey {
+  privkeyHex: string;
+  pubkeyHex: string;
+  npub: string;
+  bunkerUrl: string;
+}
+
+const keys = JSON.parse(readFileSync(KEYS_FILE, 'utf-8')) as {
+  A: BunkerKey;
+  B: BunkerKey;
+  C: BunkerKey;
+};
+
+export const E2E_BUNKER_PUBKEY_HEX = keys.A.pubkeyHex;
+export const E2E_BUNKER_URL = keys.A.bunkerUrl;
 
 /**
  * Navigate to the app, select the "bunker:// URL" tab, paste the E2E_BUNKER_URL,
