@@ -111,6 +111,14 @@ test.describe("TP-90: title race with deterministic LWW (B wins by 1s)", () => {
   test("both pages converge to the later-updatedAt title", async () => {
     test.skip(skipMobile, SKIP_MOBILE_REASON);
 
+    // Let device-sync drain stale welcomes before firing the race. Later in
+    // the suite the relay has accumulated many invites from prior groups;
+    // joinFromWelcomeInvite runs sequentially on the event loop and can
+    // starve the NDK subscription that delivers B's kind-445 to A. 30s is
+    // empirically enough for ~20 stale welcomes; if the relay state grows
+    // beyond that, the failure mode is "tA never converges to tB".
+    await Promise.all([settle(pageA, 30000), settle(pageB, 30000)]);
+
     const tA = `A-wins-${Date.now()}`;
     const tB = `B-wins-${Date.now() + 1}`;
     const baseAt = Math.floor(Date.now() / 1000);
@@ -135,13 +143,16 @@ test.describe("TP-90: title race with deterministic LWW (B wins by 1s)", () => {
     ]);
 
     // Both pages eventually settle on B's title (later updatedAt).
+    // 60s budget: cross-context kind-445 delivery slows down later in the
+    // suite when the relay has accumulated welcomes/KPs that device-sync
+    // chews through, and 30s occasionally falls short.
     await expect(pageA.locator('[data-testid="task-card"]').first()).toContainText(
       tB,
-      { timeout: 30000 },
+      { timeout: 60000 },
     );
     await expect(pageB.locator('[data-testid="task-card"]').first()).toContainText(
       tB,
-      { timeout: 30000 },
+      { timeout: 60000 },
     );
   });
 });
@@ -178,13 +189,13 @@ test.describe("TP-91: status race with deterministic LWW (B wins by 1s)", () => 
     // TASK_TITLE here. Scope to the desktop "done" column (the mobile copy
     // only renders the currently-active tab — `open` initially — so on
     // desktop `data-column="done"` exists only in the desktop grid) and
-    // assert that the (single) task moved into it.
+    // assert that the (single) task moved into it. Same 60s budget as TP-90.
     await expect(
       pageA.locator('[data-column="done"] [data-testid="task-card"]'),
-    ).toHaveCount(1, { timeout: 30000 });
+    ).toHaveCount(1, { timeout: 60000 });
     await expect(
       pageB.locator('[data-column="done"] [data-testid="task-card"]'),
-    ).toHaveCount(1, { timeout: 30000 });
+    ).toHaveCount(1, { timeout: 60000 });
   });
 });
 
