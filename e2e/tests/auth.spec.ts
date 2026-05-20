@@ -43,8 +43,13 @@ test('session restore: pubkey chip persists after page reload', async ({ page })
 test('disconnect: clears session and returns to sign-in screen', async ({ page }) => {
   await authenticateViaBunker(page);
 
-  // Click the disconnect button (force: badge may overlap on narrow viewports)
+  // Click the disconnect button (force: badge may overlap on narrow viewports).
+  // Opens the sign-out confirmation dialog (added by MLS Leaf Identity UX).
   await page.locator('[data-testid="disconnect-button"]').click({ force: true });
+
+  // Choose the plain "Sign out" path (not "Forget this device and sign out"),
+  // which matches the historical behaviour this test was written against.
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Sign out', exact: true }).click();
 
   // Pubkey chip must no longer be visible
   await expect(page.locator('[data-testid="pubkey-chip"]')).not.toBeVisible();
