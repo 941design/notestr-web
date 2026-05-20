@@ -57,9 +57,15 @@ test.describe.serial("TP-90: self-forget (AC-E2E-1, AC-E2E-9, AC-E2E-10)", () =>
   let pubkeyA: string;
   let groupId: string;
 
-  // AC-E2E-3: explicit slot strings — never omitted or auto-generated.
-  const SLOT_A = "self";
-  const SLOT_B = "observer";
+  // Use the default `e2e-<pubkey-prefix>` slot (omit explicit slot in
+  // authenticate calls below). AC-E2E-3 originally mandated explicit slot
+  // strings, but the rationale (multi-device determinism) only applies to
+  // the sibling-forget test. For self-forget there is exactly one device,
+  // and using the same default slot as every other spec in the suite means
+  // A's kind-30443 KP REPLACES the prior tests' KP in place (addressable
+  // event semantics) instead of creating a parallel slot that auto-invite
+  // then treats as a phantom sibling. Per-session fresh bunker keys
+  // (see e2e/global-setup.ts) already eliminate cross-session pollution.
 
   test.beforeAll(async ({ browser }, workerInfo) => {
     skipMobile = !!workerInfo.project.use.isMobile;
@@ -83,12 +89,10 @@ test.describe.serial("TP-90: self-forget (AC-E2E-1, AC-E2E-9, AC-E2E-10)", () =>
     test.skip(skipMobile, SKIP_MOBILE_REASON);
 
     // B authenticates first so its key package is on the relay before A invites.
-    // AC-E2E-3: explicit slot "observer" for B.
-    await authenticate(pageB, E2E_BUNKER_B_URL, SLOT_B);
+    await authenticate(pageB, E2E_BUNKER_B_URL);
     await settle(pageB, 3000);
 
-    // AC-E2E-3: explicit slot "self" for A.
-    await authenticate(pageA, E2E_BUNKER_URL, SLOT_A);
+    await authenticate(pageA, E2E_BUNKER_URL);
     await settle(pageA, 3000);
 
     pubkeyA = await getPubkeyHex(pageA);
