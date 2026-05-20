@@ -122,22 +122,27 @@ async function waitForHttp(url: string, timeoutMs: number): Promise<void> {
   throw new Error(`Timed out waiting for ${url} to respond`);
 }
 
-async function killProcessOnPort(port: number): Promise<void> {
+// Refuse to start if `port` is already held. We deliberately do NOT kill the
+// owning process — that's the user's problem to resolve. The previous version
+// of this helper SIGKILLed any PID lsof returned for the port, which on a VM
+// where the port happened to be held by something else (a system service, an
+// unrelated dev process) would tear that down without warning. Fail loud
+// instead so the human can pick what to do.
+async function assertPortFree(port: number): Promise<void> {
   try {
     const { execSync } = await import('child_process');
     const pids = execSync(`lsof -ti:${port}`, { encoding: 'utf-8' }).trim();
     if (pids) {
-      for (const pid of pids.split('\n')) {
-        try {
-          process.kill(Number(pid), 'SIGKILL');
-          console.log(`[setup] Killed stale process on port ${port} (PID ${pid})`);
-        } catch { /* already dead */ }
-      }
-      // Give OS time to release the port
-      await new Promise((r) => setTimeout(r, 1000));
+      throw new Error(
+        `[setup] Port ${port} is already in use (PID(s): ${pids.replace(/\n/g, ', ')}). ` +
+        `The e2e harness will NOT kill processes it discovers — free the port manually ` +
+        `(e.g. \`kill <pid>\` after confirming what it is) and re-run.`,
+      );
     }
-  } catch {
-    // lsof exits non-zero when no process found — port is free
+  } catch (err) {
+    // lsof exits non-zero when no process found — that's the happy path.
+    // Re-throw our own error; swallow lsof's exit-code error.
+    if (err instanceof Error && err.message.startsWith('[setup]')) throw err;
   }
 }
 
@@ -230,8 +235,9 @@ export default async function globalSetup() {
   );
   console.log('[setup] Bunker C ready.');
 
-  // 3. Kill any stale serve process on port 3100 before starting
-  await killProcessOnPort(3100);
+  // 3. Refuse to start if port 3100 is already held by something. We do not
+  //    kill discovered processes — see assertPortFree for rationale.
+  await assertPortFree(3100);
 
   // 4. Start the static file server. IMPORTANT: `stdio: 'ignore'` — do NOT
   // pipe `serve`'s stdout/stderr into this process. `serve` logs one line
