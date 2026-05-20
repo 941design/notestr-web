@@ -67,8 +67,12 @@ e2e-install: node_modules ## Install Playwright and browser binaries
 	npm install
 	npx playwright install --with-deps chromium webkit
 
-e2e: node_modules ## Run end-to-end tests (ensures relay is up; leaves it running)
-	@$(MAKE) e2e-up
+e2e: node_modules ## Run end-to-end tests (reuses any strfry already on :7777, else starts the ephemeral one)
+	@if [ -n "$$(lsof -ti:7777 2>/dev/null)" ]; then \
+		echo "[e2e] Reusing existing relay on port 7777 (not starting or stopping it)."; \
+	else \
+		$(MAKE) e2e-up; \
+	fi
 	npx playwright test
 
 clean: ## Remove build artifacts
