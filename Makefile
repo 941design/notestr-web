@@ -67,9 +67,13 @@ e2e-install: node_modules ## Install Playwright and browser binaries
 	npm install
 	npx playwright install --with-deps chromium webkit
 
-e2e: node_modules ## Run end-to-end tests (reuses any strfry already on :7777, else starts the ephemeral one)
-	@if [ -n "$$(lsof -ti:7777 2>/dev/null)" ]; then \
-		echo "[e2e] Reusing existing relay on port 7777 (not starting or stopping it)."; \
+e2e: node_modules ## Run end-to-end tests (always restarts the ephemeral test relay; leaves any other strfry on :7777 untouched)
+	@if docker ps --format '{{.Names}}' | grep -q '^notestr-web-relay-1$$'; then \
+		echo "[e2e] Restarting ephemeral test relay (tmpfs wipes its DB)."; \
+		docker restart notestr-web-relay-1 > /dev/null; \
+		sleep 2; \
+	elif [ -n "$$(lsof -ti:7777 2>/dev/null)" ]; then \
+		echo "[e2e] Port 7777 held by something other than the ephemeral test relay; reusing as-is."; \
 	else \
 		$(MAKE) e2e-up; \
 	fi
