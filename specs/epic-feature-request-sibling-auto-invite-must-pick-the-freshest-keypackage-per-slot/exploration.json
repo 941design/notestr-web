@@ -1,0 +1,55 @@
+{
+  "created_at": "2026-05-20T18:24:00Z",
+  "focus_similar_features": {
+    "summary": "The fix is already implemented. syncKnownKeyPackages in device-sync.ts (lines 1243-1281) already contains the latestBySlot collapse. The e2e test sibling-auto-invite-rotation-race.spec.ts already exists committed in 9ddf32e.",
+    "key_files": [
+      "src/marmot/device-sync.ts:1243-1281 — syncKnownKeyPackages with latestBySlot collapse (ALREADY FIXED)",
+      "src/marmot/device-sync.ts:1191-1241 — inviteToAllGroups with slot-keyed dedup",
+      "src/marmot/device-sync.ts:1283-1297 — handleKeyPackageEvent (live path)",
+      "src/marmot/device-sync.ts:1115 — knownEvents Map<string, NostrEvent> keyed by event id",
+      "src/components/GroupManager.tsx:155-170 — manual invite path (reference sort by created_at DESC)",
+      "e2e/tests/sibling-auto-invite-rotation-race.spec.ts — e2e test (ALREADY EXISTS, PASSING)"
+    ],
+    "implementation_status": "COMPLETE — committed in 9ddf32e 'fix(device-sync): pick freshest KeyPackage per slot in sibling auto-invite'",
+    "fix_detail": "latestBySlot Map collapses knownEvents to one event per d-tag slot by max created_at before invoking inviteToAllGroups. Mirrors freshness sort at GroupManager.tsx:165-170.",
+    "getKeyPackageIdentifier_return": "string | undefined — returns the d-tag value from kind-30443; undefined for legacy kind-443; callers use ?? event.id fallback"
+  },
+  "focus_architecture": {
+    "summary": "device-sync.ts is a React hook module. useDeviceSync is the primary export. All per-mount state (knownEvents, invited, pendingInvites) lives in closure of runKeyPackageSync (one instance per mount).",
+    "module_type": "React hook (useEffect-based)",
+    "primary_export": "useDeviceSync(client, pubkey, relays, signer)",
+    "key_data_structures": {
+      "knownEvents": "Map<string, NostrEvent> keyed by event id; closure-scoped to runKeyPackageSync; never persisted; only grows (no delete)",
+      "invited": "Set<string> pre-seeded from IDB (loadInvitedKeys); dedup key = group.idStr:slot; survives across mounts via IDB",
+      "pendingInvites": "Set<string> in-memory only; in-flight dedup guard; reset per mount"
+    },
+    "triggers_for_syncKnownKeyPackages": [
+      "initial bulk fetch of KP events resolves (device-sync.ts:1304)",
+      "client.groups.on('updated', handleGroupsUpdated) fires (device-sync.ts:1322-1327)"
+    ],
+    "joinBarrier": "Promise<void>|null manual barrier that syncKnownKeyPackages awaits to prevent duplicate-invite cascade from synchronous groupsUpdated emitted inside joinGroupFromWelcome",
+    "module_scope_state": "Three Maps survive across mounts: expectedPublishByHTag, dispatchPublishInFlightByHTag, windowKind445State (all for publish-window tracking, not KP sync)"
+  },
+  "focus_testing_and_conventions": {
+    "summary": "e2e test for the exact fix already exists and passes. Sibling tests use same E2E_BUNKER_URL for both contexts with distinct explicit slot strings. Timeout: 240000ms for sibling tests.",
+    "test_file_exists": true,
+    "test_file_path": "e2e/tests/sibling-auto-invite-rotation-race.spec.ts",
+    "e2e_bunker_url": "Single URL (User A). Usable for both contexts for same-npub sibling scenarios. Both contexts use SLOT_A and SLOT_B to produce separate d-tag KPs for the same pubkey.",
+    "group_creation_pattern": "page.getByPlaceholder('Group name').first().fill(name) then page.getByRole('button', { name: 'Create', exact: true }).first().click()",
+    "sidebar_assertion": "expect(page.locator('aside').getByText(name)).toBeVisible({ timeout: 60_000 })",
+    "failed_welcomes_check": "IDB diagnostic via page.evaluate (notestr-failed-welcomes count) — non-asserting; primary assertion is sidebar visibility",
+    "key_conventions": [
+      "describe.serial + shared context variables (beforeAll/afterAll)",
+      "Date.now() group names for relay-state independence",
+      "settle(page, ms) for relay propagation waits (3000ms auth, 8000ms group creation)",
+      "skipMobile discipline on all multi-context tests",
+      "Relay-state-independence JSDoc section required on all sibling specs"
+    ]
+  },
+  "prior_learnings": [
+    {
+      "id": "joingroupfromwelcome-throws-no-matching",
+      "relevance": "HIGH — describes exactly the error the fix prevents: stale Welcome targeting deprecated KP causes joinGroupFromWelcome to throw 'Failed to join group with any matching key package'"
+    }
+  ]
+}

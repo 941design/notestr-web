@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-05-19T21:56:43Z",
+  "updated_at": "2026-05-20T18:32:18Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -91,6 +91,11 @@
       "path": "specs/epic-auto-invite-freshness/",
       "status": "DONE",
       "next_action": "completed 2026-05-19"
+    },
+    {
+      "path": "specs/epic-feature-request-sibling-auto-invite-must-pick-the-freshest-keypackage-per-slot/",
+      "status": "DONE",
+      "next_action": "closed 2026-05-20 — duplicate of epic-auto-invite-freshness which shipped 2026-05-19"
     }
   ],
   "findings": [

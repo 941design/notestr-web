@@ -1,0 +1,35 @@
+{
+  "epic_name": "feature-request-sibling-auto-invite-must-pick-the-freshest-keypackage-per-slot",
+  "status": "done",
+  "phase": "COMPLETE",
+  "created_at": "2026-05-20T18:24:00Z",
+  "updated_at": "2026-05-20T18:24:00Z",
+  "completed_at": "2026-05-20T18:24:00Z",
+  "note": "Duplicate of specs/epic-auto-invite-freshness/ which shipped 2026-05-19. Fix already committed in 9ddf32e; e2e test in sibling-auto-invite-rotation-race.spec.ts.",
+  "pre_existing_dirty_files": [
+    ".claude/skills/e2e-triage/SKILL.md",
+    ".claude/skills/e2e-triage/learnings.md",
+    ".claude/skills/mls-leaf-debug/SKILL.md",
+    ".claude/verification-results.csv",
+    ".clauded.yaml",
+    "docs/feature-requests/notestr-web-auto-invite-freshness.md",
+    "docs/quizzl-report.md",
+    "docs/shophop-report.md",
+    "e2e/.triage-phase-a.log",
+    "e2e/.triage/device.md",
+    "e2e/.triage/findings-merged.md",
+    "e2e/.triage/multi-party.md",
+    "e2e/.triage/run.log",
+    "e2e/.triage/tasks.md",
+    "e2e/tests/group-switch-members.spec.ts",
+    "notestr-web-group-discovery-report.md",
+    "scripts/debug-prod.mjs",
+    "specs/epic-property-tests-l3-three-party/acceptance-criteria.md"
+  ],
+  "completed_stories": [],
+  "escalated_stories": [],
+  "phase_history": [
+    {"phase": "SPEC_VALIDATED", "timestamp": "2026-05-20T18:24:00Z", "trigger": "validation_passed"},
+    {"phase": "COMPLETE", "timestamp": "2026-05-20T18:24:00Z", "trigger": "duplicate_detected_already_shipped"}
+  ]
+}

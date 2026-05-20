@@ -1,0 +1,28 @@
+{
+  "stories": [
+    {
+      "id": "S1",
+      "name": "verify-freshest-kp-per-slot-implementation",
+      "description": "Verify that the latestBySlot collapse already committed in device-sync.ts satisfies all four acceptance criteria: AC-INVITE-1 (collapse logic is present and correct), AC-INVITE-2 (the sibling-auto-invite-rotation-race e2e test exists and passes), AC-INVITE-3 (no regression in existing e2e suites), AC-INVITE-4 (the explanatory code comment is present and correct). No new code is written; the architect documents and verifies the existing implementation.",
+      "owning_module": "device-sync",
+      "scope": {
+        "includes": [
+          "src/marmot/device-sync.ts",
+          "e2e/tests/sibling-auto-invite-rotation-race.spec.ts"
+        ],
+        "excludes": []
+      },
+      "acceptance_criteria": [
+        "AC-INVITE-1",
+        "AC-INVITE-2",
+        "AC-INVITE-3",
+        "AC-INVITE-4"
+      ],
+      "story_order": 1,
+      "status": "todo",
+      "lighter_path": false
+    }
+  ],
+  "story_order": ["S1"],
+  "seams": []
+}
