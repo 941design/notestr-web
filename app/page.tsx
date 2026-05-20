@@ -278,7 +278,7 @@ function ConnectedApp({
           onClose={() => setSettingsOpen(false)}
           pubkey={pubkey}
           authMethod={authMethod}
-          onSignOut={handleDisconnect}
+          onSignOut={performDisconnect}
         />
       </div>
 
