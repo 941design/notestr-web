@@ -27,6 +27,7 @@ const keys = JSON.parse(readFileSync(KEYS_FILE, 'utf-8')) as {
   C: BunkerKey;
 };
 
+export const E2E_BUNKER_B_PUBKEY_HEX = keys.B.pubkeyHex;
 export const E2E_BUNKER_B_URL = keys.B.bunkerUrl;
 
 /** User B's npub (for invite input) */
