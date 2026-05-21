@@ -43,6 +43,21 @@ async function hashToHex64(input: string): Promise<string> {
   return out;
 }
 
+/**
+ * Returns the 64-char hex slot identifier for a human-readable slot label.
+ *
+ * Mirrors the derivation in `pinClientSlot` — SHA-256 of `"notestr-" + label`.
+ * Use this in test assertions that need to compare against the slot stored in
+ * IDB (which always holds the hex form, not the human-readable label).
+ *
+ * @example
+ * const hexSlot = await slotIdentifierFor("sibling-a2");
+ * expect(forgottenSlots).toContain(hexSlot);
+ */
+export async function slotIdentifierFor(label: string): Promise<string> {
+  return hashToHex64(`notestr-${label}`);
+}
+
 export async function pinClientSlot(
   page: Page,
   bunkerUrl: string,

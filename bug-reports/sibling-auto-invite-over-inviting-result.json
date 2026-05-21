@@ -1,0 +1,26 @@
+{
+  "root_cause": "The over-invite bug described in the report (19 leaves instead of 2) had already been resolved before this session — the setup test at line 99 passed in the baseline run. The actual failing test was line 144 (the sibling-forget action). The root cause there: forgetSiblingDevice resolves A2's leaf in the ratchet tree by calling compareKeyPackageToLeafNode against the KP event fetched from the relay. After A2 joins a group via Welcome, notestr-web rotates the consumed KP (client.tsx 'joined' handler) and publishes a new kind-30443 event for the same slot — the relay now has A2's NEW KP, but A2's leaf in the ratchet tree was committed from the OLD KP. compareKeyPackageToLeafNode compares cryptographic material and returns false for the rotated pair, so siblingLeafIndexesForEvents returns an empty list and no Remove commit is ever published. A secondary bug: the test's assertion 3 compared forgottenSlots to the human-readable label 'sibling-a2', but the system stores the 64-char MIP-00 hex slot identifier (SHA-256 of 'notestr-sibling-a2') derived by pinClientSlot.",
+  "fix": "Two changes. (1) src/marmot/forget-device.ts: added a fallback function siblingLeafIndexesByPubkeyExcludingOwn that resolves A2's leaf by credential pubkey rather than KP-event equality. When the primary match (KP-event comparison) returns empty, the fallback gets all leaf indexes for the sibling's pubkey from getPubkeyLeafNodeIndexes, then identifies the local admin's own leaf via getOwnLeafNode(group.state) (ts-mls, keyed by signaturePublicKey), and excludes it — leaving only the sibling's leaf index(es). Also imported getOwnLeafNode from ts-mls. The recompute callback in removeLeafWithRetry uses the same fallback. (2) e2e/fixtures/two-party.ts: exported slotIdentifierFor(label) that mirrors the SHA-256 derivation in pinClientSlot. e2e/tests/forget-device-sibling.spec.ts: updated assertion 3 to derive the expected hex via slotIdentifierFor(SLOT_A2) before calling expect().toContain().",
+  "files_changed": [
+    "src/marmot/forget-device.ts",
+    "e2e/fixtures/two-party.ts",
+    "e2e/tests/forget-device-sibling.spec.ts"
+  ],
+  "tests_added": [],
+  "baseline": {
+    "failed": 1,
+    "passed": 1,
+    "note": "setup test (line 99) passed; forget-action test (line 144) failed with Expected: 1, Received: 2 leaves, then at assertion 3 slot mismatch after partial fix"
+  },
+  "final": {
+    "failed": 0,
+    "passed": 2,
+    "note": "Both TP-91 setup and forget-action tests pass; 15 smoke tests pass (active-leave, cross-author-tasks, forget-device-self), 0 regressions"
+  },
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The bug report described a symptom (19 leaves at line 99) that was already resolved, pointing at device-sync.ts as the suspected scope. The actual failing test was forget-device.ts at line 144, a completely different codepath. The spec-described 'suspected scope' was a red herring that cost investigation time. Additionally, the test had a second bug (slot format mismatch in assertion 3) that was not mentioned in the report and only surfaced after the primary fix landed.",
+    "surprised_by": "The test asserted forgottenSlots.toContain('sibling-a2') — a human-readable label — but the IDB stores the 64-char MIP-00 hex derived by SHA-256. This mismatch was a spec bug that escaped review. The fix required adding a new export (slotIdentifierFor) to the shared fixture rather than just patching the test inline.",
+    "scope": "project_specific"
+  }
+}

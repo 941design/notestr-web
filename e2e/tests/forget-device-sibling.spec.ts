@@ -43,6 +43,7 @@ import {
   leafIndexesFor,
   selectGroup,
   settle,
+  slotIdentifierFor,
 } from "../fixtures/two-party.js";
 
 const SKIP_MOBILE_REASON = "Multi-context MLS tests require desktop viewport";
@@ -191,9 +192,14 @@ test.describe.serial("TP-91: sibling-forget (AC-E2E-2, AC-E2E-11, AC-E2E-12)", (
     // --- Assertion 3: A2's slot is in A1's forgotten-slots IDB (AC-E2E-12) ---
     // The outer `await` covers Playwright's serialization of the inner Promise
     // so there is no race between the IDB write and the hook read.
+    //
+    // The IDB stores the 64-char hex MIP-00 slot identifier (SHA-256 of
+    // "notestr-" + label), not the human-readable label. Use slotIdentifierFor
+    // to derive the expected hex so the assertion compares like-for-like.
     const forgottenSlots = await pageA1.evaluate(
       () => window.__notestrTestForgottenSlots?.() ?? Promise.resolve([] as string[]),
     );
-    expect(forgottenSlots).toContain(SLOT_A2);
+    const expectedSlotHex = await slotIdentifierFor(SLOT_A2);
+    expect(forgottenSlots).toContain(expectedSlotHex);
   });
 });

@@ -35,6 +35,7 @@ import type { MarmotClient, MarmotGroup } from "@internet-privacy/marmot-ts";
 import type { EventSigner } from "applesauce-core";
 import {
   defaultKeyPackageEqualityConfig,
+  getOwnLeafNode,
   nodeTypes,
 } from "ts-mls";
 
@@ -152,6 +153,62 @@ function siblingLeafIndexesForEvents(
     }
   }
   return indexes;
+}
+
+/**
+ * Fallback leaf-index resolution for the case where the sibling has rotated
+ * its KeyPackage after being admitted to the group.
+ *
+ * After KP rotation the relay holds a NEW KP event for the same slot, while
+ * the ratchet tree still has the OLD leaf (committed from the original KP).
+ * `compareKeyPackageToLeafNode` compares cryptographic material and therefore
+ * returns false for the rotated pair — `siblingLeafIndexesForEvents` yields [].
+ *
+ * This function resolves the ambiguity by credential-identity: all ratchet tree
+ * leaves for `siblingPubkey` are found, then the local admin's own leaf (same
+ * pubkey when admin == sibling-npub) is identified by its unique
+ * `signaturePublicKey` (obtained via `getOwnLeafNode`) and excluded.
+ * The remaining leaf indexes belong to the sibling.
+ *
+ * @param group          - The group to search.
+ * @param siblingPubkey  - The Nostr pubkey extracted from the sibling's KP events.
+ */
+function siblingLeafIndexesByPubkeyExcludingOwn(
+  group: MarmotGroup,
+  siblingPubkey: string,
+): number[] {
+  // All leaf indexes in the group for siblingPubkey (may include A1's own leaf
+  // when A1 and the sibling share the same npub).
+  const allForPubkey = getPubkeyLeafNodeIndexes(group.state, siblingPubkey);
+
+  // Identify the local admin's own leaf by its signaturePublicKey.
+  // getOwnLeafNode reads state.privatePath.leafIndex — it works for both
+  // group creators (ephemeral KP, never in keyPackages.list()) and joiners.
+  let ownLeafIndex: number | null = null;
+  try {
+    const ownLeaf = getOwnLeafNode(group.state);
+    const ownSigKey = ownLeaf.signaturePublicKey;
+    // Walk the ratchet tree to find the node index whose signature key matches.
+    for (let ni = 0; ni < group.state.ratchetTree.length; ni++) {
+      const node = group.state.ratchetTree[ni];
+      if (!node || node.nodeType !== nodeTypes.leaf) continue;
+      const sig = node.leaf.signaturePublicKey;
+      if (
+        sig.length === ownSigKey.length &&
+        sig.every((b, i) => b === ownSigKey[i])
+      ) {
+        ownLeafIndex = Math.floor(ni / 2);
+        break;
+      }
+    }
+  } catch {
+    // getOwnLeafNode may throw if state.privatePath is absent (very unlikely
+    // in a live group context). Treat as "own leaf unknown" — skip exclusion.
+  }
+
+  return ownLeafIndex !== null
+    ? allForPubkey.filter((idx) => idx !== ownLeafIndex)
+    : allForPubkey;
 }
 
 // ---------------------------------------------------------------------------
@@ -298,8 +355,22 @@ export async function forgetSiblingDevice(
     );
     if (siblingEvents.length === 0) continue;
 
+    // Derive the sibling's Nostr pubkey from the matched KP events (all events
+    // for the same slot share the same event.pubkey by MIP-00).
+    const siblingPubkey = siblingEvents[0].pubkey;
+
     // Find the leaf indexes corresponding to the sibling's KP events.
-    const leafIndexes = siblingLeafIndexesForEvents(group, siblingEvents);
+    // Primary: match by KP event equality (exact cryptographic match).
+    let leafIndexes = siblingLeafIndexesForEvents(group, siblingEvents);
+
+    // Fallback: if the primary match returns nothing the sibling has rotated
+    // its KP after being admitted — the relay now holds the NEW KP while the
+    // ratchet tree still holds the OLD leaf. Re-derive by credential pubkey,
+    // excluding the local admin's own leaf (needed when admin shares the same
+    // npub, e.g. sibling-forget of a same-account device).
+    if (leafIndexes.length === 0) {
+      leafIndexes = siblingLeafIndexesByPubkeyExcludingOwn(group, siblingPubkey);
+    }
 
     // Remove each leaf sequentially.
     for (const leafIndex of leafIndexes) {
@@ -308,7 +379,10 @@ export async function forgetSiblingDevice(
         const refreshedEvents = kpEvents.filter(
           (event) => getKeyPackageIdentifier(event) === slot,
         );
-        const refreshedIndexes = siblingLeafIndexesForEvents(group, refreshedEvents);
+        let refreshedIndexes = siblingLeafIndexesForEvents(group, refreshedEvents);
+        if (refreshedIndexes.length === 0) {
+          refreshedIndexes = siblingLeafIndexesByPubkeyExcludingOwn(group, siblingPubkey);
+        }
         return refreshedIndexes[0] ?? null;
       });
     }
