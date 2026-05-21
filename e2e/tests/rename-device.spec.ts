@@ -27,6 +27,10 @@
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
 
 import { E2E_BUNKER_URL } from "../fixtures/auth-helper.js";
+import {
+  spawnSpecBunker,
+  type SpecBunkerHandle,
+} from "../fixtures/spec-bunker.js";
 import { authenticate, createGroup, settle } from "../fixtures/two-party.js";
 
 const SKIP_MOBILE_REASON = "Multi-context MLS tests require desktop viewport";
@@ -42,6 +46,11 @@ test.describe.serial("TP-60: rename a sibling device, persist across reload", ()
   let contextA2: BrowserContext;
   let pageA1: Page;
   let pageA2: Page;
+  // Per-spec bunker — this test asserts an exact device-row count of 2,
+  // which the global bunker A's cross-test KP accumulation breaks (every
+  // historical slot becomes a "sibling device" row). Same pattern as
+  // forget-device-sibling.spec.ts and multi-device-cross-npub.spec.ts.
+  let bunkerA: SpecBunkerHandle;
   let skipMobile = false;
   const GROUP_NAME = `Rename ${Date.now()}`;
   const RENAMED = `Laptop ${Date.now()}`;
@@ -49,6 +58,7 @@ test.describe.serial("TP-60: rename a sibling device, persist across reload", ()
   test.beforeAll(async ({ browser }, workerInfo) => {
     skipMobile = !!workerInfo.project.use.isMobile;
     if (skipMobile) return;
+    bunkerA = await spawnSpecBunker("rename-A");
     contextA1 = await browser.newContext();
     contextA2 = await browser.newContext();
     pageA1 = await contextA1.newPage();
@@ -58,13 +68,14 @@ test.describe.serial("TP-60: rename a sibling device, persist across reload", ()
   test.afterAll(async () => {
     await contextA1?.close();
     await contextA2?.close();
+    await bunkerA?.dispose();
   });
 
   test("A1 + A2 join (same npub), A1's DeviceList sees two leaves", async () => {
     test.skip(skipMobile, SKIP_MOBILE_REASON);
-    await authenticate(pageA1, E2E_BUNKER_URL, "A1");
+    await authenticate(pageA1, bunkerA.bunkerUrl, "A1");
     await settle(pageA1, 3000);
-    await authenticate(pageA2, E2E_BUNKER_URL, "A2");
+    await authenticate(pageA2, bunkerA.bunkerUrl, "A2");
     await settle(pageA2, 3000);
 
     await createGroup(pageA1, GROUP_NAME);
