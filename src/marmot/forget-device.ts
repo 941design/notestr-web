@@ -13,7 +13,8 @@
  *   - No raw localStorage calls — NIP-46 cleanup via clearNip46Session().
  *   - No React imports.
  *   - No router.push / window.location calls — navigation delegated to onSignOut().
- *   - Sequential removeLeafByIndex calls (for...of, never Promise.all).
+ *   - Sequential per-group calls (for...of, never Promise.all). Self-forget
+ *     uses `group.leave()`; sibling-forget uses `removeLeafByIndex`.
  *
  * Architect decisions:
  *   D1 (IDB cleanup): indexedDB.deleteDatabase by stable name for
@@ -27,6 +28,7 @@ import {
   getGroupMembers,
   getKeyPackage,
   getKeyPackageIdentifier,
+  getPubkeyLeafNodeIndexes,
   keyPackageFilters,
 } from "@internet-privacy/marmot-ts";
 import type { MarmotClient, MarmotGroup } from "@internet-privacy/marmot-ts";
@@ -101,34 +103,23 @@ async function removeLeafWithRetry(
 // ---------------------------------------------------------------------------
 
 /**
- * Returns the leaf node indexes in a group's ratchet tree whose MLS key package
- * material matches any of the given local key packages (by publicPackage).
+ * Returns the leaf node indexes in a group's ratchet tree whose credential
+ * identity is the given Nostr pubkey.
  *
- * Used by forgetSelfDevice to find all leaves belonging to the local clientId
- * without needing a relay request — our own KPs are available locally.
+ * Self-leaves are resolved by credential identity rather than by KeyPackage
+ * equality because `groups.create()` generates an ephemeral KeyPackage inline
+ * (marmot-ts groups-manager) that is never persisted in the local
+ * KeyPackageManager — `client.keyPackages.list()` therefore does not contain
+ * the creator's own leaf KP. Credentials carry the raw Nostr pubkey and
+ * uniquely identify the owner of every leaf this device controls. Thin wrapper
+ * around `getPubkeyLeafNodeIndexes` so the call site reads in terms of
+ * forget-device intent.
  */
-function selfLeafIndexesForKps(
+function selfLeafIndexesForPubkey(
   group: MarmotGroup,
-  localPublicPackages: import("ts-mls").KeyPackage[],
+  pubkey: string,
 ): number[] {
-  const indexes: number[] = [];
-  for (let nodeIndex = 0; nodeIndex < group.state.ratchetTree.length; nodeIndex++) {
-    const node = group.state.ratchetTree[nodeIndex];
-    if (!node || node.nodeType !== nodeTypes.leaf) continue;
-    const leaf = node.leaf;
-    for (const publicPackage of localPublicPackages) {
-      if (
-        defaultKeyPackageEqualityConfig.compareKeyPackageToLeafNode(
-          publicPackage,
-          leaf,
-        )
-      ) {
-        indexes.push(Math.floor(nodeIndex / 2));
-        break; // one match per node is enough
-      }
-    }
-  }
-  return indexes;
+  return getPubkeyLeafNodeIndexes(group.state, pubkey);
 }
 
 /**
@@ -172,14 +163,17 @@ function siblingLeafIndexesForEvents(
  * relay, clears all local IDB stores, and signs out.
  *
  * Step order (must not be reordered — AC-SELF-1 through AC-SIGNOUT-2):
- *   1. Leaf removal: for each group, remove all leaves matching our local KPs.
+ *   1. Self-leave proposals: for each group containing this user's leaf, call
+ *      `group.leave()` to publish kind-445 Remove proposal events. RFC 9420
+ *      §12.4 forbids a member from committing a Remove targeting their own
+ *      leaf, so we publish proposals and let another admin commit them.
  *   2. Kind-5 publish: for each published KP event, publish a NIP-09 deletion.
  *   3. IDB cleanup: clear identity, key-packages, group-state, invite stores,
  *      invitedKeys, joinedGroups.
  *   4. NIP-46 cleanup: clearNip46Session().
  *   5. Sign out: call onSignOut().
  *
- * All removeLeafByIndex calls are sequential (for...of + await). No Promise.all.
+ * Per-group leave() calls are sequential (for...of + await). No Promise.all.
  * Kind-5 events are published one per KP entry (AC-DELETE-3).
  * Decision D2: published via client.network.publish, not raw NDK.
  * Decision D1: notestr-key-packages/group-state/invite-store deleted by name.
@@ -195,22 +189,22 @@ export async function forgetSelfDevice(
   relays: string[],
   onSignOut: () => void,
 ): Promise<void> {
-  // Collect our own local KPs (for leaf matching and kind-5 targeting).
-  const localKps = await client.keyPackages.list();
-  const localPublicPackages = localKps
-    .map((kp) => kp.publicPackage)
-    .filter((pkg): pkg is NonNullable<typeof pkg> => pkg != null);
+  // Resolve our identity pubkey up front — used both for leaf-by-credential
+  // resolution (Step 1) and as the author field of kind-5 deletes (Step 2).
+  const pubkey = await signer.getPublicKey();
 
-  // --- Step 1: Leaf removal (sequential, per-group, per-leaf) ---
+  // Locally stored KPs drive the kind-5 deletion step. They are NOT used to
+  // resolve our own leaves in groups: `groups.create()` injects an ephemeral
+  // KP that never lands in this list. See selfLeafIndexesForPubkey above.
+  const localKps = await client.keyPackages.list();
+
+  // --- Step 1: Self-leave proposals (sequential, per group with a self-leaf) ---
   for (const group of client.groups.loaded) {
-    const leafIndexes = selfLeafIndexesForKps(group, localPublicPackages);
-    for (const leafIndex of leafIndexes) {
-      await removeLeafWithRetry(group, leafIndex);
-    }
+    if (selfLeafIndexesForPubkey(group, pubkey).length === 0) continue;
+    await group.leave();
   }
 
   // --- Step 2: Kind-5 deletion events (one per published KP entry) ---
-  const pubkey = await signer.getPublicKey();
   for (const kp of localKps) {
     const published = kp.published ?? [];
     for (const publishedEvent of published) {

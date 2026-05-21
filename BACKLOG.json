@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-05-20T18:32:18Z",
+  "updated_at": "2026-05-21T06:33:34Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -264,6 +264,34 @@
       },
       "text": "E2E tests cannot use IDB notestr-failed-welcomes count as a pass/fail assertion: the ephemeral relay accumulates Welcome events from prior runs that produce unrelated no_matching_kp records on fresh contexts; sidebar visibility is the correct gate for KP-freshness regressions.",
       "created_at": "2026-05-19"
+    },
+    {
+      "slug": "sibling-forget-same-pubkey-siblings-silently",
+      "scope": "project-specific",
+      "anchor": {
+        "path": "src/marmot/forget-device.ts",
+        "line": 130
+      },
+      "text": "Sibling-forget on same-pubkey siblings silently no-ops after MIP-00 KP change",
+      "created_at": "2026-05-21",
+      "motivation": "AC-E2E-2/AC-E2E-11/AC-E2E-12 are broken for the two-device-same-pubkey flow: a user cannot decommission their other device when both belong to the same Nostr pubkey. This is the same protocol guarantee the self-forget fix (bug-self-forget-no-mls-propagation) just restored, but for the sibling code path.",
+      "behavior": "Spec e2e/tests/forget-device-sibling.spec.ts:181 hangs the 30s poll: A1 calls sibling-forget on A2 (same pubkey), but A2 leaf stays in A1 ratchet tree (length 2 instead of 1). siblingLeafIndexesForEvents matches relay-fetched KP events to leaves via compareKeyPackageToLeafNode (signaturePublicKey equality). Suspected cause: commit 13297ec (MIP-00 kind-30443 compliance) changed the serialization round-trip such that the decoded relay KP no longer matches the in-tree leaf signature key for siblings. No commit issued; no error surfaced; UI silently does nothing. Same family as the joingroupfromwelcome-throws-no-matching learning.",
+      "approach": "Two candidates: (1) move sibling-forget to credential-based leaf resolution (mirror self-forget) and disambiguate device-within-pubkey via a new per-slot marker on the leaf (requires protocol amendment because credentials currently carry only the pubkey); (2) repair the KP-shape round-trip drift so compareKeyPackageToLeafNode keeps working — smaller blast radius if a single field-encoding tweak in marmot-ts groups-manager or key-package-event closes it. Investigate (2) first.",
+      "success_signal": "e2e/tests/forget-device-sibling.spec.ts main test passes (5/5 incl. setup) with A2 leaf gone from A1 view within 30s and A2 slot appearing in __notestrTestForgottenSlots."
+    },
+    {
+      "slug": "e2e-harness-spawns-bunkers-before-port",
+      "scope": "any",
+      "anchor": {
+        "path": "e2e/global-setup.ts",
+        "line": 196
+      },
+      "text": "e2e harness spawns bunkers before port check and leaks serve worker across runs",
+      "created_at": "2026-05-21",
+      "motivation": "8 manual process reaps were needed across this bug run. Every subsequent e2e run that hits a port conflict will orphan the 3 bunker children already spawned before assertPortFree fires (line 240); serve's npx parent-child split means killing the recorded servePid does not kill the actual HTTP worker, so port 3100 stays occupied across sessions and the next run fails loud before any test runs. Cost of inaction: every e2e run becomes fragile on port collision and requires manual operator cleanup.",
+      "behavior": "globalSetup spawns bunkerA, bunkerB, bunkerC (lines 197-236) and only then calls assertPortFree(3100) — if the port is busy the three bunker children are already alive and untracked in .state.json. serve is spawned with detached:false but npx forks a child worker; teardown kills serveProc.pid (the npx parent) but not the child serve process, which survives and holds port 3100 into the next session. No process-group kill is used anywhere in teardown.",
+      "approach": "Move assertPortFree(3100) to before bunker spawns (before line 196). Change serve spawn to detached:true and record process.pid of the serve child directly, or use kill -- -<pgid> in teardown. Write bunker PIDs to .state.json only after all three are live so a setup abort leaves .state.json absent rather than partially written.",
+      "success_signal": "A deliberate port-3100 collision test leaves zero orphan processes and teardown exits cleanly with no manual intervention."
     }
   ],
   "archive": [

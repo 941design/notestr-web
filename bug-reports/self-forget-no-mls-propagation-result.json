@@ -1,0 +1,155 @@
+{
+  "bug_name": "self-forget-no-mls-propagation",
+  "completed_at": "2026-05-21T08:00:00Z",
+  "outcome": "FIXED",
+  "root_cause": {
+    "summary": "Two compounding defects in forgetSelfDevice.",
+    "components": [
+      {
+        "id": "leaf-identification",
+        "what": "selfLeafIndexesForKps matched local KPs to ratchet-tree leaves via signaturePublicKey equality (ts-mls compareKeyPackageToLeafNode).",
+        "why_it_fails": "For groups the user CREATED, MarmotGroup.create() generates an ephemeral KeyPackage inline and never stores it in the local KeyPackageManager. So client.keyPackages.list() cannot contain a KP whose signature key matches the creator's own leaf. selfLeafIndexesForKps returned [] and no MLS action was taken.",
+        "evidence": [
+          "node_modules/@internet-privacy/marmot-ts/dist/client/groups-manager.js:230 — generateKeyPackage(...) inside create(), result not added to KeyPackageManager",
+          "node_modules/ts-mls/dist/src/keyPackageEqualityConfig.js:7-9 — compareKeyPackageToLeafNode does constantTimeEqual on signaturePublicKey",
+          "DIAG probe captured in trace 0-trace.trace: per-group { leafIndexes: Array(0) } on the AC-E2E-9 reproduction run"
+        ]
+      },
+      {
+        "id": "self-commit-forbidden",
+        "what": "Even with correct leaf identification, the original code called removeLeafByIndex which routes through MarmotGroup.commit({extraProposals: [Remove(self)]}).",
+        "why_it_fails": "RFC 9420 §12.4 forbids a member from committing a Remove proposal targeting their own leaf. marmot-ts/ts-mls throws 'Commit cannot contain a remove proposal removing committer' on attempt.",
+        "evidence": [
+          "page snapshot test-results/.../error-context.md:129 — inline error 'Commit cannot contain a remove proposal removing committer' shown in the Devices tab after the click",
+          "node_modules/@internet-privacy/marmot-ts/dist/client/group/marmot-group.js:256-285 — leave() builds Remove proposals via proposeLeaveGroup and publishes them as kind-445 proposal events (not commits), with the comment 'RFC 9420 §12.4 forbids committing a Remove targeting own leaf, so we send proposals and let the next admin commit pick them up.'"
+        ]
+      }
+    ]
+  },
+  "fix": {
+    "description": "Two-part fix in forgetSelfDevice (src/marmot/forget-device.ts): (1) resolve self-leaves by credential identity via getPubkeyLeafNodeIndexes(group.state, pubkey) instead of KeyPackage equality; (2) replace the per-leaf removeLeafByIndex loop with a single per-group group.leave() call that publishes self-Remove proposals via marmot-ts's proposeLeaveGroup → sendProposal → kind-445 path. Sibling-forget untouched: it correctly matches by KP because sibling devices have stored, published KPs we can fetch and their committer is an admin removing a DIFFERENT leaf (which RFC 9420 permits). Per the user's product-owner decision (option 1 of the four options surfaced when the MLS-protocol constraint was discovered), AC-SELF-1 and AC-E2E-9 were amended to reflect the protocol reality: assert kind-445 proposal observation on #h within 60s, not member-count drop on B (which requires another admin to commit and is out of the self-forget surface in a two-party group where A is sole admin). Unit test updated to mock group.leave() and assert per-group invocation; D3 epoch-race wrapper tests redirected through forgetSiblingDevice (which still uses removeLeafWithRetry). E2E test assertion 2 now waits for kind-445 on #h with `since` pinned before the click; `authors` deliberately omitted because per MIP-03 kind-445 events are signed with an ephemeral keypair to hide member identity at the wire level (filed as cross-project learning kind-445-events-have-ephemeral-authors).",
+    "files_changed": [
+      {"path": "src/marmot/forget-device.ts", "lines_added": 50, "lines_removed": 38, "summary": "selfLeafIndexesForKps → selfLeafIndexesForPubkey (credential-identity wrapper around getPubkeyLeafNodeIndexes); Step-1 loop replaced with per-group group.leave(); file header updated to name the new primitive."},
+      {"path": "src/marmot/forget-device.test.ts", "lines_added": 110, "lines_removed": 42, "summary": "marmot-ts mock exposes getPubkeyLeafNodeIndexes; self-forget tests assert group.leave() per group; added 'skips groups without self-leaves' case; step-ordering test now reads 'leave' first; D3 epoch-race tests retargeted through forgetSiblingDevice."},
+      {"path": "specs/epic-forget-this-device/acceptance-criteria.md", "lines_added": 4, "lines_removed": 4, "summary": "AC-SELF-1 amended to mandate getPubkeyLeafNodeIndexes resolution and group.leave() for self-removal (with RFC 9420 §12.4 rationale). AC-E2E-9 amended to assert kind-445 proposal observation on #h within 60s, not member-count drop, and to forbid authors filter on the kind-445 query (with ephemeral-author rationale)."},
+      {"path": "e2e/tests/forget-device-self.spec.ts", "lines_added": 35, "lines_removed": 33, "summary": "Assertion 2 swapped from leafIndexesFor poll to subscriber.waitForEvent for kind-445 with #h=groupHTag and since=sinceBeforeAction; getNostrGroupIdHex captured pre-action because local group state tears down on sign-out; leafIndexesFor import dropped."}
+    ],
+    "files_not_changed_but_in_consideration": [
+      "src/components/DevicesTab.tsx — caller of forgetSelfDevice, no signature change",
+      "src/marmot/per-leaf-remove.ts — removeLeafByIndex still used by sibling-forget",
+      "node_modules/@internet-privacy/marmot-ts/* — no upstream changes",
+      "e2e/tests/forget-device.spec.ts — non-self forget regression spec, untouched",
+      "e2e/tests/forget-device-sibling.spec.ts — multi-device-same-pubkey sibling spec, untouched (see vq_answers.VQ-8)"
+    ]
+  },
+  "tests_added": [
+    "forget-device.test.ts: 'calls group.leave() once per group containing a self-leaf (AC-SELF-1, AC-UNIT-2)' — replaces the removeLeafByIndex-per-leaf assertion.",
+    "forget-device.test.ts: 'calls group.leave() once per group regardless of leaf count' — replaces the multi-leaf-in-one-group case.",
+    "forget-device.test.ts: 'skips groups where this user has no leaves' — new case ensuring no-op when getPubkeyLeafNodeIndexes returns [].",
+    "forget-device.test.ts: D3 epoch-race tests retargeted through forgetSiblingDevice (same coverage, different driver).",
+    "forget-device-self.spec.ts: Assertion 2 now exercises the kind-445 proposal-publication contract."
+  ],
+  "baseline": {
+    "unit": {"passing": 183, "failing": 0, "total": 183},
+    "e2e_target": {
+      "spec": "e2e/tests/forget-device-self.spec.ts",
+      "status": "FAILED on initial + retry — AC-E2E-9 poll exhausted at 60s with 'Expected 0, Received 1' (B's count of A-pubkey leaves did not drop within 60s)."
+    }
+  },
+  "final": {
+    "unit": {"passing": 184, "failing": 0, "total": 184, "delta_explanation": "+1 from the 'skips groups without self-leaves' case."},
+    "e2e_target": {
+      "spec": "e2e/tests/forget-device-self.spec.ts",
+      "status": "PASSED 2/2 in 30.4s (setup 13.0s; main test 1.2s including kind-445 + kind-5 subscriber waits)."
+    },
+    "e2e_regression": [
+      {"spec": "e2e/tests/forget-device.spec.ts", "status": "PASSED 5/5 in 43.2s. All four sibling-forget cases (TP-51, TP-50/53 single-leaf + multi-leaf) clean."},
+      {"spec": "e2e/tests/forget-device-sibling.spec.ts", "status": "PRE-EXISTING FAILURE — setup passes, main test fails at line 181 (length 2 received vs 1 expected) in the multi-device-same-pubkey case. Production code for this path is byte-identical to HEAD (verified via git diff). Filed as backlog finding `sibling-forget-same-pubkey-siblings-silently` and learning `sibling-forget-fails-multi-device-same`. See vq_answers.VQ-8."}
+    ]
+  },
+  "vq_answers": [
+    {
+      "id": "VQ-1",
+      "category": "TEST",
+      "question": "Does the reproduction test fail on the unchanged baseline for the right reason — AC-E2E-9 poll exhausts at 60s with `Expected 0, Received 1` — confirming the bug is real before the fix?",
+      "answer": "YES. Captured at start of fix workflow: forget-device-self.spec.ts:178 timed out at 60s with `Expected: 0, Received: 1` on both initial run and retry, exactly the symptom the bug report describes. setup test passed cleanly (13.1s). Unit suite was 183/183 green at the same baseline."
+    },
+    {
+      "id": "VQ-2",
+      "category": "SPEC",
+      "question": "After the fix, does AC-E2E-9 hold? B's count of A-pubkey leaves drops by exactly one within 60 s of A's confirm-click.",
+      "answer": "YES under the amended contract. AC-E2E-9 was amended per the user's product-owner decision (option 1 of the four post-discovery options): the assertion is now 'within 60s of A's confirm-click, a kind-445 group event tagged with the group's MLS nostr_group_id (#h) and created_at >= sinceBeforeAction is observed on the relay via the pre-action NDK subscriber.' The original literal text ('B's member-count drops') is unachievable in any minimal fix: RFC 9420 §12.4 forbids self-commit of Remove, so A publishes a proposal that another admin must commit; B is non-admin in the two-party setup, so the leaf cannot drop until a separate admin-promotion concern is addressed (out of scope here). Under the amended assertion the e2e test passes in 1.2s. Spec amendment is in specs/epic-forget-this-device/acceptance-criteria.md:129."
+    },
+    {
+      "id": "VQ-3",
+      "category": "SPEC",
+      "question": "After the fix, does AC-E2E-10 also hold? A's kind-5 deletion event is observed by the pre-action NDK subscriber, tagged with A's KeyPackage event ids.",
+      "answer": "YES, unchanged. The pre-action NDK subscriber observes the kind-5 deletion event from A, and the e-tag matches one of the KP event ids captured pre-forget. AC-E2E-10 text is unchanged; the implementation in forget-device-self.spec.ts:193-208 is structurally identical to the pre-fix version (kpEventIds capture loop, kind5Event subscriber wait, e-tag inspection)."
+    },
+    {
+      "id": "VQ-4",
+      "category": "QUALITY",
+      "question": "Is root cause precisely identified in result.json#root_cause? Must name WHICH of the candidate paths is broken with file:line evidence — not a vague claim.",
+      "answer": "YES. root_cause.components[0] (leaf-identification) names the exact lines: marmot-ts groups-manager.js:230 (inline ephemeral KP generation that never persists to the KeyPackageManager) and ts-mls keyPackageEqualityConfig.js:7-9 (signaturePublicKey-only comparison). root_cause.components[1] (self-commit-forbidden) names marmot-group.js:256-285 (leave() as the MLS-correct primitive) and quotes the inline error 'Commit cannot contain a remove proposal removing committer' captured in the page snapshot at the failure. Both components were confirmed via the DIAG probes in src/marmot/forget-device.ts during diagnosis (since reverted) and via the second verify-run page snapshot."
+    },
+    {
+      "id": "VQ-5",
+      "category": "QUALITY",
+      "question": "Are changes minimal and scoped to the contract? No incidental refactors of unrelated forget-device, sibling-forget, or MLS subscription paths.",
+      "answer": "YES. git diff --name-only HEAD shows exactly 4 in-scope files modified: src/marmot/forget-device.ts, src/marmot/forget-device.test.ts, specs/epic-forget-this-device/acceptance-criteria.md, e2e/tests/forget-device-self.spec.ts. Plus BACKLOG.json (one finding added via the canonical script) and bug-reports/* artifacts. The deletion of docs/feature-requests/marmot-ts-mip00-keypackage-compliance.md was pre-existing — listed in state.json:55 pre_existing_dirty_files. Sibling-forget production code (forgetSiblingDevice, siblingLeafIndexesForEvents, removeLeafByIndex, removeLeafWithRetry) is byte-identical to HEAD; the only test-side change to D3 retargeted the wrapper coverage from forgetSelfDevice (which no longer uses it) to forgetSiblingDevice (which still does). No MLS subscription, device-sync, or network-adapter code touched."
+    },
+    {
+      "id": "VQ-6",
+      "category": "ARCHITECTURE",
+      "question": "Does the fix preserve subscribe-first-receive (commit 9e7aa84), the test-only history store, and isTestRuntime() gating? Sibling-forget not regressed?",
+      "answer": "YES, all four preserved. (a) subscribe-first-receive: src/marmot/device-sync.ts:996-1024 (the persistent subscription with liveBuffer cutoverComplete gate) was not touched. (b) test-only history store: src/marmot/client.tsx:206-211 (testHistoryFactory injection gated on isTestRuntime()) was not touched. (c) isTestRuntime() gating: no changes. (d) sibling-forget: forget-device.spec.ts passes 5/5 confirming the shared removeLeafWithRetry / removeLeafByIndex / siblingLeafIndexesForEvents path is intact (see VQ-8 for the separate forget-device-sibling.spec.ts pre-existing failure)."
+    },
+    {
+      "id": "VQ-7",
+      "category": "TEST",
+      "question": "Does `npm run test:unit` still pass with zero regressions vs baseline?",
+      "answer": "YES. Final: 184/184 passing (up from baseline 183/183 because the fix adds one new test case: 'skips groups where this user has no leaves'). Zero pre-existing tests fail."
+    },
+    {
+      "id": "VQ-8",
+      "category": "TEST",
+      "question": "Do `forget-device.spec.ts` and `forget-device-sibling.spec.ts` still pass?",
+      "answer": "forget-device.spec.ts: PASSED 5/5 (43.2s) — regression-clean across all four sibling-forget cases (TP-51, TP-50/53 single-leaf + multi-leaf). forget-device-sibling.spec.ts: PRE-EXISTING FAILURE, unrelated to this fix. Setup passes (25.8s); main test fails at line 181 (`Expected length: 1, Received: 2` — A2's leaf stays in A1's view 30s after A1 issues sibling-forget on the same-pubkey sibling A2). Production code for this path (forgetSiblingDevice, siblingLeafIndexesForEvents, removeLeafWithRetry, removeLeafByIndex) is byte-identical to HEAD — confirmed by git diff and corroborated independently by the team-lead. The most likely cause is KP-shape drift from commit 13297ec (MIP-00 kind-30443 compliance) breaking siblingLeafIndexesForEvents' signaturePublicKey match; same class as the joingroupfromwelcome-throws-no-matching learning. Filed as backlog finding `sibling-forget-same-pubkey-siblings-silently` and cross-project learning `sibling-forget-fails-multi-device-same` (medium confidence, project-specific scope, anchored at src/marmot/forget-device.ts:130). Out of scope for this bug per the contract's non-goals and the team-lead's option-(a) routing."
+    }
+  ],
+  "learnings_filed": [
+    {"id": "kind-445-events-have-ephemeral-authors", "scope": "cross-project", "confidence": "high"},
+    {"id": "sibling-forget-fails-multi-device-same", "scope": "project-specific", "confidence": "medium"}
+  ],
+  "backlog_findings_filed": [
+    {"slug": "sibling-forget-same-pubkey-siblings-silently", "scope": "project-specific"}
+  ],
+  "diagnostic_probes_reverted": true,
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": [
+      {
+        "what": "Three round-trips with the team-lead before AC-E2E-9 could even be evaluated, because the original bug brief framed three competing hypotheses (H1 relay-mismatch, H2 empty groups.loaded, H3 B-side unreadable parking) all of which turned out to be downstream of a deeper protocol issue. The DIAG probes immediately falsified H1 and H2; H3 was a red herring caused by B's join-epoch commit being legitimately unreadable. Reaching the real root cause (ephemeral KP at create-time + self-commit forbidden) required reading marmot-ts internals (groups-manager.js, marmot-group.js) and ts-mls (keyPackageEqualityConfig.js).",
+        "why": "The brief inherited the exploration's hypotheses without flagging that the symptom 'A's leaf doesn't drop on B's side' had a deeper precondition (the local clientId KP never exists for groups-the-user-created). That's an exploration-phase miss; the brief would have been more useful with a hypothesis named 'Self-commit forbidden by MLS, requiring leave() and a spec amendment.'"
+      },
+      {
+        "what": "Halfway through implementation, the protocol constraint (RFC 9420 §12.4) was discovered, requiring spec amendment + user product-owner decision. Lost ~30 min of round-trip time on this.",
+        "why": "Spec text was internally inconsistent: AC-SELF-1 mandated removeLeafByIndex (commit API) while AC-E2E-9 demanded a behavior (leaf actually drops on B) only achievable via a third party committing the proposal. No prior reviewer had noticed because the test was already failing for an unrelated reason (the leaf-identification miss masked the protocol issue completely)."
+      },
+      {
+        "what": "Every e2e run was followed by 2-7 orphan processes (`serve` worker + bunkers) that the team-lead had to reap manually. Approximately 8 reaps across the bug workflow.",
+        "why": "globalTeardown kills the spawned `serve` parent PID it tracked but not the child `node` worker that `serve` forks. Killing the process group (kill -- -<pgid>) would close this. Already raised as a meta-finding for the wrap-up."
+      },
+      {
+        "what": "Initial e2e verify run timed out on a kind-445 filter that included `authors: [pubkeyA]` — but kind-445 events are signed with ephemeral keys per MIP-03 to hide member identity at the wire level. Trivial-looking mistake but took a full e2e run to surface.",
+        "why": "MIP-03 design knowledge wasn't in any spec or test fixture comment near the assertion call site. Filed as cross-project learning `kind-445-events-have-ephemeral-authors` with a don't-do / do-this filter snippet so the next test author doesn't repeat it."
+      }
+    ],
+    "scope": [
+      "bug-brief-quality",
+      "e2e-harness-process-group-teardown",
+      "spec-protocol-consistency-check",
+      "mip-03-ephemeral-key-doc-discoverability"
+    ]
+  }
+}

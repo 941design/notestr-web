@@ -26,9 +26,9 @@ import {
   authenticate,
   createGroup,
   currentGroupId,
+  getNostrGroupIdHex,
   getPubkeyHex,
   inviteByNpub,
-  leafIndexesFor,
   selectGroup,
   settle,
 } from "../fixtures/two-party.js";
@@ -112,7 +112,7 @@ test.describe.serial("TP-90: self-forget (AC-E2E-1, AC-E2E-9, AC-E2E-10)", () =>
   // ---------------------------------------------------------------------------
   // Core: self-forget flow and assertions (AC-E2E-9, AC-E2E-10)
   // ---------------------------------------------------------------------------
-  test("A self-forgets: signed out, leaf gone from B's view, kind-5 published (AC-E2E-9, AC-E2E-10)", async () => {
+  test("A self-forgets: signed out, kind-445 leave proposal published, kind-5 published (AC-E2E-9, AC-E2E-10)", async () => {
     test.skip(skipMobile, SKIP_MOBILE_REASON);
 
     // Capture A's key package event ids from the relay BEFORE triggering the
@@ -129,21 +129,25 @@ test.describe.serial("TP-90: self-forget (AC-E2E-1, AC-E2E-9, AC-E2E-10)", () =>
       { relays: [RELAY_URL], pk: pubkeyA },
     );
 
-    // Open the NDK subscriber BEFORE the forget action so the kind-5 event is
-    // not missed if it arrives before the subscriber's REQ frame lands.
-    // AC-E2E-10: subscriber opened pre-action, covering the race window.
+    // Capture the group's MLS nostr_group_id BEFORE the forget action — the
+    // local group state is torn down on sign-out and the helper would fail
+    // afterwards. Used by Assertion 2 to verify the #h tag on the kind-445
+    // self-leave proposal.
+    const groupHTag = await getNostrGroupIdHex(pageA, groupId);
+
+    // Open the NDK subscriber BEFORE the forget action so neither the
+    // kind-445 self-leave proposal nor the kind-5 event is missed if they
+    // arrive before the subscriber's REQ frame lands.
+    // AC-E2E-9 / AC-E2E-10: subscriber opened pre-action, covering both race windows.
     const subscriber = await openNdkSubscriber([RELAY_URL]);
 
-    // Capture B's pre-forget count of A-pubkey leaves. In a fresh-session
-    // environment this is exactly 1 (A's local device); in a polluted-relay
-    // environment auto-invite may have added phantom A-pubkey leaves from
-    // earlier in the suite. The contract of forgetSelfDevice is "remove
-    // every leaf whose KP matches the LOCAL clientId" — exactly one leaf
-    // per session-bound device. We therefore assert B's count drops by
-    // exactly one rather than to zero (matching AC-E2E-9's literal text
-    // "member count drops from 2 to 1"). Mirrors the AC-E2E-11 amendment
-    // precedent for the sibling-forget spec.
-    const leavesBefore = (await leafIndexesFor(pageB, groupId, pubkeyA)).length;
+    // Pin `since` to a value captured BEFORE the click — passed explicitly
+    // into waitForEvent so the helper does NOT inject `since=now-at-call`
+    // (which would fire after the proposal is already on the relay and
+    // could miss it due to same-second relay clock skew). The setup phase
+    // published group-create + invite kind-445 events earlier than this,
+    // so this since still filters those out.
+    const sinceBeforeAction = Math.floor(Date.now() / 1000);
 
     try {
       // --- Trigger the self-forget flow via the Settings UI ---
@@ -169,24 +173,32 @@ test.describe.serial("TP-90: self-forget (AC-E2E-1, AC-E2E-9, AC-E2E-10)", () =>
         timeout: 30000,
       });
 
-      // --- Assertion 2: A's leaf count in B's group view drops by exactly 1 ---
-      // AC-E2E-9: poll until the MLS remove commit propagates. The contract
-      // is "B sees the local device removed", which equates to "B's count of
-      // A-pubkey leaves goes down by exactly one" (the local device). When
-      // the relay is clean this is "1 → 0"; under intra-session pollution it
-      // can be "N → N-1". 60s budget per AC-E2E-9.
-      await expect
-        .poll(
-          async () =>
-            (await leafIndexesFor(pageB, groupId, pubkeyA)).length,
-          { timeout: 60000 },
-        )
-        .toBe(leavesBefore - 1);
+      // --- Assertion 2: AC-E2E-9 — kind-445 self-leave proposal published ---
+      // RFC 9420 §12.4 forbids the leaver from committing their own Remove
+      // proposal. forgetSelfDevice publishes the Remove as a proposal event
+      // (via MarmotGroup.leave()) and signs the user out; another admin in
+      // the group commits the proposal later. We assert the proposal is
+      // observable on the relay within 60 s, tagged with the group's MLS
+      // nostr_group_id (#h). The author CANNOT be asserted: per MIP-03,
+      // kind-445 group events are signed with an ephemeral keypair (see
+      // marmot-ts `core/group-message.js:123` `generateSecretKey()` inside
+      // `createGroupEvent`) to hide member identities at the wire level.
+      // Filtering by `since=sinceBeforeAction` ignores the pre-action
+      // kind-445s (the invite commit from setup); A is the sole publisher
+      // of kind-445s on this h-tag in this test, so any new event after
+      // that timestamp is A's leave proposal. Per the spec amendment for
+      // AC-E2E-9: "B's member-count is NOT required to drop until another
+      // admin commits the proposal."
+      const proposalEvent = await subscriber.waitForEvent(
+        { kinds: [445 as any], "#h": [groupHTag], since: sinceBeforeAction } as any,
+        60000,
+      );
+      expect(proposalEvent).toBeDefined();
 
-      // --- Assertion 3: kind-5 deletion event published for A's KP event id ---
-      // AC-E2E-10: waitForEvent with a 30 s timeout (Q-ROBUSTNESS-1: >= 30000ms).
+      // --- Assertion 3: AC-E2E-10 — kind-5 deletion event published ---
+      // waitForEvent with a 30 s timeout (Q-ROBUSTNESS-1: >= 30000ms).
       const kind5Event = await subscriber.waitForEvent(
-        { kinds: [5], authors: [pubkeyA] },
+        { kinds: [5], authors: [pubkeyA], since: sinceBeforeAction },
         30000,
       );
       expect(kind5Event).toBeDefined();

@@ -1,0 +1,119 @@
+{
+  "bug_name": "self-forget-no-mls-propagation",
+  "bug_report_file": "bug-reports/self-forget-no-mls-propagation-report.md",
+  "created_at": "2026-05-20T21:09:00Z",
+  "updated_at": "2026-05-21T06:30:00Z",
+  "phase": "ACCEPTED",
+  "outcome": "FIXED",
+  "complexity": "medium",
+  "verification_questions": [
+    {
+      "id": "VQ-1",
+      "category": "TEST",
+      "question": "Does the reproduction test (forget-device-self.spec.ts:115) fail on the unchanged baseline for the right reason — AC-E2E-9 leaf-count poll exhausts at 60 s with `Expected 0, Received 1` — confirming the bug is real before the fix?"
+    },
+    {
+      "id": "VQ-2",
+      "category": "SPEC",
+      "question": "After the fix, does AC-E2E-9 hold on a clean run? Specifically: B's count of A-pubkey leaves drops by exactly one within 60 s of A's confirm-click on the 'Forget this device' dialog."
+    },
+    {
+      "id": "VQ-3",
+      "category": "SPEC",
+      "question": "After the fix, does AC-E2E-10 also hold on the same run? Specifically: A's kind-5 deletion event is observed by the pre-action NDK subscriber, tagged with A's KeyPackage event ids."
+    },
+    {
+      "id": "VQ-4",
+      "category": "QUALITY",
+      "question": "Is the root cause correctly and precisely identified in result.json#root_cause? It must name *which* of the two candidate paths is broken (A's `forgetSelfDevice` does not publish the MLS remove commit; vs. the commit is published but B's ingest path drops/rejects it), with evidence (relay capture, file:line trace) — not a vague 'MLS propagation issue'."
+    },
+    {
+      "id": "VQ-5",
+      "category": "QUALITY",
+      "question": "Are the changes minimal and scoped to the contract? Only files necessary to make B observe A's leaf removal within 60 s — no incidental refactors of unrelated forget-device, sibling-forget, or MLS subscription paths."
+    },
+    {
+      "id": "VQ-6",
+      "category": "ARCHITECTURE",
+      "question": "Does the fix preserve the contracts of adjacent flows? Specifically: (a) the subscribe-first-receive flow from commit `9e7aa84` is still intact; (b) the test-only history store and test-runtime gating (`isTestRuntime()`, `NEXT_PUBLIC_E2E`) are unchanged; (c) sibling-forget flow is not regressed."
+    },
+    {
+      "id": "VQ-7",
+      "category": "TEST",
+      "question": "Does the full unit-test suite (`npm run test:unit`) still pass with zero regressions vs the pre-fix baseline?"
+    },
+    {
+      "id": "VQ-8",
+      "category": "TEST",
+      "question": "Do the adjacent e2e specs `forget-device.spec.ts` and `forget-device-sibling.spec.ts` still pass after the fix? (Regression safety on the shared MLS remove and forget-device code paths.)"
+    }
+  ],
+  "pre_existing_dirty_files": [
+    ".claude/skills/e2e-triage/SKILL.md",
+    ".claude/skills/e2e-triage/learnings.md",
+    ".claude/skills/mls-leaf-debug/SKILL.md",
+    ".claude/verification-results.csv",
+    ".clauded.yaml",
+    "docs/feature-requests/marmot-ts-mip00-keypackage-compliance.md",
+    "e2e/.triage-phase-a.log",
+    "e2e/.triage/device.md",
+    "e2e/.triage/findings-merged.md",
+    "e2e/.triage/multi-party.md",
+    "e2e/.triage/run.log",
+    "e2e/.triage/tasks.md",
+    "e2e/tests/group-switch-members.spec.ts",
+    "notestr-web-group-discovery-report.md",
+    "scripts/debug-prod.mjs",
+    "specs/epic-property-tests-l3-three-party/acceptance-criteria.md"
+  ],
+  "baseline": {
+    "unit_pass_fail": "183/183 passing, 0 failing",
+    "e2e_target_pre_fix": "forget-device-self.spec.ts:115 — FAILED on initial+retry, AC-E2E-9 poll exhausts at 60s with 'Expected 0, Received 1'"
+  },
+  "fix": {
+    "files_changed": [
+      "src/marmot/forget-device.ts",
+      "src/marmot/forget-device.test.ts",
+      "specs/epic-forget-this-device/acceptance-criteria.md",
+      "e2e/tests/forget-device-self.spec.ts"
+    ],
+    "scope_widening": "After diagnosis surfaced an MLS-protocol constraint (RFC 9420 §12.4), user picked option 1 of the four post-discovery options: amend AC-E2E-9 + AC-SELF-1 to assert kind-445 proposal observation; switch self-removal primitive from removeLeafByIndex to group.leave().",
+    "result_file": "bug-reports/self-forget-no-mls-propagation-result.json",
+    "contract_file": "bug-reports/self-forget-no-mls-propagation-contract.json"
+  },
+  "review_rounds": [
+    {
+      "round": 1,
+      "examiner_verdicts": {
+        "VQ-1": {"verdict": "YES", "confidence": 1.0},
+        "VQ-2": {"verdict": "YES", "confidence": 1.0},
+        "VQ-3": {"verdict": "YES", "confidence": 1.0},
+        "VQ-4": {"verdict": "YES", "confidence": 1.0},
+        "VQ-5": {"verdict": "PARTIAL", "severity": 3, "confidence": 0.75, "root_cause_category": "baseline_overlap", "lead_resolution": "Flagged docs/feature-requests/marmot-ts-mip00-keypackage-compliance.md deletion as out-of-scope; inspection confirms file was pre-existing dirty (in pre_existing_dirty_files); not a violation."},
+        "VQ-6": {"verdict": "YES", "confidence": 1.0},
+        "VQ-7": {"verdict": "YES", "confidence": 1.0},
+        "VQ-8": {"verdict": "PARTIAL", "severity": 3, "confidence": 0.85, "root_cause_category": "baseline_overlap", "lead_resolution": "Examiner couldn't re-run e2e (orphan on port 3100); static evidence (zero diff in adjacent specs + byte-identical sibling-forget production code) supports Fixer's claim. Sibling-forget-spec pre-existing failure filed separately as backlog finding sibling-forget-same-pubkey-siblings-silently."}
+      },
+      "reviewer_verdict": "ACCEPTED",
+      "codex_adversarial_findings": {
+        "high": "Refuted by Reviewer source-of-truth read of marmot-ts library (Codex didn't read leave-group.js; library does handle multi-leaf inside the single leave() call).",
+        "medium": "Non-blocking caveat: AC-E2E-9 filter could be tightened by decoding the kind-445 payload to verify Remove-semantics; current filter is sound in two-party topology but contract is technically permissive on author/payload. Filed as caveat in result.json."
+      },
+      "fast_path": true
+    }
+  ],
+  "remediation_round": 0,
+  "final": {
+    "unit_pass_fail": "184/184 passing, 0 failing (+1 new test 'skips groups without self-leaves')",
+    "e2e_target_post_fix": "forget-device-self.spec.ts: PASSED 2/2 (30.4s setup + main; Reviewer re-confirmed 2/2 in 32.7s)",
+    "e2e_regression": {
+      "forget-device.spec.ts": "PASSED 5/5 in 43.2s (Fixer); Reviewer accepted on static evidence (byte-identical production code)",
+      "forget-device-sibling.spec.ts": "PRE-EXISTING FAILURE unrelated to this fix; production code byte-identical to HEAD; separate backlog finding filed (sibling-forget-same-pubkey-siblings-silently)"
+    }
+  },
+  "phase_history": [
+    {"phase": "INITIALIZED", "timestamp": "2026-05-20T21:09:00Z", "trigger": "workflow_start"},
+    {"phase": "FIX_READY", "timestamp": "2026-05-21T06:08:00Z", "trigger": "fixer_completed_result_json"},
+    {"phase": "ACCEPTED", "timestamp": "2026-05-21T06:30:00Z", "trigger": "reviewer_accepted_after_examiner_clean_pass"}
+  ]
+}

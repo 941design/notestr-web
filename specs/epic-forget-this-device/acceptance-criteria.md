@@ -8,9 +8,9 @@ _No ADRs constrain this epic. See `docs/adr/` for project ADRs._
 
 ## AC-SELF-* — Self-forget end-to-end behavior
 
-**AC-SELF-1** — `forgetSelfDevice` MUST iterate every group in `client.groups.loaded` and, for each group, call `removeLeafByIndex` for every leaf whose key package matches the local `clientId`, using a `for...of` loop (not `Promise.all`) so calls are sequential.
+**AC-SELF-1** — `forgetSelfDevice` MUST iterate every group in `client.groups.loaded` in which the local user has at least one leaf (resolved by credential identity, i.e. `getPubkeyLeafNodeIndexes(group.state, pubkey)`) and, for each such group, call `group.leave()` to publish self-Remove proposals as kind-445 proposal events. Self-removal MUST NOT use `removeLeafByIndex` / `MarmotGroup.commit({extraProposals: [Remove(self)]})` — RFC 9420 §12.4 forbids committing a Remove proposal targeting the committer's own leaf, and marmot-ts rejects the attempt with "Commit cannot contain a remove proposal removing committer". The per-group `group.leave()` calls MUST use a `for...of` loop (not `Promise.all`) so they are sequential. Resolution-by-credential-identity is mandatory because for groups the user CREATED, marmot-ts generates an ephemeral KeyPackage inline that is never stored in the local `KeyPackageManager`, so KeyPackage-equality matching against `client.keyPackages.list()` cannot find the creator's own leaf.
 
-**AC-SELF-2** — `forgetSelfDevice` MUST NOT call `removeLeafByIndex` with `Promise.all` at any call site — the per-leaf calls within a single group MUST be awaited sequentially to prevent epoch-race conflicts.
+**AC-SELF-2** — `forgetSelfDevice` MUST NOT call `group.leave()` (or `removeLeafByIndex` for non-self leaves elsewhere) with `Promise.all` at any call site — the per-group calls MUST be awaited sequentially to prevent epoch-race conflicts.
 
 **AC-SELF-3** — After all leaf removals complete, `forgetSelfDevice` MUST enumerate every entry in `client.keyPackages.list()` whose `.published` array is non-empty and publish a NIP-09 kind-5 deletion event referencing each published event id.
 
@@ -126,7 +126,7 @@ _No ADRs constrain this epic. See `docs/adr/` for project ADRs._
 
 **AC-E2E-8** — The `__notestrTestForgottenSlots` hook signature MUST be declared in `src/types/notestr-test-hooks.d.ts` alongside the existing hook declarations.
 
-**AC-E2E-9** — The self-forget e2e test MUST assert, after the forget flow completes, that A's leaf is absent from B's group member list (e.g. `expect(page.locator('[data-testid="member-item"]')).toHaveCount(N - 1, { timeout: 30000 })`).
+**AC-E2E-9** — The self-forget e2e test MUST assert, within 60 s of A's confirm-click, that a kind-445 group event tagged with the group's MLS nostr_group_id (#h) and `created_at >= sinceBeforeAction` is observed on the relay via the pre-action NDK subscriber. The filter MUST NOT include `authors` because per MIP-03 kind-445 events are signed with an ephemeral keypair (`generateSecretKey()` inside `createGroupEvent`) to hide member identities at the wire level — observing a new kind-445 on the group's #h after the action is sufficient evidence of the leave proposal in the test's two-party topology where A is the sole publisher. B's member-count is NOT required to drop until another admin in the group commits the proposal — that step is outside the self-forget surface and is a separate concern of multi-admin group lifecycle. Rationale: RFC 9420 §12.4 forbids self-commit of Remove, so the user publishes a Remove **proposal** and another admin commits it later; in a 2-party group where the leaver is the sole admin, no commit lands until the remaining member is promoted (out of scope here).
 
 **AC-E2E-10** — The self-forget e2e test MUST assert that a kind-5 deletion event with A's pubkey and an `e`-tag matching A's KP event id is published on the relay, using `openNdkSubscriber.waitForEvent({ kinds: [5], authors: [aPubkeyHex] }, timeoutMs)`.
 
@@ -140,7 +140,7 @@ _No ADRs constrain this epic. See `docs/adr/` for project ADRs._
 
 **AC-UNIT-1** — `src/marmot/forget-device.test.ts` MUST exist and MUST use `vi.mock('@internet-privacy/marmot-ts', ...)` following the pattern established in `src/marmot/client.test.ts` and `src/marmot/device-sync.test.ts`.
 
-**AC-UNIT-2** — The unit test MUST construct a mock `MarmotClient` representing two groups (each with at least one leaf matching the local `clientId`) and assert that `forgetSelfDevice` calls `removeLeafByIndex` exactly once per matching leaf across both groups.
+**AC-UNIT-2** — The unit test MUST construct a mock `MarmotClient` representing two groups (each with at least one leaf matching the local pubkey) and assert that `forgetSelfDevice` calls `group.leave()` exactly once per group containing a self-leaf. `removeLeafByIndex` MUST NOT be asserted for the self-forget path — self-removal uses `group.leave()` (RFC 9420 §12.4 forbids self-commit of Remove; see AC-SELF-1). A separate test case MUST assert that groups where `getPubkeyLeafNodeIndexes` returns `[]` are skipped entirely (no `group.leave()` call).
 
 **AC-UNIT-3** — The unit test MUST assert that `forgetSelfDevice` calls the kind-5 publish path once per published KP event id (using a spy on `client.network.publish` or equivalent).
 

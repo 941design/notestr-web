@@ -160,3 +160,7 @@ The marmot-researcher agent has been engaged to capture related findings and ver
 ### 2026-05-18 — AC-INVITE-1 placement clarification
 
 **AC-INVITE-1** original text said "Inside the `runKeyPackageSync` closure" — too literal. The architect correctly placed the `forgottenSlots` variable in the parent `useDeviceSync` effect body scope (not inside the `runKeyPackageSync` sub-function), so both `runKeyPackageSync` and the cleanup function can close over it. The AC was amended to reflect this: "in the `useDeviceSync` hook body... accessible to `runKeyPackageSync` (via closure)... and to the cleanup function (via closure)". The behavior is unchanged; the wording now matches the implementation. (Examiner flag from S2 retrospective.)
+
+### 2026-05-21 — AC-UNIT-2 updated to match self-forget protocol fix
+
+**AC-UNIT-2** originally mandated asserting `removeLeafByIndex` per matching leaf. The bug fix in bug run "self-forget-no-mls-propagation" replaced `removeLeafByIndex` with `group.leave()` for the self-forget path (RFC 9420 §12.4 forbids self-commit of Remove; marmot-ts implements this via `proposeLeaveGroup` → kind-445 proposal events). The AC was amended to: assert `group.leave()` called once per group containing a self-leaf; assert `removeLeafByIndex` is NOT called on the self-forget path; add a required test case for the no-op branch (groups where `getPubkeyLeafNodeIndexes` returns `[]`). The implementation already matches the amended AC — unit suite passes 184/184 with these assertions. (Bug run result.json: `tests_added[0]` and `tests_added[1]`.)

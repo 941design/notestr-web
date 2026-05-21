@@ -1,0 +1,40 @@
+{
+  "bug_name": "self-forget-no-mls-propagation",
+  "created_at": "2026-05-20T21:35:00Z",
+  "revised_at": "2026-05-21T00:00:00Z",
+  "root_cause_summary": "Two compounding defects in `forgetSelfDevice`:\n  (a) LEAF-IDENTIFICATION — self-leaves were resolved via KeyPackage equality (`compareKeyPackageToLeafNode` compares `signaturePublicKey`, ts-mls `keyPackageEqualityConfig.js:7-9`). For groups the user CREATED, `MarmotGroup.create()` injects a brand-new ephemeral KeyPackage inline (marmot-ts `groups-manager.js:230`) and never stores it in the KeyPackageManager, so `client.keyPackages.list()` cannot match the creator's own leaf, `selfLeafIndexesForKps` returns `[]`, and no MLS action is taken.\n  (b) SELF-COMMIT FORBIDDEN — even with correct leaf identification, the original code called `removeLeafByIndex` which routes through `MarmotGroup.commit({extraProposals: [Remove(self)]})`. RFC 9420 §12.4 forbids a member from committing a Remove proposal targeting their own leaf; marmot-ts/ts-mls throws 'Commit cannot contain a remove proposal removing committer' on attempt. The MLS-correct primitive is `MarmotGroup.leave()` (`marmot-group.js:256-285`) which builds Remove proposals via `proposeLeaveGroup(ownPubkey)` and publishes them as kind-445 proposal events — not commits. A separate admin then commits them. Per user decision (option 1 of the four laid out post-discovery), AC-E2E-9 is amended to assert the proposal is observed on the relay rather than the leaf actually drops on B's side (which requires another admin to commit and is out of scope for this product behavior surface).",
+  "allowed_changes": {
+    "files": [
+      "src/marmot/forget-device.ts",
+      "src/marmot/forget-device.test.ts",
+      "specs/epic-forget-this-device/acceptance-criteria.md",
+      "e2e/tests/forget-device-self.spec.ts"
+    ],
+    "rationale": "(a) forget-device.ts: keep credential-identity-based self-leaf resolution from the original minimal-fix pass; swap removeLeafByIndex for group.leave() on the self-removal step. (b) forget-device.test.ts: update unit assertions to reflect the new primitive (one group.leave() per loaded group with a self-leaf, instead of one removeLeafByIndex per self-leaf). (c) acceptance-criteria.md (epic-forget-this-device): amend AC-SELF-1 (self-remove now uses group.leave) and AC-E2E-9 (assert kind-445 proposal observation, not member-count drop) per user decision. (d) forget-device-self.spec.ts: drop the leafIndexesFor(pageB,...) poll, add an NDK-subscriber assertion on the kind-445 proposal event authored by A and `#h`-tagged with the group's MLS group_id."
+  },
+  "constraints": [
+    "Step order in forgetSelfDevice unchanged: self-leaves first -> kind-5 deletes -> IDB -> NIP-46 -> onSignOut.",
+    "Sequential per-group leave() (for...of, never Promise.all).",
+    "Kind-5 publishes remain driven by `client.keyPackages.list()` (kp.published[]).",
+    "Sibling-forget path (`siblingLeafIndexesForEvents`, `forgetSiblingDevice`, `removeLeafByIndex` for non-self leaves) untouched.",
+    "Epoch-race retry wrapper (`removeLeafWithRetry`) and its recompute callback semantics remain available for sibling-forget; self-removal no longer needs them because proposal-publishing is a one-shot publish-or-throw.",
+    "All `[DIAG-SELF-FORGET]` probes added during diagnosis MUST stay reverted (already reverted before this contract revision).",
+    "Spec amendments name the protocol constraint inline (RFC 9420 §12.4) so the next reader knows why self-commit is forbidden."
+  ],
+  "non_goals": [
+    "Do not refactor `forgetSelfDevice` beyond what is needed for AC-E2E-9.",
+    "Do not touch sibling-forget code paths.",
+    "Do not patch marmot-ts.",
+    "Do not address the B-side `kind: 445, result: unreadable` log noise from the join-epoch commit B legitimately can't decrypt before its Welcome.",
+    "Do not fix the early-test race for `__notestrTestPubkeyLeafIndexes` at forget-device-self.spec.ts:146 — log as finding (and naturally falls away when we stop reading the hook on pageB).",
+    "Do not address the host e2e harness orphan-`serve` / orphan-bunker pipeline footguns — separate meta-findings.",
+    "Do not modify `MarmotGroup.leave()` ordering (it calls `destroy()` after publish; we accept that for self-forget since the user is signing out anyway)."
+  ],
+  "verification_targets": [
+    "AC-E2E-9 (amended): Within 60 s of A's confirm-click, A's self-leave proposal (kind-445) is observed on the relay, authored by A, tagged with the group's MLS group_id (#h).",
+    "AC-E2E-10 (unchanged): pre-action NDK subscriber observes a kind-5 deletion event authored by A and `e`-tagged with A's KeyPackage event id.",
+    "Assertion 1 (A signed out, spec line 168) reaches green within its 30 s budget.",
+    "`npm run test:unit` passes with no regressions vs the 183/183 baseline.",
+    "`e2e/tests/forget-device.spec.ts` and `e2e/tests/forget-device-sibling.spec.ts` still pass."
+  ]
+}
