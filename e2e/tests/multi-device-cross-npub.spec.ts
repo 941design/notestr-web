@@ -16,8 +16,10 @@
 
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
 
-import { E2E_BUNKER_URL } from "../fixtures/auth-helper.js";
-import { E2E_BUNKER_B_URL, USER_B_NPUB } from "../fixtures/auth-helper-b.js";
+import {
+  spawnSpecBunker,
+  type SpecBunkerHandle,
+} from "../fixtures/spec-bunker.js";
 import {
   authenticate,
   createGroup,
@@ -39,11 +41,23 @@ let pageA2: Page;
 let pageB: Page;
 let skipMobile = false;
 
+// Per-spec bunkers — the global bunker A accumulates KPs from every other
+// test in the run, and A1's auto-invite scan correctly picks up each of
+// those slots as a sibling. In a full-suite run that swamps the legitimate
+// A2 invite. Fresh per-spec keypairs isolate this spec from cross-test
+// relay state. Same pattern as forget-device-sibling.spec.ts.
+let bunkerA: SpecBunkerHandle;
+let bunkerB: SpecBunkerHandle;
+
 const GROUP_NAME = `MdCrossNpub ${Date.now()}`;
 
 test.beforeAll(async ({ browser }, workerInfo) => {
   skipMobile = !!workerInfo.project.use.isMobile;
   if (skipMobile) return;
+  [bunkerA, bunkerB] = await Promise.all([
+    spawnSpecBunker("mdcrossnpub-A"),
+    spawnSpecBunker("mdcrossnpub-B"),
+  ]);
   contextA1 = await browser.newContext();
   contextA2 = await browser.newContext();
   contextB = await browser.newContext();
@@ -56,6 +70,8 @@ test.afterAll(async () => {
   await contextA1?.close();
   await contextA2?.close();
   await contextB?.close();
+  await bunkerA?.dispose();
+  await bunkerB?.dispose();
 });
 
 test.describe.serial("TP-80: A1+A2 (same npub) + B (distinct) all in one group", () => {
@@ -64,20 +80,20 @@ test.describe.serial("TP-80: A1+A2 (same npub) + B (distinct) all in one group",
   test("auth all three contexts", async () => {
     test.skip(skipMobile, SKIP_MOBILE_REASON);
     // B first so its key package is on the relay before A invites.
-    await authenticate(pageB, E2E_BUNKER_B_URL);
+    await authenticate(pageB, bunkerB.bunkerUrl);
     await settle(pageB, 3000);
     // A1 second so it's the "creator" device. A2 third so it joins via
     // auto-invite from A1's MarmotProvider.
-    await authenticate(pageA1, E2E_BUNKER_URL, "A1");
+    await authenticate(pageA1, bunkerA.bunkerUrl, "A1");
     await settle(pageA1, 3000);
-    await authenticate(pageA2, E2E_BUNKER_URL, "A2");
+    await authenticate(pageA2, bunkerA.bunkerUrl, "A2");
     await settle(pageA2, 3000);
   });
 
   test("A1 creates group, invites B → A2 auto-joins, B joins", async () => {
     test.skip(skipMobile, SKIP_MOBILE_REASON);
     await createGroup(pageA1, GROUP_NAME);
-    await inviteByNpub(pageA1, USER_B_NPUB);
+    await inviteByNpub(pageA1, bunkerB.npub);
 
     // A2 should pick up the group via auto-invite (same npub as creator).
     await selectGroup(pageA2, GROUP_NAME);
