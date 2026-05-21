@@ -32,8 +32,10 @@
 
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
 
-import { E2E_BUNKER_URL } from "../fixtures/auth-helper.js";
-import { E2E_BUNKER_B_URL, USER_B_NPUB } from "../fixtures/auth-helper-b.js";
+import {
+  spawnSpecBunker,
+  type SpecBunkerHandle,
+} from "../fixtures/spec-bunker.js";
 import {
   authenticate,
   createGroup,
@@ -69,6 +71,14 @@ test.describe.serial("TP-91: sibling-forget (AC-E2E-2, AC-E2E-11, AC-E2E-12)", (
   let pageA2: Page;
   let pageB: Page;
 
+  // Per-spec bunkers: this spec asserts an exact leaf count for pubkeyA, so it
+  // cannot share the global `auth-helper{,-b}` bunkers — those have KeyPackages
+  // accumulated under their pubkeys by every other test in the run, and the
+  // auto-invite scan correctly treats each historical slot as a sibling device
+  // (which is the right production behavior — see commit message).
+  let bunkerA: SpecBunkerHandle;
+  let bunkerB: SpecBunkerHandle;
+
   // AC-E2E-4: propagate skipMobile so subsequent tests in the serial block
   // all short-circuit cleanly without accessing unset shared variables.
   let skipMobile = false;
@@ -79,6 +89,13 @@ test.describe.serial("TP-91: sibling-forget (AC-E2E-2, AC-E2E-11, AC-E2E-12)", (
   test.beforeAll(async ({ browser }, workerInfo) => {
     skipMobile = !!workerInfo.project.use.isMobile;
     if (skipMobile) return;
+
+    // Spawn fresh bunker processes with brand-new keypairs so the ephemeral
+    // relay has no prior-test KPs under these pubkeys.
+    [bunkerA, bunkerB] = await Promise.all([
+      spawnSpecBunker("sibling-A"),
+      spawnSpecBunker("sibling-B"),
+    ]);
 
     contextA1 = await browser.newContext();
     contextA2 = await browser.newContext();
@@ -92,6 +109,8 @@ test.describe.serial("TP-91: sibling-forget (AC-E2E-2, AC-E2E-11, AC-E2E-12)", (
     await contextA1?.close();
     await contextA2?.close();
     await contextB?.close();
+    await bunkerA?.dispose();
+    await bunkerB?.dispose();
   });
 
   // ---------------------------------------------------------------------------
@@ -102,24 +121,24 @@ test.describe.serial("TP-91: sibling-forget (AC-E2E-2, AC-E2E-11, AC-E2E-12)", (
 
     // B authenticates first so its key package is on the relay before A1 invites.
     // AC-E2E-3: explicit slot "observer" for B.
-    await authenticate(pageB, E2E_BUNKER_B_URL, SLOT_B);
+    await authenticate(pageB, bunkerB.bunkerUrl, SLOT_B);
     await settle(pageB, 3000);
 
     // A2 authenticates second so its KP is on the relay for the auto-invite scan
     // that runs when A1 creates the group.
     // AC-E2E-3: explicit slot "sibling-a2" for A2.
-    await authenticate(pageA2, E2E_BUNKER_URL, SLOT_A2);
+    await authenticate(pageA2, bunkerA.bunkerUrl, SLOT_A2);
     await settle(pageA2, 3000);
 
     // A1 authenticates last; as the group creator it will be admin.
     // AC-E2E-3: explicit slot "sibling-a1" for A1.
-    await authenticate(pageA1, E2E_BUNKER_URL, SLOT_A1);
+    await authenticate(pageA1, bunkerA.bunkerUrl, SLOT_A1);
     await settle(pageA1, 3000);
 
     pubkeyA = await getPubkeyHex(pageA1);
 
     await createGroup(pageA1, GROUP_NAME);
-    await inviteByNpub(pageA1, USER_B_NPUB);
+    await inviteByNpub(pageA1, bunkerB.npub);
 
     // Wait for the auto-invite scan to process A2's key package (same pubkey as
     // A1, different slot) and issue an invite commit for A2.
