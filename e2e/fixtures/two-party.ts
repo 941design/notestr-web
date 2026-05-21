@@ -334,6 +334,13 @@ export async function settle(page: Page, ms: number): Promise<void> {
  */
 export async function switchIdentity(page: Page, bunkerUrl: string): Promise<void> {
   await page.locator('[data-testid="disconnect-button"]').click({ force: true });
+  // Disconnect now opens a two-path AlertDialog ("Sign out" vs
+  // "Forget this device and sign out"). Choose the plain path —
+  // identity switching preserves group state for the next user.
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "Sign out", exact: true })
+    .click();
   await page
     .getByText("Sign in to notestr")
     .waitFor({ state: "visible", timeout: 15000 });
@@ -347,6 +354,11 @@ export async function switchIdentity(page: Page, bunkerUrl: string): Promise<voi
  */
 export async function disconnect(page: Page): Promise<void> {
   await page.locator('[data-testid="disconnect-button"]').click({ force: true });
+  // Disconnect now opens a two-path AlertDialog — choose plain Sign out.
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "Sign out", exact: true })
+    .click();
   await page
     .getByText("Sign in to notestr")
     .waitFor({ state: "visible", timeout: 15000 });

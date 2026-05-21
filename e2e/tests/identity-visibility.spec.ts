@@ -41,8 +41,15 @@ test.describe('identity-visibility', () => {
     // Wait for group to appear in sidebar
     await expect(page.getByLabel('Groups').getByText(GROUP_NAME)).toBeVisible({ timeout: 30000 });
 
-    // Disconnect User A — force click to bypass QR button overlap on mobile
+    // Disconnect User A — force click to bypass QR button overlap on mobile.
+    // Disconnect now opens a two-path AlertDialog ("Sign out" vs "Forget this
+    // device and sign out"). Identity-visibility tests choose the plain path
+    // so the group state survives for the next user to observe as detached.
     await page.locator('[data-testid="disconnect-button"]').click({ force: true });
+    await page
+      .getByRole('alertdialog')
+      .getByRole('button', { name: 'Sign out', exact: true })
+      .click();
 
     // Wait for login screen
     await page.getByText('Sign in to notestr').waitFor({ state: 'visible', timeout: 15000 });
@@ -86,8 +93,13 @@ test.describe('identity-visibility', () => {
     await page.getByRole('button', { name: 'Create', exact: true }).first().click();
     await expect(page.getByLabel('Groups').getByText(leaveGroupName)).toBeVisible({ timeout: 30000 });
 
-    // Disconnect User A — force click to bypass QR button overlap on mobile
+    // Disconnect User A — force click to bypass QR button overlap on mobile.
+    // Confirm the plain "Sign out" path (preserves groups so B can see them).
     await page.locator('[data-testid="disconnect-button"]').click({ force: true });
+    await page
+      .getByRole('alertdialog')
+      .getByRole('button', { name: 'Sign out', exact: true })
+      .click();
     await page.getByText('Sign in to notestr').waitFor({ state: 'visible', timeout: 15000 });
 
     // User B authenticates
@@ -163,8 +175,13 @@ test.describe('identity-visibility', () => {
     // Wait for invite to succeed (input clears)
     await expect(page.getByPlaceholder('npub1...')).toHaveValue('', { timeout: 30000 });
 
-    // Disconnect User A — force click to bypass QR button overlap on mobile
+    // Disconnect User A — force click to bypass QR button overlap on mobile.
+    // Confirm plain "Sign out" so the group state survives for B.
     await page.locator('[data-testid="disconnect-button"]').click({ force: true });
+    await page
+      .getByRole('alertdialog')
+      .getByRole('button', { name: 'Sign out', exact: true })
+      .click();
     await page.getByText('Sign in to notestr').waitFor({ state: 'visible', timeout: 15000 });
 
     // User B authenticates in the same context (shared IndexedDB)
