@@ -305,7 +305,17 @@ class LgCommand implements fc.AsyncCommand<ModelState, RealSystem> {
   constructor(private readonly actor: ActorId) {}
 
   check(m: ModelState): boolean {
-    return m.actorIsMember(this.actor) && m.groupName !== null;
+    // Lg's A14 assertion requires a remaining member as a wire-level vantage
+    // point (the leaving actor's relay connection drops with the group). For
+    // the sole-member-leaves case, see forget-device-self.spec.ts which uses
+    // a standalone NDK observer. Restrict this command to 2-member states so
+    // counterexamples like [A.Cg, A.Lg] don't shrink into an unsupported flow.
+    const otherActor: ActorId = this.actor === "A" ? "B" : "A";
+    return (
+      m.actorIsMember(this.actor) &&
+      m.actorIsMember(otherActor) &&
+      m.groupName !== null
+    );
   }
 
   async run(m: ModelState, r: RealSystem): Promise<void> {
