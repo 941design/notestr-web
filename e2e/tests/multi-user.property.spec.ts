@@ -19,8 +19,10 @@ import { test, expect, type BrowserContext, type Page } from "@playwright/test";
 import * as fc from "fast-check";
 import { v4 as uuidv4 } from "uuid";
 
-import { E2E_BUNKER_URL } from "../fixtures/auth-helper.js";
-import { E2E_BUNKER_B_URL, USER_B_NPUB } from "../fixtures/auth-helper-b.js";
+import {
+  spawnSpecBunker,
+  type SpecBunkerHandle,
+} from "../fixtures/spec-bunker.js";
 import {
   authenticate,
   createGroup,
@@ -272,7 +274,7 @@ class InCommand implements fc.AsyncCommand<ModelState, RealSystem> {
     // A8: after In + B processes welcome, B has ≥1 leaf and sees the group
     // Brief settle to ensure B's key package is published on the relay
     await settle(r.pageA, 1000);
-    await inviteByNpub(r.pageA, USER_B_NPUB);
+    await inviteByNpub(r.pageA, bunkerB.npub);
     // Reload B to trigger the device-sync welcome fetch path — more reliable
     // than waiting for live subscription delivery after many accumulated groups.
     await r.pageB.reload();
@@ -844,7 +846,7 @@ class SwCommand implements fc.AsyncCommand<ModelState, RealSystem> {
     }
     m.lastSwitched = { context: "A", priorGroupIds };
 
-    const targetBunker = E2E_BUNKER_B_URL;
+    const targetBunker = bunkerB.bunkerUrl;
     await switchIdentity(r.pageA, targetBunker);
 
     // Update pubkeyA to reflect B's pubkey (switched context)
@@ -993,10 +995,23 @@ let skipMobile = false;
 // Cached pubkeys from the one-time beforeAll authentication
 let cachedPubkeyA: string;
 let cachedPubkeyB: string;
+// Per-spec bunkers — this spec issues ~10 fc.commands iterations × dozens of
+// pending invitations per run. Sharing the global bunkers means B's IDB
+// accumulates hundreds of pending invitations across the full suite, and the
+// in-spec welcome-fetch path (page reload + sync) gets buried before the
+// freshly-invited group surfaces in selectGroup's 60s window. Fresh keypairs
+// in beforeAll isolate this spec from cross-test invitation state.
+let bunkerA: SpecBunkerHandle;
+let bunkerB: SpecBunkerHandle;
 
 test.beforeAll(async ({ browser }, workerInfo) => {
   skipMobile = projectIsMobile(workerInfo.project);
   if (skipMobile) return;
+
+  [bunkerA, bunkerB] = await Promise.all([
+    spawnSpecBunker("mu-prop-A"),
+    spawnSpecBunker("mu-prop-B"),
+  ]);
 
   contextA = await browser.newContext();
   contextB = await browser.newContext();
@@ -1005,9 +1020,9 @@ test.beforeAll(async ({ browser }, workerInfo) => {
 
   // Authenticate once — reused across all fc.commands runs.
   // B must authenticate first to publish its key package before A can invite it.
-  await authenticate(pageB, E2E_BUNKER_B_URL);
+  await authenticate(pageB, bunkerB.bunkerUrl);
   await settle(pageB, 3000);
-  await authenticate(pageA, E2E_BUNKER_URL);
+  await authenticate(pageA, bunkerA.bunkerUrl);
 
   // Poll until test hooks are installed (useEffect runs slightly after pubkey-chip)
   await expect
@@ -1030,6 +1045,8 @@ test.beforeAll(async ({ browser }, workerInfo) => {
 test.afterAll(async () => {
   await contextA?.close();
   await contextB?.close();
+  await bunkerA?.dispose();
+  await bunkerB?.dispose();
 });
 
 test.describe.serial("[S5,S6,S7,S10,A7-A12,A14,C0] multi-user property", () => {
@@ -1093,7 +1110,7 @@ test.describe.serial("[S5,S6,S7,S10,A7-A12,A14,C0] multi-user property", () => {
           // starts with pageA authenticated as A (using cachedPubkeyA).
           // This avoids full re-auth between runs — only runs when Sw fired.
           if (model.pubkeyA !== cachedPubkeyA) {
-            await switchIdentity(real.pageA, E2E_BUNKER_URL);
+            await switchIdentity(real.pageA, bunkerA.bunkerUrl);
             model.pubkeyA = cachedPubkeyA;
             model.memberA = false;
             model.groupIdA = null;
