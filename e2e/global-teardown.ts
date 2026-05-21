@@ -6,11 +6,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const STATE_FILE = path.join(PROJECT_ROOT, 'e2e', '.state.json');
 
-function killPid(pid: number | undefined, name: string) {
+function killPid(pid: number | undefined, name: string, opts?: { group?: boolean }) {
   if (!pid) return;
+  // When `group: true`, sending the signal to -pid hits the entire process
+  // group (any helper children the binary forked). Serve is spawned with
+  // `detached: true` for exactly this reason — see global-setup.ts.
+  const target = opts?.group ? -pid : pid;
   try {
-    process.kill(pid, 'SIGTERM');
-    console.log(`[teardown] Killed ${name} (PID ${pid})`);
+    process.kill(target, 'SIGTERM');
+    console.log(`[teardown] Killed ${name} (${opts?.group ? 'group ' : 'PID '}${pid})`);
   } catch (err) {
     // ESRCH = no such process — the PID file is stale (e.g. previous run
     // was Ctrl+C'd). That's the desired outcome anyway, so don't warn.
@@ -31,7 +35,8 @@ export default async function globalTeardown() {
     killPid(bunkerPid, 'bunker-A');
     killPid(bunkerBPid, 'bunker-B');
     killPid(bunkerCPid, 'bunker-C');
-    killPid(servePid, 'serve');
+    // Serve is detached → kill the whole group so no listener can survive.
+    killPid(servePid, 'serve', { group: true });
   } catch (err) {
     console.warn('[teardown] Could not read state file (already cleaned up?):', err);
   }

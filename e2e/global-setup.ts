@@ -239,26 +239,38 @@ export default async function globalSetup() {
   //    kill discovered processes — see assertPortFree for rationale.
   await assertPortFree(3100);
 
-  // 4. Start the static file server. IMPORTANT: `stdio: 'ignore'` — do NOT
-  // pipe `serve`'s stdout/stderr into this process. `serve` logs one line
-  // per HTTP request and a full Playwright run makes hundreds of requests.
-  // If the pipes aren't drained faster than they're written (or any listener
-  // pauses the stream), the ~64KB kernel pipe buffer fills, `serve` blocks
-  // forever on `process.stdout.write`, and every subsequent test fails with
-  // `ERR_CONNECTION_REFUSED`. Redirecting to /dev/null at spawn time makes
-  // the problem structurally impossible. Readiness is detected via the HTTP
-  // health-check below instead of stdout scraping.
+  // 4. Start the static file server. Two structural rules:
+  //
+  // a) `stdio: 'ignore'` — do NOT pipe `serve`'s stdout/stderr into this
+  //    process. `serve` logs one line per HTTP request and a full Playwright
+  //    run makes hundreds. If the pipes aren't drained faster than they're
+  //    written (or any listener pauses the stream), the ~64KB kernel pipe
+  //    buffer fills, `serve` blocks forever on `process.stdout.write`, and
+  //    every subsequent test fails with `ERR_CONNECTION_REFUSED`. Readiness
+  //    is detected via the HTTP health-check below instead of stdout scraping.
+  //
+  // b) Spawn the serve binary DIRECTLY from `node_modules/.bin`, not via
+  //    `npx`. `npx serve` produces a 3-process chain (npx → `sh -c serve` →
+  //    `node serve`), and SIGTERM on the recorded npx PID does not propagate
+  //    to the actual port-holding node listener — it gets reparented to init
+  //    and keeps holding port 3100 across runs. Spawning the bin directly
+  //    means the recorded PID IS the listener. `detached: true` puts it in
+  //    its own process group so teardown can SIGTERM the group as a belt-and-
+  //    suspenders against future binaries that fork helpers of their own.
   console.log('[setup] Starting serve on port 3100...');
   const serveProc = spawn(
-    'npx',
-    ['serve', 'out', '-l', '3100', '--no-clipboard'],
+    path.join(PROJECT_ROOT, 'node_modules', '.bin', 'serve'),
+    ['out', '-l', '3100', '--no-clipboard'],
     {
       cwd: PROJECT_ROOT,
       stdio: 'ignore',
       env: process.env,
-      detached: false,
+      detached: true,
     },
   );
+  // Allow the parent (this Node process) to exit without waiting on serve.
+  // We still control its lifetime explicitly via the teardown SIGTERM.
+  serveProc.unref();
   serveProc.on('error', (err) => {
     console.error('[setup] serve spawn error:', err);
   });
