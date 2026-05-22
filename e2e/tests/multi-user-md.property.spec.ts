@@ -240,6 +240,23 @@ class AttachA2Command_MD implements fc.AsyncCommand<ModelStateMD, RealSystemMD> 
     // 2. Wait for A2's welcome to land — poll A1's page until leaf count >= 2.
     await awaitDeviceJoin(r.pageA2, r.pageA1, m.groupId!);
 
+    // 2a. Reciprocal sync: wait until A2 actually has the group locally.
+    //    awaitDeviceJoin only proves A1 saw A2's Welcome-targeted leaf land in
+    //    the ratchet tree; A2's local welcome-processing may still be in
+    //    flight when this command returns. assertA15_MD reads A2's view of
+    //    the member set immediately after the chain, so without this poll
+    //    the chain can pass while leaving membersA2 = [] on the side A1
+    //    thinks just joined. Same idiom as awaitDeviceJoin (poll + 30 s cap).
+    await expect
+      .poll(
+        async () => {
+          const members = await getGroupMembersHook(r.pageA2, m.groupId!);
+          return members?.length ?? 0;
+        },
+        { timeout: 30000 },
+      )
+      .toBeGreaterThanOrEqual(1);
+
     // 3. Record A2 as a member.
     m.membersA2 = true;
 
