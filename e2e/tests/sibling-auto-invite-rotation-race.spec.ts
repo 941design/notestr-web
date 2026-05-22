@@ -40,7 +40,10 @@
 
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
 
-import { E2E_BUNKER_URL } from "../fixtures/auth-helper.js";
+import {
+  spawnSpecBunker,
+  type SpecBunkerHandle,
+} from "../fixtures/spec-bunker.js";
 import {
   authenticate,
   createGroup,
@@ -68,12 +71,19 @@ test.describe.serial(
     let context2: BrowserContext;
     let page1: Page;
     let page2: Page;
+    // Per-spec bunker — this spec asserts the auto-invite freshness path
+    // where page2's KP is the only sibling KP on the relay under this
+    // pubkey. With the shared global bunker A, prior tests' KPs under the
+    // same pubkey become ghost siblings and the freshness assertion fails.
+    let bunker: SpecBunkerHandle;
 
     let skipMobile = false;
 
     test.beforeAll(async ({ browser }, workerInfo) => {
       skipMobile = !!workerInfo.project.use.isMobile;
       if (skipMobile) return;
+
+      bunker = await spawnSpecBunker("sibling-fresh");
 
       context1 = await browser.newContext();
       context2 = await browser.newContext();
@@ -84,6 +94,7 @@ test.describe.serial(
     test.afterAll(async () => {
       await context1?.close();
       await context2?.close();
+      await bunker?.dispose();
     });
 
     // -------------------------------------------------------------------------
@@ -96,11 +107,11 @@ test.describe.serial(
 
       // page2 (sibling) authenticates first — its KP must be visible on the
       // relay before the auto-invite scan fires on page1.
-      await authenticate(page2, E2E_BUNKER_URL, SLOT_2);
+      await authenticate(page2, bunker.bunkerUrl, SLOT_2);
       await settle(page2, 3000);
 
       // page1 (admin) authenticates second.
-      await authenticate(page1, E2E_BUNKER_URL, SLOT_1);
+      await authenticate(page1, bunker.bunkerUrl, SLOT_1);
       await settle(page1, 3000);
     });
 
