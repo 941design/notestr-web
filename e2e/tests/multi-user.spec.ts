@@ -27,8 +27,10 @@
 import { type BrowserContext, type Page } from '@playwright/test';
 
 import { test, expect } from '@playwright/test';
-import { E2E_BUNKER_URL } from '../fixtures/auth-helper.js';
-import { E2E_BUNKER_B_URL, USER_B_NPUB } from '../fixtures/auth-helper-b.js';
+import {
+  spawnSpecBunker,
+  type SpecBunkerHandle,
+} from '../fixtures/spec-bunker.js';
 import { clearAppState } from '../fixtures/cleanup.js';
 
 // Helper: authenticate in a given page via bunker URL
@@ -47,6 +49,9 @@ let contextA: BrowserContext;
 let contextB: BrowserContext;
 let pageA: Page;
 let pageB: Page;
+// Per-spec bunkers — see e2e/fixtures/spec-bunker.ts.
+let bunkerA: SpecBunkerHandle;
+let bunkerB: SpecBunkerHandle;
 let skipMobile = false;
 
 // Stable identifiers shared across the sibling describes.
@@ -60,6 +65,11 @@ test.beforeAll(async ({ browser }, workerInfo) => {
   skipMobile = !!workerInfo.project.use.isMobile;
   if (skipMobile) return;
 
+  [bunkerA, bunkerB] = await Promise.all([
+    spawnSpecBunker('multi-user-A'),
+    spawnSpecBunker('multi-user-B'),
+  ]);
+
   // Create two isolated browser contexts (separate storage)
   contextA = await browser.newContext();
   contextB = await browser.newContext();
@@ -70,6 +80,8 @@ test.beforeAll(async ({ browser }, workerInfo) => {
 test.afterAll(async () => {
   await contextA?.close();
   await contextB?.close();
+  await bunkerA?.dispose();
+  await bunkerB?.dispose();
 });
 
 // Multi-user MLS tests are inherently slow (crypto + relay roundtrips)
@@ -82,12 +94,12 @@ test.describe.serial('multi-user setup', () => {
     test.skip(skipMobile, SKIP_MOBILE_REASON);
     // User B must authenticate first so their key package is published
     // to the relay before User A tries to invite them.
-    await authenticate(pageB, E2E_BUNKER_B_URL);
+    await authenticate(pageB, bunkerB.bunkerUrl);
 
     // Wait for key package to be published (MarmotProvider publishes on init)
     await pageB.waitForTimeout(3000);
 
-    await authenticate(pageA, E2E_BUNKER_URL);
+    await authenticate(pageA, bunkerA.bunkerUrl);
   });
 
   test('User A creates group and invites User B', async () => {
@@ -100,7 +112,7 @@ test.describe.serial('multi-user setup', () => {
     await expect(sidebarA.getByText(GROUP_NAME)).toBeVisible({ timeout: 30000 });
 
     // Invite User B by npub
-    await pageA.getByPlaceholder('npub1...').fill(USER_B_NPUB);
+    await pageA.getByPlaceholder('npub1...').fill(bunkerB.npub);
     await pageA.getByRole('button', { name: 'Invite' }).click();
 
     // Wait for invite to complete — input clears on success
