@@ -9,17 +9,33 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { authenticateViaBunker } from '../fixtures/auth-helper.js';
-import { clearAppState } from '../fixtures/cleanup.js';
+import {
+  spawnSpecBunker,
+  type SpecBunkerHandle,
+} from '../fixtures/spec-bunker.js';
+import { authenticate } from '../fixtures/two-party.js';
 
 test.describe('Sidebar visibility (mobile drawer)', () => {
+  // Per-spec bunker — the global bunker A accumulates pending invitations
+  // across the suite (33 by the time this test runs in full-suite order),
+  // which surface as a banner above the header and push headerTop off 0,
+  // failing the layout assertion. A fresh-keypair bunker has no
+  // accumulated invitation state.
+  let bunker: SpecBunkerHandle;
+
+  test.beforeAll(async () => {
+    bunker = await spawnSpecBunker('sidebar-vis');
+  });
+
+  test.afterAll(async () => {
+    await bunker?.dispose();
+  });
+
   test.beforeEach(async ({ page }) => {
     // Force a short mobile viewport so the responsive CSS picks the drawer
     // layout and the bug surface is visible.
     await page.setViewportSize({ width: 390, height: 500 });
-    await page.goto('/');
-    await clearAppState(page);
-    await authenticateViaBunker(page);
+    await authenticate(page, bunker.bunkerUrl);
   });
 
   test('open drawer does not overlap the page header', async ({ page }) => {
