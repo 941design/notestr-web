@@ -17,3 +17,7 @@ e2e/.bunker-keys.json
 .claude/worktrees/
 tsconfig.tsbuildinfo
 screenshot.png
+
+# Mutation testing (Stryker)
+reports/mutation/
+.stryker-tmp/

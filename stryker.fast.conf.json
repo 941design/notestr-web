@@ -1,0 +1,28 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Profile: fast. Smallest cohesive scope — pure config/lib helpers with their own unit tests. Wall time on dev hardware: ~15s. Use for setup-validation and quick re-runs after a change to a config helper.",
+  "packageManager": "npm",
+  "testRunner": "vitest",
+  "vitest": {
+    "configFile": "vitest.config.ts"
+  },
+  "coverageAnalysis": "perTest",
+  "concurrency": 4,
+  "mutate": [
+    "src/config/base-path.ts",
+    "src/config/pwa.ts",
+    "src/config/relays.ts",
+    "src/lib/nostr.ts"
+  ],
+  "reporters": ["html", "json", "progress", "clear-text"],
+  "htmlReporter": {
+    "fileName": "reports/mutation/fast/index.html"
+  },
+  "jsonReporter": {
+    "fileName": "reports/mutation/fast/mutation.json"
+  },
+  "tempDirName": ".stryker-tmp/fast",
+  "timeoutMS": 60000,
+  "disableTypeChecks": "src/**/*.{ts,tsx}",
+  "checkers": []
+}

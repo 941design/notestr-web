@@ -1,0 +1,32 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Profile: deep. All Marmot/MLS lifecycle modules with their own tests. Wall time on dev hardware: ~2 min. Use for the heavy protocol-layer audit; expect to break this into per-file passes for classification.",
+  "packageManager": "npm",
+  "testRunner": "vitest",
+  "vitest": {
+    "configFile": "vitest.config.ts"
+  },
+  "coverageAnalysis": "perTest",
+  "concurrency": 4,
+  "mutate": [
+    "src/marmot/device-store.ts",
+    "src/marmot/event-signer-ndk-adapter.ts",
+    "src/marmot/failed-welcomes.ts",
+    "src/marmot/forget-device.ts",
+    "src/marmot/forgotten-slots.ts",
+    "src/marmot/ingest-queue.ts",
+    "src/marmot/mls-trace.ts",
+    "src/marmot/per-leaf-remove.ts"
+  ],
+  "reporters": ["html", "json", "progress", "clear-text"],
+  "htmlReporter": {
+    "fileName": "reports/mutation/deep/index.html"
+  },
+  "jsonReporter": {
+    "fileName": "reports/mutation/deep/mutation.json"
+  },
+  "tempDirName": ".stryker-tmp/deep",
+  "timeoutMS": 180000,
+  "disableTypeChecks": "src/**/*.{ts,tsx}",
+  "checkers": []
+}

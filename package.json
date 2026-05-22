@@ -9,6 +9,10 @@
     "test": "npm run test:unit && npm run test:export",
     "test:unit": "vitest run",
     "test:export": "node ./scripts/verify-static-export.mjs",
+    "mutation:fast": "stryker run stryker.fast.conf.json",
+    "mutation:cohesive": "stryker run stryker.cohesive.conf.json",
+    "mutation:deep": "stryker run stryker.deep.conf.json",
+    "mutation:baseline": "stryker run stryker.baseline.conf.json",
     "relay:up": "docker compose up -d",
     "relay:down": "docker compose down"
   },
@@ -43,11 +47,13 @@
   },
   "devDependencies": {
     "@ducanh2912/next-pwa": "^10.2.9",
-    "fast-check": "^3.23.0",
     "@playwright/test": "^1.58.2",
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/uuid": "^10.0.0",
+    "fast-check": "^3.23.0",
     "serve": "^14.2.6",
     "typescript": "^5.9.3",
     "vitest": "^4.1.0"

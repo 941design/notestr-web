@@ -2,7 +2,7 @@
 -include .env
 export
 
-.PHONY: help build test test-property dev relay-up relay-down clean deploy deploy-check deploy-dryrun e2e-up e2e-down e2e-install e2e ssl-cert
+.PHONY: help build test test-property dev relay-up relay-down clean deploy deploy-check deploy-dryrun e2e-up e2e-down e2e-install e2e ssl-cert mutation-fast mutation-cohesive mutation-deep mutation-baseline
 
 # Default target
 .DEFAULT_GOAL := help
@@ -47,6 +47,30 @@ test: node_modules ## Run unit and export verification tests
 
 test-property: node_modules ## Run property-based tests with high numRuns (FAST_CHECK_NUM_RUNS=10000)
 	FAST_CHECK_NUM_RUNS=10000 npx vitest run --passWithNoTests src/store/task-reducer.property.test.ts src/store/multi-client.property.test.ts
+
+# =============================================================================
+# Mutation testing (Stryker + Vitest runner)
+# =============================================================================
+# Audits whether unit tests actually assert against behavior or merely
+# touch the code. Reports land under reports/mutation/<profile>/.
+#
+# Profiles:
+#   fast       — pure config/lib helpers; setup-validation + quick re-runs
+#   cohesive   — store + reducer + helpers; module-by-module dives
+#   deep       — Marmot/MLS lifecycle; the heavy protocol-layer audit
+#   baseline   — every tested non-React TS module; one-shot project baseline
+
+mutation-fast: node_modules ## Mutation pass on config/lib helpers (~15s on dev hardware)
+	npm run mutation:fast
+
+mutation-cohesive: node_modules ## Mutation pass on store + reducer + helpers (~1 min)
+	npm run mutation:cohesive
+
+mutation-deep: node_modules ## Mutation pass on Marmot/MLS modules (~2 min)
+	npm run mutation:deep
+
+mutation-baseline: node_modules ## Mutation pass on every tested non-React TS module (~2 min)
+	npm run mutation:baseline
 
 dev: node_modules relay-up clean ## Start development server
 	npx next dev --port 3000 --hostname 0.0.0.0
