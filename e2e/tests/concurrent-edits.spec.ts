@@ -21,8 +21,10 @@
 
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
 
-import { E2E_BUNKER_URL } from "../fixtures/auth-helper.js";
-import { E2E_BUNKER_B_URL, USER_B_NPUB } from "../fixtures/auth-helper-b.js";
+import {
+  spawnSpecBunker,
+  type SpecBunkerHandle,
+} from "../fixtures/spec-bunker.js";
 import {
   authenticate,
   createGroup,
@@ -40,6 +42,12 @@ let contextA: BrowserContext;
 let contextB: BrowserContext;
 let pageA: Page;
 let pageB: Page;
+// Per-spec bunkers — see e2e/fixtures/spec-bunker.ts. Sharing the global
+// bunkers across all suite specs causes A's KP rotations and B's pending
+// invitations to bleed between specs, which surfaces as flaky welcome /
+// task-delivery timing in the full-suite run.
+let bunkerA: SpecBunkerHandle;
+let bunkerB: SpecBunkerHandle;
 let skipMobile = false;
 let pubkeyA: string;
 let pubkeyB: string;
@@ -51,6 +59,10 @@ const TASK_TITLE = `Concurrent task ${Date.now()}`;
 test.beforeAll(async ({ browser }, workerInfo) => {
   skipMobile = !!workerInfo.project.use.isMobile;
   if (skipMobile) return;
+  [bunkerA, bunkerB] = await Promise.all([
+    spawnSpecBunker("concurrent-A"),
+    spawnSpecBunker("concurrent-B"),
+  ]);
   contextA = await browser.newContext();
   contextB = await browser.newContext();
   pageA = await contextA.newPage();
@@ -60,6 +72,8 @@ test.beforeAll(async ({ browser }, workerInfo) => {
 test.afterAll(async () => {
   await contextA?.close();
   await contextB?.close();
+  await bunkerA?.dispose();
+  await bunkerB?.dispose();
 });
 
 test.describe.serial("concurrent-edits setup", () => {
@@ -67,15 +81,15 @@ test.describe.serial("concurrent-edits setup", () => {
 
   test("auth, group, invite, seed task", async () => {
     test.skip(skipMobile, SKIP_MOBILE_REASON);
-    await authenticate(pageB, E2E_BUNKER_B_URL);
+    await authenticate(pageB, bunkerB.bunkerUrl);
     await settle(pageB, 3000);
-    await authenticate(pageA, E2E_BUNKER_URL);
+    await authenticate(pageA, bunkerA.bunkerUrl);
 
     pubkeyA = await getPubkeyHex(pageA);
     pubkeyB = await getPubkeyHex(pageB);
 
     await createGroup(pageA, GROUP_NAME);
-    await inviteByNpub(pageA, USER_B_NPUB);
+    await inviteByNpub(pageA, bunkerB.npub);
 
     taskId = crypto.randomUUID();
     const now = Math.floor(Date.now() / 1000);

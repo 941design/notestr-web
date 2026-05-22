@@ -12,8 +12,10 @@
 import { type BrowserContext, type Page } from "@playwright/test";
 
 import { test, expect } from "@playwright/test";
-import { E2E_BUNKER_URL, E2E_BUNKER_PUBKEY_HEX } from "../fixtures/auth-helper.js";
-import { E2E_BUNKER_B_URL, USER_B_NPUB } from "../fixtures/auth-helper-b.js";
+import {
+  spawnSpecBunker,
+  type SpecBunkerHandle,
+} from "../fixtures/spec-bunker.js";
 import { clearAppState } from "../fixtures/cleanup.js";
 import { quiesceFor } from "../fixtures/two-party.js";
 
@@ -25,6 +27,13 @@ let contextB: BrowserContext;
 let pageA: Page;
 let pageA2: Page;
 let pageB: Page;
+// Per-spec bunkers — bunker A is shared between pageA and pageA2 (sibling
+// devices, same key, different slot). Sharing the global bunkers across all
+// suite specs leaves prior KPs and pending invitations on the relay under
+// these pubkeys, which surfaces here as the AC-REG-4 5-second window timing
+// out in the full-suite ordering.
+let bunkerA: SpecBunkerHandle;
+let bunkerB: SpecBunkerHandle;
 
 const GROUP_NAME = `F2-Regression ${Date.now()}`;
 const TASK_TITLE = `F2-task ${Date.now()}`;
@@ -41,6 +50,10 @@ async function authenticate(page: Page, bunkerUrl: string): Promise<void> {
 
 test.beforeAll(async ({ browser }, workerInfo) => {
   if (workerInfo.project.use.isMobile) return;
+  [bunkerA, bunkerB] = await Promise.all([
+    spawnSpecBunker("f2-A"),
+    spawnSpecBunker("f2-B"),
+  ]);
   contextA = await browser.newContext();
   contextA2 = await browser.newContext();
   contextB = await browser.newContext();
@@ -53,6 +66,8 @@ test.afterAll(async () => {
   await contextA?.close();
   await contextA2?.close();
   await contextB?.close();
+  await bunkerA?.dispose();
+  await bunkerB?.dispose();
 });
 
 test("F2 regression — auto-invite race: B sees task within 5 s", async ({}, workerInfo) => {
@@ -61,21 +76,21 @@ test("F2 regression — auto-invite race: B sees task within 5 s", async ({}, wo
   test.setTimeout(120_000);
 
   // Step 1: Authenticate sibling device (pageA2) → publishes its kind-30443 KP
-  await authenticate(pageA2, E2E_BUNKER_URL);
+  await authenticate(pageA2, bunkerA.bunkerUrl);
   await pageA2.waitForTimeout(4000);
 
   // Step 2: Authenticate User B
-  await authenticate(pageB, E2E_BUNKER_B_URL);
+  await authenticate(pageB, bunkerB.bunkerUrl);
   await pageB.waitForTimeout(2000);
 
   // Step 3: Authenticate User A (main context)
-  await authenticate(pageA, E2E_BUNKER_URL);
+  await authenticate(pageA, bunkerA.bunkerUrl);
 
   // Step 4: A creates group and invites B
   await pageA.getByPlaceholder("Group name").first().fill(GROUP_NAME);
   await pageA.getByRole("button", { name: "Create", exact: true }).first().click();
   await expect(pageA.locator("aside").getByText(GROUP_NAME)).toBeVisible({ timeout: 30000 });
-  await pageA.getByPlaceholder("npub1...").fill(USER_B_NPUB);
+  await pageA.getByPlaceholder("npub1...").fill(bunkerB.npub);
   await pageA.getByRole("button", { name: "Invite" }).click();
   await expect(pageA.getByPlaceholder("npub1...")).toHaveValue("", { timeout: 30000 });
 
@@ -94,7 +109,7 @@ test("F2 regression — auto-invite race: B sees task within 5 s", async ({}, wo
       const events = await fn([relayUrl], [{ kinds: [30443], authors: [pubkeyHex] }]);
       return events[0] ?? null;
     },
-    { pubkeyHex: E2E_BUNKER_PUBKEY_HEX, relayUrl: RELAY_URL },
+    { pubkeyHex: bunkerA.pubkeyHex, relayUrl: RELAY_URL },
   );
   if (!siblingKpEvent) throw new Error("No kind-30443 KP found — sibling context may not have published");
 

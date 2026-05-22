@@ -26,8 +26,10 @@ import { test, expect, type BrowserContext, type Page } from "@playwright/test";
 import * as fc from "fast-check";
 import { v4 as uuidv4 } from "uuid";
 
-import { E2E_BUNKER_URL } from "../fixtures/auth-helper.js";
-import { E2E_BUNKER_B_URL, USER_B_NPUB } from "../fixtures/auth-helper-b.js";
+import {
+  spawnSpecBunker,
+  type SpecBunkerHandle,
+} from "../fixtures/spec-bunker.js";
 import {
   authenticate,
   createGroup,
@@ -232,7 +234,7 @@ class AttachA2Command_MD implements fc.AsyncCommand<ModelStateMD, RealSystemMD> 
     // 1. Authenticate pageA2 with explicit slot SLOT_A2 (AC-MD-ATTACH-2).
     //    SLOT_A2 = "A2" — distinct from SLOT_A1 = "A1" so each context
     //    publishes its own KP to the relay, yielding two leaves for pubkeyA.
-    await authenticate(r.pageA2, E2E_BUNKER_URL, SLOT_A2);
+    await authenticate(r.pageA2, bunkerA.bunkerUrl, SLOT_A2);
 
     // 2. Wait for A2's welcome to land — poll A1's page until leaf count >= 2.
     await awaitDeviceJoin(r.pageA2, r.pageA1, m.groupId!);
@@ -333,7 +335,7 @@ class InCommand_MD implements fc.AsyncCommand<ModelStateMD, RealSystemMD> {
   async run(m: ModelStateMD, r: RealSystemMD): Promise<void> {
     // Brief settle so B's key package is indexed on the relay before A1 invites.
     await settle(r.pageA1, 1000);
-    await inviteByNpub(r.pageA1, USER_B_NPUB);
+    await inviteByNpub(r.pageA1, bunkerB.npub);
 
     // Reload B — triggers the device-sync welcome fetch path, which is more
     // reliable than waiting for live subscription delivery after many groups.
@@ -1225,10 +1227,22 @@ let skipMobile = false;
  *  A2 reuses cachedPubkeyA — there is no cachedPubkeyA2 (AC-MD-FILE-6). */
 let cachedPubkeyA: string;
 let cachedPubkeyB: string;
+// Per-spec bunkers — sharing the global bunkers across all suite specs leaks
+// KPs and pending invitations between unrelated specs. A15 asserts member-set
+// equality between A1 and A2 (same pubkey, two devices) and the pollution
+// surfaces here as transient divergence in the full-suite ordering. Same
+// pattern as multi-user.property.spec.ts.
+let bunkerA: SpecBunkerHandle;
+let bunkerB: SpecBunkerHandle;
 
 test.beforeAll(async ({ browser }, workerInfo) => {
   skipMobile = projectIsMobile(workerInfo.project);
   if (skipMobile) return;
+
+  [bunkerA, bunkerB] = await Promise.all([
+    spawnSpecBunker("mu-md-A"),
+    spawnSpecBunker("mu-md-B"),
+  ]);
 
   contextA1 = await browser.newContext();
   contextA2 = await browser.newContext();
@@ -1239,13 +1253,13 @@ test.beforeAll(async ({ browser }, workerInfo) => {
 
   // B authenticates first so its key package is on the relay before A1
   // calls InCommand_MD (AC-MD-FILE-8).
-  await authenticate(pageB, E2E_BUNKER_B_URL);
+  await authenticate(pageB, bunkerB.bunkerUrl);
   await settle(pageB, 3000);
 
   // A1 authenticates with explicit slot SLOT_A1 (AC-MD-FILE-7).
   // A2 is NOT authenticated here — that is deferred to AttachA2Command_MD
   // (AC-MD-FILE-5).
-  await authenticate(pageA1, E2E_BUNKER_URL, SLOT_A1);
+  await authenticate(pageA1, bunkerA.bunkerUrl, SLOT_A1);
 
   // Poll until test hooks are installed (useEffect runs slightly after
   // the pubkey-chip appears in the authenticated UI).
@@ -1271,6 +1285,8 @@ test.afterAll(async () => {
   await contextA1?.close();
   await contextA2?.close();
   await contextB?.close();
+  await bunkerA?.dispose();
+  await bunkerB?.dispose();
 });
 
 // ---------------------------------------------------------------------------
