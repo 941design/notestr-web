@@ -30,6 +30,7 @@ import {
   spawnSpecBunker,
   type SpecBunkerHandle,
 } from "../fixtures/spec-bunker.js";
+import { clearAppState } from "../fixtures/cleanup.js";
 import {
   authenticate,
   createGroup,
@@ -1339,8 +1340,33 @@ test.describe.serial("[A15,C0,S5,S6,S10] multi-device property", () => {
       fc.asyncProperty(
         fc.commands(commands, { maxCommands: 8 }),
         async (cmds) => {
-          // Reset only the model per run — browser authentication persists
-          // across runs (same pattern as 2-party file lines 1076-1078).
+          // Per-iteration identity reset. authenticate() internally calls
+          // clearAppState so B and A1's IDB stores are dropped before re-
+          // authenticating with the SAME per-spec bunker keys (kind-30443 KPs
+          // on the relay are NIP-33-replaceable under the same pubkey, so
+          // this does not enlarge relay-side state). pageA2 starts each
+          // iteration UN-authenticated — AttachA2Command_MD owns its lazy
+          // auth — so we clearAppState on it directly to drop any joined-
+          // group state left by a prior Attach.
+          await authenticate(real.pageB, bunkerB.bunkerUrl);
+          await settle(real.pageB, 3000);
+          await authenticate(real.pageA1, bunkerA.bunkerUrl, SLOT_A1);
+          await real.pageA2.goto("/");
+          await clearAppState(real.pageA2);
+          await real.pageA2.goto("/");
+          await expect
+            .poll(
+              () => real.pageA1.evaluate(() => typeof (window as { __notestrTestPubkey?: unknown }).__notestrTestPubkey === "function"),
+              { timeout: 10000 },
+            )
+            .toBe(true);
+          await expect
+            .poll(
+              () => real.pageB.evaluate(() => typeof (window as { __notestrTestPubkey?: unknown }).__notestrTestPubkey === "function"),
+              { timeout: 10000 },
+            )
+            .toBe(true);
+
           // Each run creates a new uniquely-named group via CgCommand_MD so
           // leftover groups from prior runs are ignored.
           const model = new ModelStateMD();

@@ -1096,19 +1096,45 @@ test.describe.serial("[S5,S6,S7,S10,A7-A12,A14,C0] multi-user property", () => {
       fc.asyncProperty(
         fc.commands(commands, { maxCommands: 10 }),
         async (cmds) => {
-          // Reset only the model per run — browser authentication persists.
-          // Each run creates a new uniquely-named group so leftover groups from
-          // prior runs are ignored (they are not in the model and commands have
-          // check() guards that only operate on the current model's group).
+          // Per-iteration identity reset. authenticate() internally calls
+          // clearAppState so every notestr-* IDB store is dropped before the
+          // page re-authenticates with the SAME per-spec bunker keys (kind-
+          // 30443 KPs on the relay are NIP-33-replaceable under the same
+          // pubkey, so this does not enlarge relay-side state). The reset
+          // eliminates within-spec pending-invitations and joined-group
+          // accumulation that otherwise grows linearly with iteration count
+          // and tips the InCommand selectGroup wait past its 60 s timeout
+          // around iteration ~17 in long fc.commands runs.
+          await authenticate(real.pageB, bunkerB.bunkerUrl);
+          await settle(real.pageB, 3000);
+          await authenticate(real.pageA, bunkerA.bunkerUrl);
+          await expect
+            .poll(
+              () => real.pageA.evaluate(() => typeof window.__notestrTestPubkey === "function"),
+              { timeout: 10000 },
+            )
+            .toBe(true);
+          await expect
+            .poll(
+              () => real.pageB.evaluate(() => typeof window.__notestrTestPubkey === "function"),
+              { timeout: 10000 },
+            )
+            .toBe(true);
+
+          // Each run creates a new uniquely-named group so leftover groups
+          // from prior runs are ignored (they are not in the model and
+          // commands have check() guards that only operate on the current
+          // model's group).
           const model = new ModelState();
           model.pubkeyA = cachedPubkeyA;
           model.pubkeyB = cachedPubkeyB;
 
           await fc.asyncModelRun(() => ({ model, real }), cmds);
 
-          // If SwCommand changed pageA's identity, restore it so the next run
-          // starts with pageA authenticated as A (using cachedPubkeyA).
-          // This avoids full re-auth between runs — only runs when Sw fired.
+          // SwCommand-end restoration is now redundant — the next iteration's
+          // reset above re-authenticates real.pageA with bunkerA regardless
+          // of any mid-run identity swap. Kept for the last iteration so the
+          // post-chain invariant assertions see real.pageA as identity A.
           if (model.pubkeyA !== cachedPubkeyA) {
             await switchIdentity(real.pageA, bunkerA.bunkerUrl);
             model.pubkeyA = cachedPubkeyA;
