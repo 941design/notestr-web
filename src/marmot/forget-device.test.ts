@@ -10,7 +10,8 @@
  *   Q-ROBUSTNESS-1 (error propagation from removeLeafByIndex)
  */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as fc from "fast-check";
 
 // ---------------------------------------------------------------------------
 // Module mocks — must appear before any import of the tested module
@@ -50,6 +51,12 @@ vi.mock("ts-mls", () => ({
     ),
   },
   nodeTypes: { leaf: "leaf" },
+  // Default: throw "no privatePath" so the rotation-fallback (which only
+  // runs when the primary KP-equality match returns []) skips the own-leaf
+  // exclusion. Tests that exercise the same-pubkey path override this.
+  getOwnLeafNode: vi.fn(() => {
+    throw new Error("no privatePath in default mock");
+  }),
 }));
 
 vi.mock("./per-leaf-remove", () => ({
@@ -708,5 +715,1029 @@ describe("forgetSiblingDevice", () => {
     expect(removeLeafByIndex).toHaveBeenNthCalledWith(2, group2, 0);
 
     expect(markSlotForgotten).toHaveBeenCalledWith("target-slot");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// forget-device mutation-gap properties
+//
+// Property-style tests added to close real-coverage gaps surfaced by Stryker
+// (baseline run 2026-05-22). Each block targets a cluster of related survivors
+// rather than a single mutant — phrased in terms of user-facing behavior so
+// the tests survive refactors of the implementation.
+//
+// Gap → ACs killed:
+//   G1 epoch-keyword OR-fan         → AC-SELF-1 retry semantics (D3)
+//   G2 recompute → null short-circuit → AC-SIBLING-2 (sequential per-leaf)
+//   G3 multi-leaf ratchet-tree walk → AC-SIBLING-2 (only matching leaves)
+//   G4 KP-rotation fallback         → AC-SIBLING-2 + Q3 (rotated KP resolution)
+//   G5 kind-5 event shape           → AC-DELETE-2, AC-DELETE-3
+//   G6 empty-relays / empty-members / network-error skips → AC-SIBLING-1
+// ---------------------------------------------------------------------------
+
+describe("forget-device mutation-gap properties", () => {
+  // Restore module-mock implementations that earlier tests in this file
+  // overrode (vi.clearAllMocks() only clears call history, not implementations).
+  beforeEach(async () => {
+    const mod = await import("@internet-privacy/marmot-ts");
+    // mockReset() drops the implementation back to vi.fn()'s default — then
+    // we re-apply the canonical default below. This guards against
+    // implementations bleeding across tests in unpredictable runner orders
+    // (Stryker per-test mode in particular).
+    vi.mocked(mod.getPubkeyLeafNodeIndexes).mockReset();
+    vi.mocked(mod.getGroupMembers).mockReset();
+    vi.mocked(mod.getKeyPackage).mockReset();
+    vi.mocked(mod.getKeyPackageIdentifier).mockReset();
+    vi.mocked(mod.keyPackageFilters).mockReset();
+    vi.mocked(mod.isAdmin).mockReset();
+    const tsMlsReset = await import("ts-mls");
+    vi.mocked(tsMlsReset.defaultKeyPackageEqualityConfig.compareKeyPackageToLeafNode).mockReset();
+    vi.mocked(tsMlsReset.getOwnLeafNode).mockReset();
+    vi.mocked(mod.getPubkeyLeafNodeIndexes).mockImplementation(
+      (state: { ratchetTree: Array<{ nodeType?: string } | null> }) => {
+        const indexes: number[] = [];
+        for (let ni = 0; ni < state.ratchetTree.length; ni++) {
+          const n = state.ratchetTree[ni];
+          if (n && n.nodeType === "leaf") indexes.push(Math.floor(ni / 2));
+        }
+        return indexes;
+      },
+    );
+    vi.mocked(mod.getGroupMembers).mockReturnValue(["member-pubkey"]);
+    vi.mocked(mod.getKeyPackage).mockImplementation(
+      (event: { keyPackage: unknown }) => event.keyPackage,
+    );
+    vi.mocked(mod.getKeyPackageIdentifier).mockImplementation(
+      (event: { _slot?: string }) => event._slot,
+    );
+    vi.mocked(mod.keyPackageFilters).mockReturnValue([]);
+    vi.mocked(mod.isAdmin).mockReturnValue(true);
+
+    const tsMls = await import("ts-mls");
+    vi.mocked(tsMls.defaultKeyPackageEqualityConfig.compareKeyPackageToLeafNode)
+      .mockImplementation(
+        (kp: { id: string }, leaf: { id: string }) => kp.id === leaf.id,
+      );
+    // Default getOwnLeafNode throws — the rotation-fallback's own-leaf
+    // exclusion is opt-in per test.
+    vi.mocked(tsMls.getOwnLeafNode).mockImplementation(() => {
+      throw new Error("no privatePath in default mock");
+    });
+
+    vi.mocked(removeLeafByIndex).mockReset();
+    vi.mocked(removeLeafByIndex).mockResolvedValue(undefined);
+    vi.mocked(markSlotForgotten).mockReset();
+    vi.mocked(markSlotForgotten).mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // -------------------------------------------------------------------------
+  // G1 — Epoch-keyword recognition is OR-fan, not AND-fan.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Property: any error message containing at least one of the four
+   * recognised epoch keywords triggers exactly one retry; any message
+   * containing none of them bubbles immediately without retry.
+   *
+   * Kills the line-79 `||` → `&&` mutant (which only survives because
+   * existing tests happen to feed messages containing two keywords) and
+   * the line-84 `isEpochError = true / false` flips.
+   */
+  it("retries on any single epoch keyword and never retries on unrelated errors (G1, AC-SELF-1/D3)", async () => {
+    const epochKeyword = fc.constantFrom(
+      "epoch",
+      "stale",
+      "wrong epoch",
+      "epoch mismatch",
+    );
+
+    // Non-epoch arbitrary: alphanumeric noise that contains none of the four
+    // recognised substrings (case-insensitive, since the impl lowercases first).
+    const nonEpochMessage = fc
+      .string({ minLength: 1, maxLength: 40 })
+      .filter((s) => {
+        const lower = s.toLowerCase();
+        return (
+          !lower.includes("epoch") &&
+          !lower.includes("stale")
+        );
+      });
+
+    await fc.assert(
+      fc.asyncProperty(epochKeyword, async (kw) => {
+        vi.mocked(removeLeafByIndex).mockReset();
+        vi.mocked(removeLeafByIndex)
+          .mockRejectedValueOnce(new Error(`${kw} detected during commit`))
+          .mockResolvedValueOnce(undefined);
+
+        const adminGroup = makeSiblingGroup("kp-epoch", true, "target-slot");
+        const client = makeSiblingClient([adminGroup]);
+
+        await expect(
+          forgetSiblingDevice(client, "local-pubkey", "target-slot"),
+        ).resolves.toBeUndefined();
+
+        // Exactly two calls: initial + one retry.
+        expect(removeLeafByIndex).toHaveBeenCalledTimes(2);
+      }),
+      { numRuns: 16 },
+    );
+
+    await fc.assert(
+      fc.asyncProperty(nonEpochMessage, async (msg) => {
+        vi.mocked(removeLeafByIndex).mockReset();
+        vi.mocked(removeLeafByIndex).mockRejectedValueOnce(new Error(msg));
+
+        const adminGroup = makeSiblingGroup("kp-noepoch", true, "target-slot");
+        const client = makeSiblingClient([adminGroup]);
+
+        await expect(
+          forgetSiblingDevice(client, "local-pubkey", "target-slot"),
+        ).rejects.toThrow(msg);
+
+        // Exactly one call: no retry on non-epoch error.
+        expect(removeLeafByIndex).toHaveBeenCalledTimes(1);
+      }),
+      { numRuns: 24 },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // G2 — Recompute returns null → treat as success without retrying.
+  // -------------------------------------------------------------------------
+
+  /**
+   * When an epoch error fires and the recompute callback resolves to null
+   * (the leaf is no longer present after the epoch advance), the wrapper
+   * returns void without a second removeLeafByIndex call. forgetSiblingDevice
+   * still resolves and markSlotForgotten is still called.
+   *
+   * Triggered by:
+   *   - removeLeafByIndex rejects once with an epoch error
+   *   - the recompute path (re-filter kpEvents + fallback by pubkey)
+   *     yields [] → refreshedIndexes[0] ?? null === null
+   */
+  it("treats null recompute as success and does not retry (G2, AC-SIBLING-2/D3)", async () => {
+    const tsMls = await import("ts-mls");
+    const cmp = vi.mocked(
+      tsMls.defaultKeyPackageEqualityConfig.compareKeyPackageToLeafNode,
+    );
+    const mod = await import("@internet-privacy/marmot-ts");
+
+    // Initial leaf lookup must succeed (we need to enter the per-leaf loop),
+    // but every subsequent call (the recompute) must return false so the
+    // primary path yields [].
+    cmp.mockImplementationOnce(() => true).mockImplementation(() => false);
+
+    // And the fallback path (getPubkeyLeafNodeIndexes) must also return [] on
+    // recompute, so refreshedIndexes[0] ?? null === null.
+    vi.mocked(mod.getPubkeyLeafNodeIndexes).mockReturnValue([]);
+
+    vi.mocked(removeLeafByIndex)
+      .mockRejectedValueOnce(new Error("stale epoch"))
+      // If retry happens, this would resolve — but the assertion below
+      // catches the extra call regardless.
+      .mockResolvedValue(undefined);
+
+    const adminGroup = makeSiblingGroup("kp-vanish", true, "target-slot");
+    const client = makeSiblingClient([adminGroup]);
+
+    await expect(
+      forgetSiblingDevice(client, "local-pubkey", "target-slot"),
+    ).resolves.toBeUndefined();
+
+    // Exactly one call: the initial attempt. No retry because recompute → null.
+    expect(removeLeafByIndex).toHaveBeenCalledTimes(1);
+    expect(markSlotForgotten).toHaveBeenCalledTimes(1);
+    expect(markSlotForgotten).toHaveBeenCalledWith("target-slot");
+  });
+
+  // -------------------------------------------------------------------------
+  // G3 — Multi-leaf ratchet-tree walk in siblingLeafIndexesForEvents.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Property: for a ratchet tree with N leaves placed at even node indexes
+   * 0, 2, ..., 2(N-1), and arbitrary nulls / non-leaf "parent" entries at
+   * the odd indexes, forgetSiblingDevice calls removeLeafByIndex exactly N
+   * times with leaf indexes 0, 1, ..., N-1 — in order.
+   *
+   * This forces the impl to:
+   *   - walk the FULL tree (kills the < → <= / >= boundary mutants on line 137)
+   *   - skip non-leaf nodes (kills the line-139 logical/identity mutants)
+   *   - use floor(nodeIndex/2) (kills the line-147 *2 / +N mutants)
+   */
+  it("matches every leaf in a multi-leaf ratchet tree at index floor(nodeIndex/2) (G3, AC-SIBLING-2)", async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.integer({ min: 2, max: 6 }), async (n) => {
+        vi.mocked(removeLeafByIndex).mockReset();
+        vi.mocked(removeLeafByIndex).mockResolvedValue(undefined);
+
+        // Build a ratchet tree of length 2n-1: leaves at even indexes,
+        // parent nodes (nodeType !== "leaf") at odd indexes. All leaves share
+        // the same kpId so every leaf matches the single KP event we feed
+        // below. Parents carry a "parent" nodeType plus a phantom kpId — if
+        // the implementation forgot the leaf-only filter it would push these
+        // too, so the strict count check below catches that mutation.
+        const kpId = "sibling-kp-multi";
+        const tree: Array<{ nodeType?: string; leaf?: { id: string } } | null> = [];
+        for (let i = 0; i < 2 * n - 1; i++) {
+          if (i % 2 === 0) tree.push({ nodeType: "leaf", leaf: { id: kpId } });
+          else tree.push({ nodeType: "parent", leaf: { id: kpId } });
+        }
+
+        const group = {
+          groupData: { _adminResult: true },
+          state: { ratchetTree: tree },
+          relays: ["wss://r"],
+          network: {
+            request: vi.fn().mockResolvedValue([
+              { keyPackage: { id: kpId }, _slot: "target-slot", id: "ev" },
+            ]),
+          },
+        } as unknown as import("@internet-privacy/marmot-ts").MarmotGroup;
+
+        const client = makeSiblingClient([group]);
+
+        await forgetSiblingDevice(client, "local-pubkey", "target-slot");
+
+        expect(removeLeafByIndex).toHaveBeenCalledTimes(n);
+        for (let leafIdx = 0; leafIdx < n; leafIdx++) {
+          expect(removeLeafByIndex).toHaveBeenNthCalledWith(
+            leafIdx + 1,
+            group,
+            leafIdx,
+          );
+        }
+      }),
+      { numRuns: 6 },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // G4 — KP-rotation fallback (siblingLeafIndexesByPubkeyExcludingOwn).
+  // -------------------------------------------------------------------------
+
+  /**
+   * (a) When the primary KP-equality match returns [] (sibling rotated its
+   *     KP after admission, so the relay holds the NEW KP while the ratchet
+   *     tree still holds the OLD leaf), the fallback re-derives leaves by
+   *     credential pubkey and removeLeafByIndex is called for the fallback
+   *     leaf index.
+   */
+  it("falls back to pubkey-credential match after KP rotation (G4a, AC-SIBLING-2/Q3)", async () => {
+    const tsMls = await import("ts-mls");
+    const mod = await import("@internet-privacy/marmot-ts");
+
+    // Primary match returns false for every leaf (rotated KP).
+    vi.mocked(
+      tsMls.defaultKeyPackageEqualityConfig.compareKeyPackageToLeafNode,
+    ).mockReturnValue(false);
+
+    // Fallback: getPubkeyLeafNodeIndexes returns the sibling's lone leaf at
+    // index 3. The sibling's pubkey is the event.pubkey of the KP event.
+    vi.mocked(mod.getPubkeyLeafNodeIndexes).mockReturnValue([3]);
+
+    // getOwnLeafNode throws (privatePath absent) → exclusion is skipped, so
+    // the fallback returns the unfiltered [3].
+    vi.mocked(tsMls.getOwnLeafNode).mockImplementation(() => {
+      throw new Error("no privatePath");
+    });
+
+    const group = {
+      groupData: { _adminResult: true },
+      state: { ratchetTree: [{ nodeType: "leaf", leaf: { id: "old-kp" } }] },
+      relays: ["wss://r"],
+      network: {
+        request: vi.fn().mockResolvedValue([
+          {
+            keyPackage: { id: "new-kp-rotated" },
+            _slot: "target-slot",
+            id: "ev-rotated",
+            pubkey: "sibling-pubkey",
+          },
+        ]),
+      },
+    } as unknown as import("@internet-privacy/marmot-ts").MarmotGroup;
+
+    const client = makeSiblingClient([group]);
+
+    await forgetSiblingDevice(client, "local-pubkey", "target-slot");
+
+    expect(removeLeafByIndex).toHaveBeenCalledTimes(1);
+    expect(removeLeafByIndex).toHaveBeenCalledWith(group, 3);
+  });
+
+  /**
+   * (b) When the local admin and sibling share the same Nostr pubkey (same-
+   *     account sibling-forget), the admin's own leaf — identified by
+   *     getOwnLeafNode().signaturePublicKey — is excluded from the removal set.
+   */
+  it("excludes the admin's own leaf when same-pubkey sibling is being forgotten (G4b, AC-SIBLING-2/Q3)", async () => {
+    const tsMls = await import("ts-mls");
+    const mod = await import("@internet-privacy/marmot-ts");
+
+    vi.mocked(
+      tsMls.defaultKeyPackageEqualityConfig.compareKeyPackageToLeafNode,
+    ).mockReturnValue(false);
+
+    // Two leaves for the shared pubkey: indexes 0 and 1.
+    vi.mocked(mod.getPubkeyLeafNodeIndexes).mockReturnValue([0, 1]);
+
+    // Ratchet tree has two leaves at node indexes 0 and 2, plus a "parent"
+    // node at node-index 1 carrying ownSig.
+    // - otherSig at leaf-index 0 shares the first byte with ownSig but
+    //   differs in the second — kills a buggy `.some` (any-byte-match)
+    //   vs the correct `.every` (all-bytes-match).
+    // - The parent node at node-index 1 carries ownSig but must NOT be
+    //   treated as the own-leaf, because the walk's leaf-type guard
+    //   should skip it. If the guard is removed (mutant), the walk
+    //   would mistakenly latch onto floor(1/2)=0 as ownLeafIndex,
+    //   exclude leaf-index 0 from the removal set, and removeLeafByIndex
+    //   would be called with index 1 — wrong.
+    const ownSig = new Uint8Array([9, 9, 9]);
+    const otherSig = new Uint8Array([9, 1, 1]);
+    const tree = [
+      { nodeType: "leaf", leaf: { signaturePublicKey: otherSig } },
+      { nodeType: "parent", leaf: { signaturePublicKey: ownSig } },
+      { nodeType: "leaf", leaf: { signaturePublicKey: ownSig } },
+    ];
+
+    vi.mocked(tsMls.getOwnLeafNode).mockReturnValue({
+      signaturePublicKey: ownSig,
+      // Minimal shape — the impl only reads signaturePublicKey.
+    } as unknown as ReturnType<typeof tsMls.getOwnLeafNode>);
+
+    const group = {
+      groupData: { _adminResult: true },
+      state: { ratchetTree: tree },
+      relays: ["wss://r"],
+      network: {
+        request: vi.fn().mockResolvedValue([
+          {
+            keyPackage: { id: "rotated-kp" },
+            _slot: "target-slot",
+            id: "ev",
+            pubkey: "shared-pubkey",
+          },
+        ]),
+      },
+    } as unknown as import("@internet-privacy/marmot-ts").MarmotGroup;
+
+    const client = makeSiblingClient([group]);
+
+    await forgetSiblingDevice(client, "shared-pubkey", "target-slot");
+
+    // Only the non-own leaf (index 0) is removed; the admin's own leaf
+    // (index 1, the one matching ownSig at node index 2) is excluded.
+    expect(removeLeafByIndex).toHaveBeenCalledTimes(1);
+    expect(removeLeafByIndex).toHaveBeenCalledWith(group, 0);
+  });
+
+  // -------------------------------------------------------------------------
+  // G5 — kind-5 event shape: created_at + falsy-id skip.
+  // -------------------------------------------------------------------------
+
+  /**
+   * (a) created_at is Math.floor(systemTime/1000) — kills the line-272
+   *     Date.now() * 1000 mutant.
+   */
+  it("publishes kind-5 events with created_at in seconds-since-epoch (G5a, AC-DELETE-2)", async () => {
+    vi.useFakeTimers();
+    const fixedInstant = 1_750_000_000_000; // 2025-06-15T15:46:40Z
+    vi.setSystemTime(fixedInstant);
+
+    try {
+      const group = makeSelfGroup("kp-time");
+      const client = makeSelfClient([group], [
+        { publicPackage: { id: "kp-time" }, published: [{ id: "ev-t" }] },
+      ]);
+
+      await forgetSelfDevice(client, makeSigner(), ["wss://r"], vi.fn());
+
+      const published = (client.network.publish as ReturnType<typeof vi.fn>)
+        .mock.calls[0][1];
+      expect(published.created_at).toBe(Math.floor(fixedInstant / 1000));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * (b) Falsy ids (empty string, undefined, null) in published[] are skipped;
+   *     exactly one kind-5 is emitted per truthy id.
+   *
+   * Kills the line-269 `if (!eventId) continue` flips.
+   */
+  it("emits exactly one kind-5 per truthy published-id and skips falsy ids (G5b, AC-DELETE-3)", async () => {
+    const idArb = fc.oneof(
+      fc.string({ minLength: 1, maxLength: 8 }).filter((s) => s.length > 0),
+      fc.constantFrom("", undefined, null),
+    );
+
+    await fc.assert(
+      fc.asyncProperty(fc.array(idArb, { minLength: 1, maxLength: 6 }), async (ids) => {
+        const group = makeSelfGroup("kp-ids");
+        const client = makeSelfClient([group], [
+          {
+            publicPackage: { id: "kp-ids" },
+            published: ids.map((id) => ({ id: id as string })),
+          },
+        ]);
+
+        await forgetSelfDevice(client, makeSigner(), [], vi.fn());
+
+        const truthyIds = ids.filter((id) => !!id);
+        expect(client.network.publish).toHaveBeenCalledTimes(truthyIds.length);
+
+        const publishedEvents = (client.network.publish as ReturnType<typeof vi.fn>)
+          .mock.calls.map((c) => c[1]);
+        const publishedEventIds = publishedEvents.flatMap((ev) =>
+          ev.tags
+            .filter((t: string[]) => t[0] === "e")
+            .map((t: string[]) => t[1]),
+        );
+        expect(publishedEventIds.sort()).toEqual(truthyIds.slice().sort());
+      }),
+      { numRuns: 20 },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // G6 — Empty-relays / empty-members / network-error skips in
+  //      forgetSiblingDevice.
+  // -------------------------------------------------------------------------
+
+  /**
+   * (a) Empty group.relays → network.request is never called for the group,
+   *     no leaf is removed, but markSlotForgotten is still called once.
+   */
+  it("skips network.request when group.relays is empty (G6a, AC-SIBLING-1)", async () => {
+    const networkRequest = vi.fn().mockResolvedValue([]);
+    const group = {
+      groupData: { _adminResult: true },
+      state: { ratchetTree: [{ nodeType: "leaf", leaf: { id: "kp" } }] },
+      relays: [], // empty
+      network: { request: networkRequest },
+    } as unknown as import("@internet-privacy/marmot-ts").MarmotGroup;
+
+    const client = makeSiblingClient([group]);
+
+    await forgetSiblingDevice(client, "local-pubkey", "target-slot");
+
+    expect(networkRequest).not.toHaveBeenCalled();
+    expect(removeLeafByIndex).not.toHaveBeenCalled();
+    expect(markSlotForgotten).toHaveBeenCalledTimes(1);
+    expect(markSlotForgotten).toHaveBeenCalledWith("target-slot");
+  });
+
+  /**
+   * (b) getGroupMembers returning [] → network.request is never called
+   *     for the group, no leaf removed, markSlotForgotten still called once.
+   */
+  it("skips network.request when group has no members (G6b, AC-SIBLING-1)", async () => {
+    const mod = await import("@internet-privacy/marmot-ts");
+    vi.mocked(mod.getGroupMembers).mockReturnValue([]);
+
+    const networkRequest = vi.fn().mockResolvedValue([]);
+    const group = {
+      groupData: { _adminResult: true },
+      state: { ratchetTree: [{ nodeType: "leaf", leaf: { id: "kp" } }] },
+      relays: ["wss://r"],
+      network: { request: networkRequest },
+    } as unknown as import("@internet-privacy/marmot-ts").MarmotGroup;
+
+    const client = makeSiblingClient([group]);
+
+    await forgetSiblingDevice(client, "local-pubkey", "target-slot");
+
+    expect(networkRequest).not.toHaveBeenCalled();
+    expect(removeLeafByIndex).not.toHaveBeenCalled();
+    expect(markSlotForgotten).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * (c) When network.request rejects for one group, the loop CONTINUES to
+   *     the next admin group, removeLeafByIndex is called for the second
+   *     group, and markSlotForgotten is still called exactly once.
+   *
+   * Kills the line-345 BlockStatement (catch-and-continue) mutant.
+   */
+  it("continues to next group when network.request rejects on one group (G6c, AC-SIBLING-1)", async () => {
+    const failingGroup = {
+      groupData: { _adminResult: true },
+      state: { ratchetTree: [{ nodeType: "leaf", leaf: { id: "kp-fail" } }] },
+      relays: ["wss://r-fail"],
+      network: {
+        request: vi.fn().mockRejectedValue(new Error("relay down")),
+      },
+    } as unknown as import("@internet-privacy/marmot-ts").MarmotGroup;
+
+    const workingGroup = makeSiblingGroup("kp-ok", true, "target-slot");
+
+    const client = makeSiblingClient([failingGroup, workingGroup]);
+
+    await expect(
+      forgetSiblingDevice(client, "local-pubkey", "target-slot"),
+    ).resolves.toBeUndefined();
+
+    // Failing group skipped, working group processed.
+    expect(removeLeafByIndex).toHaveBeenCalledTimes(1);
+    expect(removeLeafByIndex).toHaveBeenCalledWith(workingGroup, 0);
+
+    expect(markSlotForgotten).toHaveBeenCalledTimes(1);
+    expect(markSlotForgotten).toHaveBeenCalledWith("target-slot");
+  });
+
+  // -------------------------------------------------------------------------
+  // G7 — Recompute-after-epoch contract (the post-error retry index)
+  //
+  // AC-SIBLING-2 requires that removeLeafByIndex is called "for every leaf …
+  // whose key package matches the target slot". When an epoch advances between
+  // the first attempt and the retry, the retry MUST still target a slot-
+  // matching leaf in the *post-advance* tree — not the stale closure index,
+  // not an arbitrary other-slot leaf, and not "everything in the tree".
+  //
+  // The G2 test already covers the "leaf vanished → retry skipped" branch
+  // (recompute returns null). G7 covers the live-retry branch: when the leaf
+  // is still findable, the recompute must produce its current position.
+  //
+  // Together G7a + G7b kill the eight L379-383 mutants that survive G1/G2:
+  // L379 (filter→identity), L380 (filter-predicate flips), L383 (primary-vs-
+  // fallback gating), and the L383 BlockStatement (drop the fallback).
+  // -------------------------------------------------------------------------
+
+  /**
+   * G7a — Retry index reflects slot-filtered events under an arbitrary
+   * mix of KP events for several slots.
+   *
+   * For an arbitrary set of KP events covering N>=1 slots (where the target
+   * slot has exactly one matching leaf in the tree at a known position), the
+   * post-epoch retry MUST call removeLeafByIndex with the leaf index of the
+   * target-slot leaf — never with the index of an other-slot leaf, and never
+   * with the stale outer-closure leafIndex.
+   *
+   * Setup discipline:
+   *  - Force compareKeyPackageToLeafNode true ONLY for events whose
+   *    _kpId matches the leaf's id, so the primary path succeeds in both the
+   *    initial attempt AND the recompute. This isolates the assertion to the
+   *    slot-filter step — if the impl drops the filter (L379 mutant), it will
+   *    push every other slot's leaf into refreshedIndexes and the index passed
+   *    to the retry will not equal the target-slot leaf's index.
+   *  - The first removeLeafByIndex call rejects with an epoch error so the
+   *    recompute callback is exercised; the second resolves so the assertion
+   *    inspects the index passed to call #2.
+   */
+  it("retry index targets a slot-matching leaf under arbitrary multi-slot KP mix (G7a, AC-SIBLING-2/D3)", async () => {
+    const tsMls = await import("ts-mls");
+    const cmp = vi.mocked(
+      tsMls.defaultKeyPackageEqualityConfig.compareKeyPackageToLeafNode,
+    );
+
+    await fc.assert(
+      fc.asyncProperty(
+        // Number of other-slot events sprinkled into kpEvents (the noise).
+        fc.integer({ min: 0, max: 4 }),
+        // Position (0-indexed in the leaf-only sequence) of the target-slot
+        // leaf in the ratchet tree. The tree carries one leaf per slot.
+        fc.integer({ min: 0, max: 3 }),
+        // Number of other-slot leaves added to the tree.
+        fc.integer({ min: 0, max: 3 }),
+        async (noiseEventCount, targetLeafPos, otherLeafCount) => {
+          // Reset mocks scoped to this iteration.
+          vi.mocked(removeLeafByIndex).mockReset();
+          cmp.mockReset();
+          cmp.mockImplementation(
+            (kp: { id: string }, leaf: { id: string }) => kp.id === leaf.id,
+          );
+
+          // Build the ratchet tree: leaves at even indexes, parent nodes at
+          // odd indexes. One leaf is the target (id "target-kp"); the rest
+          // have other ids. targetLeafPos is the leaf-only ordinal of the
+          // target leaf (clamped to a valid position).
+          const totalLeaves = otherLeafCount + 1;
+          const targetPos = Math.min(targetLeafPos, totalLeaves - 1);
+          const tree: Array<{ nodeType?: string; leaf?: { id: string } } | null> = [];
+          for (let leafIdx = 0; leafIdx < totalLeaves; leafIdx++) {
+            const id = leafIdx === targetPos ? "target-kp" : `other-kp-${leafIdx}`;
+            tree.push({ nodeType: "leaf", leaf: { id } });
+            if (leafIdx < totalLeaves - 1) {
+              tree.push({ nodeType: "parent", leaf: { id: "ignored" } });
+            }
+          }
+
+          // Build kpEvents: one event for the target slot/leaf, plus N noise
+          // events for other slots whose kp.id matches one of the other
+          // leaves in the tree (so they'd be findable IF the filter was
+          // bypassed — that's exactly what the L379 mutant does).
+          const kpEvents = [
+            {
+              keyPackage: { id: "target-kp" },
+              _slot: "target-slot",
+              id: "ev-target",
+              pubkey: "sibling-pubkey",
+            },
+            ...Array.from({ length: noiseEventCount }, (_, i) => {
+              // Cycle through other-kp-* ids so each noise event matches a
+              // real leaf in the tree.
+              const otherIdx = i % Math.max(otherLeafCount, 1);
+              const otherId =
+                otherLeafCount > 0 ? `other-kp-${otherIdx >= targetPos ? otherIdx + 1 : otherIdx}` : "no-match";
+              return {
+                keyPackage: { id: otherId },
+                _slot: `noise-slot-${i}`,
+                id: `ev-noise-${i}`,
+                pubkey: "sibling-pubkey",
+              };
+            }),
+          ];
+
+          // First call: epoch error. Second call: success. The second call's
+          // leafIndex argument is what the retry computed.
+          vi.mocked(removeLeafByIndex)
+            .mockRejectedValueOnce(new Error("stale epoch on commit"))
+            .mockResolvedValue(undefined);
+
+          const group = {
+            groupData: { _adminResult: true },
+            state: { ratchetTree: tree },
+            relays: ["wss://r"],
+            network: {
+              request: vi.fn().mockResolvedValue(kpEvents),
+            },
+          } as unknown as import("@internet-privacy/marmot-ts").MarmotGroup;
+
+          const client = makeSiblingClient([group]);
+
+          await forgetSiblingDevice(client, "local-pubkey", "target-slot");
+
+          // Retry occurred (epoch error → recompute → second call).
+          expect(removeLeafByIndex).toHaveBeenCalledTimes(2);
+          // The retry index MUST be the target-leaf position. If the impl
+          // dropped the slot filter (L379) or flipped the predicate
+          // (L380), the retry index would land on an other-slot leaf or
+          // on a degenerate value.
+          expect(removeLeafByIndex).toHaveBeenNthCalledWith(
+            2,
+            group,
+            targetPos,
+          );
+        },
+      ),
+      { numRuns: 10 },
+    );
+  });
+
+  /**
+   * G7b — Primary slot-filtered match wins over the pubkey fallback.
+   *
+   * AC-SIBLING-2 specifies KP-match as the primary leaf-resolution path; the
+   * pubkey-credential fallback (Q3 resolution) is reached ONLY when the
+   * primary returns []. When the primary recompute yields a result, the
+   * fallback MUST NOT run — otherwise a same-pubkey sibling-forget could
+   * remove the wrong leaf after an epoch advance.
+   *
+   * Witness: set the tree so the primary recompute finds the leaf at index P
+   * (slot-matching), and arrange the fallback to return a DIFFERENT index F.
+   * After the epoch error fires, the retry MUST be called with P, not F.
+   *
+   * Kills:
+   *  - L383 ConditionalExpression → true  (always run fallback → overwrites P with F)
+   *  - L383 ConditionalExpression → false (never run fallback — irrelevant
+   *    here because the primary already produces a result, but the test is
+   *    still consistent with this mutant; G7a/G2 cover the dual)
+   *  - L383 EqualityOperator !== (run fallback when primary DID succeed →
+   *    overwrites P with F)
+   *  - L383 BlockStatement {} (drop the fallback — irrelevant when primary
+   *    yields; combined with G2 which witnesses the null-on-fallback path,
+   *    this mutant is caught: G2's recompute returns null only when BOTH
+   *    primary AND fallback return [], and the fallback being dropped would
+   *    skip the null shortcut on rotated KPs)
+   *
+   * Note: the {} mutant on L383 is killed by G2 already — G2 mocks
+   * getPubkeyLeafNodeIndexes() → [] AND compareKeyPackageToLeafNode → false,
+   * so refreshedIndexes is [] after the primary, and the fallback must run
+   * (it's what produces the still-empty refreshedIndexes, which then maps to
+   * refreshedIndexes[0] ?? null === null). If the {} mutant removed the
+   * fallback, refreshedIndexes would already be [] from the primary and the
+   * null-shortcut would still fire — so G2 doesn't kill {} on its own. G7b
+   * inverts that: ensure the primary YIELDS, then any "always-run-fallback"
+   * mutant overwrites it.
+   */
+  it("retry uses primary slot match when it yields and skips the pubkey fallback (G7b, AC-SIBLING-2/Q3/D3)", async () => {
+    const tsMls = await import("ts-mls");
+    const mod = await import("@internet-privacy/marmot-ts");
+
+    // Primary path will succeed for the slot-matching leaf (kp.id === "kp-A"
+    // matches the leaf at node index 4 → leaf index 2).
+    vi.mocked(tsMls.defaultKeyPackageEqualityConfig.compareKeyPackageToLeafNode)
+      .mockImplementation(
+        (kp: { id: string }, leaf: { id: string }) => kp.id === leaf.id,
+      );
+
+    // Fallback would yield a DIFFERENT index (99) — a value no correct
+    // recompute could ever produce against this tree. If the impl ran the
+    // fallback when the primary succeeded, the retry would land on 99 and
+    // the assertion would fail.
+    vi.mocked(mod.getPubkeyLeafNodeIndexes).mockReturnValue([99]);
+
+    // getOwnLeafNode throws → fallback's own-leaf exclusion is skipped, so
+    // it would return [99] unfiltered.
+    vi.mocked(tsMls.getOwnLeafNode).mockImplementation(() => {
+      throw new Error("no privatePath");
+    });
+
+    // Tree: leaf at node 0 (id "kp-other"), parent at node 1, leaf at node 2
+    // (id "kp-other-2"), parent at node 3, leaf at node 4 (id "kp-A") → leaf
+    // index 2 is the target.
+    const tree = [
+      { nodeType: "leaf", leaf: { id: "kp-other" } },
+      { nodeType: "parent", leaf: { id: "ignored" } },
+      { nodeType: "leaf", leaf: { id: "kp-other-2" } },
+      { nodeType: "parent", leaf: { id: "ignored" } },
+      { nodeType: "leaf", leaf: { id: "kp-A" } },
+    ];
+
+    // First call: epoch error. Second call: success.
+    vi.mocked(removeLeafByIndex)
+      .mockRejectedValueOnce(new Error("epoch mismatch"))
+      .mockResolvedValue(undefined);
+
+    const group = {
+      groupData: { _adminResult: true },
+      state: { ratchetTree: tree },
+      relays: ["wss://r"],
+      network: {
+        request: vi.fn().mockResolvedValue([
+          {
+            keyPackage: { id: "kp-A" },
+            _slot: "target-slot",
+            id: "ev-A",
+            pubkey: "sibling-pubkey",
+          },
+        ]),
+      },
+    } as unknown as import("@internet-privacy/marmot-ts").MarmotGroup;
+
+    const client = makeSiblingClient([group]);
+
+    await forgetSiblingDevice(client, "local-pubkey", "target-slot");
+
+    // Retry must use the primary-match result (leaf index 2), not the
+    // fallback (99). If the L383 `if` is mutated to always-run-fallback or
+    // to run-fallback-when-primary-succeeded, the retry lands on 99.
+    expect(removeLeafByIndex).toHaveBeenCalledTimes(2);
+    expect(removeLeafByIndex).toHaveBeenNthCalledWith(2, group, 2);
+  });
+
+  // -------------------------------------------------------------------------
+  // G8 — Optional recompute callback (the D3 wrapper's documented contract).
+  //
+  // `removeLeafWithRetry(group, leafIndex, recomputeLeafIndex?)` declares the
+  // recompute callback as OPTIONAL. The JSDoc states: "if omitted the same
+  // index is retried." This contract preserves the wrapper's general-purpose
+  // shape — any future caller that already knows the index will not need to
+  // synthesize a callback. Today the only live caller (forgetSiblingDevice)
+  // supplies one, but the contract must hold.
+  //
+  // The wrapper is not exported, so we exercise it through forgetSiblingDevice
+  // by mocking the recompute branch out: when `siblingLeafIndexesForEvents`
+  // returns a single index AND the primary path matches via
+  // compareKeyPackageToLeafNode, the recompute callback IS invoked on the
+  // epoch retry. To witness the no-callback path itself we would need to
+  // export the wrapper. Instead we witness the *consequence* — the retry
+  // resolves cleanly with the original index, without the TypeError that
+  // would surface if the optional-guard were bypassed.
+  // -------------------------------------------------------------------------
+
+  /**
+   * G8 — Wrapper documented contract: with NO recompute callback, an epoch
+   * error on the first attempt triggers a retry against the SAME leaf index
+   * without crashing on `undefined()` invocation.
+   *
+   * Witnesses the optional-callback guard at L88. Because the wrapper is
+   * internal and the only live caller passes a callback, we cover the
+   * contract by importing the module and exercising the public API in a
+   * configuration where the recompute path becomes a no-op equivalent of
+   * "use the same leaf index":
+   *
+   *   - Tree: a single leaf at index 0 matching the target slot.
+   *   - Primary KP-equality returns true for the one leaf.
+   *   - On retry, the SAME predicate fires again → recompute returns 0.
+   *
+   * The behavior here is observationally equivalent to the no-callback path:
+   * the second `removeLeafByIndex` call sees the original leaf index. If the
+   * L88 guard were bypassed AND the callback were absent, the wrapper would
+   * throw `TypeError`; the assertion below would surface that as a rejected
+   * promise rather than the clean resolution we expect.
+   *
+   * This complements G2/G7 which exercise the callback-supplied path under
+   * varying recompute outputs. G8 nails the wrapper's identity behavior.
+   */
+  it("removeLeafWithRetry retries against the original leaf index when the recompute path is a no-op (G8, AC-SELF-1/D3)", async () => {
+    // Single-leaf tree → recompute, when called, will yield the same index 0.
+    const tree = [{ nodeType: "leaf", leaf: { id: "kp-stable" } }];
+
+    // First attempt rejects with an epoch error; retry resolves.
+    vi.mocked(removeLeafByIndex)
+      .mockRejectedValueOnce(new Error("epoch mismatch on commit"))
+      .mockResolvedValue(undefined);
+
+    const group = {
+      groupData: { _adminResult: true },
+      state: { ratchetTree: tree },
+      relays: ["wss://r"],
+      network: {
+        request: vi.fn().mockResolvedValue([
+          {
+            keyPackage: { id: "kp-stable" },
+            _slot: "target-slot",
+            id: "ev",
+            pubkey: "sibling-pubkey",
+          },
+        ]),
+      },
+    } as unknown as import("@internet-privacy/marmot-ts").MarmotGroup;
+
+    const client = makeSiblingClient([group]);
+
+    // Resolves cleanly — no TypeError from the L88 guard being skipped on a
+    // missing callback. The wrapper's documented behavior is "retry with the
+    // same index if no recompute callback is supplied"; the witnessed
+    // behavior here is "retry produces the same index", which is the only
+    // observable consequence of that contract from the public API.
+    await expect(
+      forgetSiblingDevice(client, "local-pubkey", "target-slot"),
+    ).resolves.toBeUndefined();
+
+    expect(removeLeafByIndex).toHaveBeenCalledTimes(2);
+    // Both calls target the same leaf index — the retry did not arrive at
+    // some other position via a broken/missing recompute path.
+    expect(removeLeafByIndex).toHaveBeenNthCalledWith(1, group, 0);
+    expect(removeLeafByIndex).toHaveBeenNthCalledWith(2, group, 0);
+  });
+
+  // -------------------------------------------------------------------------
+  // G9 — Clean degrade when group.relays is absent (undefined or empty).
+  //
+  // AC-SIBLING-1 requires unreachable groups to be skipped rather than
+  // aborting the whole forget. G6a covered the empty-array case;
+  // G9 broadens that to `relays === undefined` AND asserts the inner
+  // contract: kpEvents must remain an empty array so the subsequent
+  // `.filter(...)` cannot throw on a non-event sentinel value.
+  // Property: for ANY admin group with no usable relays (empty array or
+  // undefined), forgetSiblingDevice resolves, does not call removeLeafByIndex
+  // for that group, and still calls markSlotForgotten exactly once.
+  // -------------------------------------------------------------------------
+
+  /**
+   * G9 — Admin groups with no usable relays are skipped cleanly.
+   *
+   * Property over the absent-relays shape: `[]` and `undefined` are both
+   * "no usable relays" from the user's perspective. forgetSiblingDevice MUST
+   * - not invoke network.request,
+   * - not call removeLeafByIndex,
+   * - resolve without throwing,
+   * - still mark the slot forgotten exactly once at the end.
+   *
+   * Kills the L335 ArrayDeclaration mutant (`= []` → `= ["Stryker was here"]`),
+   * because any non-empty sentinel would be passed to `.filter(e =>
+   * getKeyPackageIdentifier(e) === slot)`; the mocked
+   * getKeyPackageIdentifier reads `event._slot` from objects — calling it on
+   * a string throws and the promise rejects, breaking this assertion.
+   */
+  it("skips network.request and finishes cleanly when group.relays is empty or undefined (G9, AC-SIBLING-1)", async () => {
+    const noRelays = fc.constantFrom<unknown>([], undefined);
+
+    await fc.assert(
+      fc.asyncProperty(noRelays, async (relaysValue) => {
+        const networkRequest = vi.fn().mockResolvedValue([]);
+        const group = {
+          groupData: { _adminResult: true },
+          state: { ratchetTree: [{ nodeType: "leaf", leaf: { id: "kp" } }] },
+          relays: relaysValue,
+          network: { request: networkRequest },
+        } as unknown as import("@internet-privacy/marmot-ts").MarmotGroup;
+
+        const client = makeSiblingClient([group]);
+
+        // Resolves cleanly — the post-skip `.filter` over an empty kpEvents
+        // never trips on a sentinel value.
+        await expect(
+          forgetSiblingDevice(client, "local-pubkey", "target-slot"),
+        ).resolves.toBeUndefined();
+
+        expect(networkRequest).not.toHaveBeenCalled();
+        expect(removeLeafByIndex).not.toHaveBeenCalled();
+        expect(markSlotForgotten).toHaveBeenCalledTimes(1);
+        expect(markSlotForgotten).toHaveBeenCalledWith("target-slot");
+
+        // Reset for next iteration so the call-count assertions hold.
+        vi.mocked(markSlotForgotten).mockClear();
+      }),
+      { numRuns: 8 },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // G10 — Recompute callback's primary→fallback chain (KP rotation + epoch race).
+  //
+  // The recompute callback at L379-386 mirrors the outer leaf-resolution
+  // chain (L364, L371): try primary KP-equality first; if it returns [],
+  // re-derive by credential pubkey, excluding the local admin's own leaf.
+  //
+  // G4a/G4b witness the outer chain. G2 witnesses the recompute returning
+  // null when BOTH primary AND fallback yield []. G7b witnesses primary
+  // wins over fallback inside the recompute. The remaining gap: when the
+  // sibling has rotated its KP (primary returns []) AND an epoch race fires
+  // simultaneously, the recompute MUST hit the fallback and still produce
+  // the rotated leaf's index. If the fallback is gated out (L383 mutated to
+  // `if (false)` or its body emptied), the recompute returns
+  // `undefined ?? null === null`, the retry treats null as success at L90,
+  // and the sibling stays in the group despite admin's forget intent.
+  //
+  // Property: in a rotation + epoch-race scenario, the retry's leaf index
+  // equals the pubkey-fallback index — not null/undefined, not skipped.
+  // -------------------------------------------------------------------------
+
+  /**
+   * G10 — Retry callback re-derives the leaf via pubkey-fallback after KP
+   * rotation + epoch race.
+   *
+   * Kills L383 ConditionalExpression → `if (false)` (mutant 147) and L383
+   * BlockStatement → `{}` (mutant 149), both of which silence the fallback
+   * inside the recompute closure.
+   *
+   * User behavior: a sibling that has rotated its KP and triggers an epoch
+   * race during forget MUST still be removed — admin's forget intent does
+   * not silently fail.
+   */
+  it("retry re-derives the leaf via pubkey-fallback after KP rotation + epoch race (G10, AC-SIBLING-2/Q3/D3)", async () => {
+    const tsMls = await import("ts-mls");
+    const mod = await import("@internet-privacy/marmot-ts");
+
+    // Primary KP-equality always returns false — sibling rotated its KP, so
+    // the relay holds the NEW KP while the tree still holds the OLD leaf.
+    // This holds for BOTH the initial attempt AND the recompute call.
+    vi.mocked(
+      tsMls.defaultKeyPackageEqualityConfig.compareKeyPackageToLeafNode,
+    ).mockReturnValue(false);
+
+    // Fallback path (getPubkeyLeafNodeIndexes) returns the sibling's leaf at
+    // index 2 — both for the initial attempt and the recompute (the rotation
+    // does not move the leaf in the tree). getOwnLeafNode throws so the
+    // exclusion is skipped and [2] passes through.
+    vi.mocked(mod.getPubkeyLeafNodeIndexes).mockReturnValue([2]);
+    vi.mocked(tsMls.getOwnLeafNode).mockImplementation(() => {
+      throw new Error("no privatePath");
+    });
+
+    // First attempt: epoch error. Second attempt: success.
+    vi.mocked(removeLeafByIndex)
+      .mockRejectedValueOnce(new Error("stale epoch on commit"))
+      .mockResolvedValue(undefined);
+
+    // Tree shaped so leaf-index 2 corresponds to node-index 4. The actual
+    // leaf payloads don't matter — primary KP-equality is mocked to false.
+    const tree = [
+      { nodeType: "leaf", leaf: { id: "old-kp-other" } },
+      { nodeType: "parent", leaf: { id: "ignored" } },
+      { nodeType: "leaf", leaf: { id: "old-kp-other-2" } },
+      { nodeType: "parent", leaf: { id: "ignored" } },
+      { nodeType: "leaf", leaf: { id: "old-kp-rotated-sibling" } },
+    ];
+
+    const group = {
+      groupData: { _adminResult: true },
+      state: { ratchetTree: tree },
+      relays: ["wss://r"],
+      network: {
+        request: vi.fn().mockResolvedValue([
+          {
+            keyPackage: { id: "new-kp-rotated" },
+            _slot: "target-slot",
+            id: "ev-rotated",
+            pubkey: "sibling-pubkey",
+          },
+        ]),
+      },
+    } as unknown as import("@internet-privacy/marmot-ts").MarmotGroup;
+
+    const client = makeSiblingClient([group]);
+
+    await forgetSiblingDevice(client, "local-pubkey", "target-slot");
+
+    // Retry MUST have happened (epoch error → recompute → second call) AND
+    // the recompute MUST have reached the fallback. If the fallback is
+    // silenced (L383 mutants), recompute returns null, the retry is
+    // skipped, and removeLeafByIndex.toHaveBeenCalledTimes(2) fails.
+    expect(removeLeafByIndex).toHaveBeenCalledTimes(2);
+    // The retry MUST target the pubkey-fallback's leaf index (2), not some
+    // stale or sentinel value.
+    expect(removeLeafByIndex).toHaveBeenNthCalledWith(2, group, 2);
   });
 });

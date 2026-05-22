@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Focused audit of src/marmot/per-leaf-remove.ts only.",
+  "packageManager": "npm",
+  "testRunner": "vitest",
+  "vitest": { "configFile": "vitest.config.ts" },
+  "coverageAnalysis": "perTest",
+  "concurrency": 4,
+  "mutate": ["src/marmot/per-leaf-remove.ts"],
+  "reporters": ["html", "json", "progress", "clear-text"],
+  "htmlReporter": { "fileName": "reports/mutation/deep-per-leaf-remove/index.html" },
+  "jsonReporter": { "fileName": "reports/mutation/deep-per-leaf-remove/mutation.json" },
+  "tempDirName": ".stryker-tmp/deep-per-leaf-remove",
+  "timeoutMS": 180000,
+  "disableTypeChecks": "src/**/*.{ts,tsx}",
+  "checkers": []
+}

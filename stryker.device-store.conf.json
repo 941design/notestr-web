@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Focused audit of src/marmot/device-store.ts only.",
+  "packageManager": "npm",
+  "testRunner": "vitest",
+  "vitest": { "configFile": "vitest.config.ts" },
+  "coverageAnalysis": "perTest",
+  "concurrency": 4,
+  "mutate": ["src/marmot/device-store.ts"],
+  "reporters": ["html", "json", "progress", "clear-text"],
+  "htmlReporter": { "fileName": "reports/mutation/deep-device-store/index.html" },
+  "jsonReporter": { "fileName": "reports/mutation/deep-device-store/mutation.json" },
+  "tempDirName": ".stryker-tmp/deep-device-store",
+  "timeoutMS": 180000,
+  "disableTypeChecks": "src/**/*.{ts,tsx}",
+  "checkers": []
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Focused profile: mls-trace.ts only. Diagnostic loop for the trace recorder contract (record/dump/clear, JSON-clone symmetry).",
+  "packageManager": "npm",
+  "testRunner": "vitest",
+  "vitest": { "configFile": "vitest.config.ts" },
+  "coverageAnalysis": "perTest",
+  "concurrency": 4,
+  "mutate": ["src/marmot/mls-trace.ts"],
+  "reporters": ["html", "json", "progress", "clear-text"],
+  "htmlReporter": { "fileName": "reports/mutation/mls-trace/index.html" },
+  "jsonReporter": { "fileName": "reports/mutation/mls-trace/mutation.json" },
+  "tempDirName": ".stryker-tmp/mls-trace",
+  "timeoutMS": 180000,
+  "disableTypeChecks": "src/**/*.{ts,tsx}",
+  "checkers": []
+}

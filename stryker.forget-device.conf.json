@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Re-run after gap-closure tests — forget-device.ts only.",
+  "packageManager": "npm",
+  "testRunner": "vitest",
+  "vitest": { "configFile": "vitest.config.ts" },
+  "coverageAnalysis": "perTest",
+  "concurrency": 4,
+  "mutate": ["src/marmot/forget-device.ts"],
+  "reporters": ["html", "json", "progress", "clear-text"],
+  "htmlReporter": { "fileName": "reports/mutation/deep-forget-device/index.html" },
+  "jsonReporter": { "fileName": "reports/mutation/deep-forget-device/mutation.json" },
+  "tempDirName": ".stryker-tmp/deep-forget-device",
+  "timeoutMS": 180000,
+  "disableTypeChecks": "src/**/*.{ts,tsx}",
+  "checkers": []
+}
