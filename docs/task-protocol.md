@@ -27,7 +27,7 @@ Once decrypted, a kind-445 application message yields a Nostr rumor of kind
 JSON-encoded `TaskEvent` discriminated union:
 
 ```ts
-type TaskStatus = "open" | "in_progress" | "done";
+type TaskStatus = "open" | "in_progress" | "done" | "cancelled";
 
 interface Task {
   id: string;

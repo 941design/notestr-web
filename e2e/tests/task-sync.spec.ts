@@ -56,7 +56,7 @@ test.afterAll(async () => {
   await contextB?.close();
 });
 
-test.describe.serial('task-sync: older tasks visible after joining', () => {
+test.describe.serial('task-sync: pre-join tasks not visible (epoch boundary)', () => {
   test.setTimeout(180_000);
 
   const GROUP_NAME = `TaskSync E2E ${Date.now()}`;
@@ -104,7 +104,7 @@ test.describe.serial('task-sync: older tasks visible after joining', () => {
     // Wait for invite to complete — input clears on success
     await expect(pageA.getByPlaceholder('npub1...')).toHaveValue('', { timeout: 30000 });
 
-    // Give the NIP-44 snapshot a moment to be published to the relay
+    // Brief settle so the invite has propagated before B reloads.
     await pageA.waitForTimeout(2000);
   });
 

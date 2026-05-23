@@ -140,7 +140,7 @@ not yet covered). `multi-user` ≡ `e2e/tests/multi-user.spec.ts`, etc.
 | ----- | --------------------------------------------------------- | ----------- |
 | TP-10 | `A.Ct(t1) ⇒ B⟂t1` (live MLS)                              | multi-user  |
 | TP-11 | `A.Ct(t1) → B.Rl ⇒ B⟂t1` (recovery)                       | multi-user  |
-| TP-12 | `A.Ct(t1) → A.In(B) ⇒ B⟂t1` (NIP-44 snapshot)             | task-sync   |
+| TP-12 | `A.Ct(t1) → A.In(B) ⇒ B⊥t1` (epoch boundary — snapshot removed) | task-sync   |
 | TP-13 | `A.Ut(t1,title=…) ⇒ B⟂t1.title=…`                         | cross-author-tasks |
 | TP-14 | `A.Sc(t1,p) ⇒ B⟂t1.p`                                     | cross-author-tasks |
 | TP-15 | `A.As(t1,B) ⇒ B⟂t1.assignee=B`                            | cross-author-tasks |
@@ -157,12 +157,17 @@ not yet covered). `multi-user` ≡ `e2e/tests/multi-user.spec.ts`, etc.
 | TP-23 | `A.Ct(t1) → B.As(t1,A) → B.Un(t1) ⇒ A⟂t1.assignee=⊘`      | cross-author-tasks |
 | TP-24 | `A.Ct(t1) → B.Dt(t1) ⇒ A⊥t1`                              | cross-author-tasks |
 
-### Snapshot of pre-existing state delivered on join
+### Epoch boundary: pre-join tasks not visible to new member
+
+Tasks published before the invite are in epoch 0. A joiner receives keys only
+from their join epoch onward (MLS forward secrecy). The NIP-44 snapshot
+side-channel that previously bootstrapped pre-join state was removed because
+it caused CRDT divergence; see `docs/task-protocol.md § State Bootstrap`.
 
 | ID    | Scenario (DSL)                                            | Spec        |
 | ----- | --------------------------------------------------------- | ----------- |
-| TP-30 | `A.Ct(t1) → A.In(B) ⇒ B⟂t1`                               | task-sync   |
-| TP-31 | `A.Ct(t1) → A.Sc(t1,p) → A.As(t1,A) → A.In(B) ⇒ B⟂t1.p,assignee=A` | snapshot-history |
+| TP-30 | `A.Ct(t1) → A.In(B) ⇒ B⊥t1`                               | task-sync   |
+| TP-31 | `A.Ct(t1) → A.Sc(t1,p) → A.As(t1,A) → A.In(B) ⇒ B⊥t1`    | snapshot-history |
 | TP-32 | `A.Ct(t1) → A.Dt(t1) → A.In(B) ⇒ B⊥t1`                    | snapshot-history |
 
 ### Member lifecycle (leave, re-invite)
@@ -284,7 +289,7 @@ Legend: `mu`=multi-user, `ts`=task-sync, `iv`=identity-visibility, `md`=multi-de
   `forget-device`, `three-party`, `snapshot-history`, `concurrent-edits`,
   `multi-device-cross-npub`, `rename-device`):
   - **active**: TP-13–TP-24 (cross-author task mutations),
-    TP-31/-32 (snapshot history), TP-40/TP-41 (leave + re-invite),
+    TP-31/-32 (epoch boundary), TP-40/TP-41 (leave + re-invite),
     TP-50/-51/-53 (forget-device semantics), TP-60 (rename round-trip),
     TP-70/-71/-72 (three-party admin-issued chain),
     TP-80/-81/-82 (multi-device + distinct npub),
@@ -309,7 +314,7 @@ asserted for each scenario family.
 | TP-01..04 (setup)     | A7, A8, A9, S5, S7                 |
 | TP-10..17 (A→B prop)  | A1..A5, C0, S4                     |
 | TP-20..24 (B→A mut)   | A1..A5, C0, C2, S3                 |
-| TP-30..32 (snapshot)  | A8, C0, D3                         |
+| TP-30..32 (epoch boundary) | A8, C0, D3                    |
 | TP-40..42 (leave)     | A9, A14, S5, C0                    |
 | TP-50..53 (forget)    | A10, A14, S5, S10, C0              |
 | TP-60..62 (rename)    | (UI-local; out of property scope)  |
