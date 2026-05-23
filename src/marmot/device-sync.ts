@@ -38,8 +38,7 @@ import {
 import { loadForgottenSlots } from "./forgotten-slots";
 import { appendFailedWelcome, pruneOlderThan, type FailedWelcomeRecord } from "./failed-welcomes";
 import { TASK_EVENT_KIND, type TaskEvent } from "../store/task-events";
-import { appendEvent, loadEvents } from "../store/persistence";
-import { replayEvents } from "../store/task-reducer";
+import { appendEvent } from "../store/persistence";
 import {
   createPendingRetryQueue,
   type PendingRetryQueue,
@@ -327,10 +326,6 @@ export function selectAndIncrementRetries(
   return eligible;
 }
 
-/** Custom kind for NIP-44 encrypted task snapshots sent outside MLS. */
-export const TASK_SNAPSHOT_KIND = 30078;
-/** Fixed `d` tag for replaceable task snapshot events. */
-const SNAPSHOT_D_TAG = "notestr-task-snapshot";
 /**
  * Subscribe-first since-bridge overlap window in seconds (Solution A).
  *
@@ -597,14 +592,6 @@ export function useDeviceSync(
             // application messages that arrive before their
             // containing-epoch commit.
             //
-            // The task snapshot (fetched below) remains the canonical
-            // bootstrap for pre-join task state: MLS application
-            // messages older than the joiner's Welcome epoch cannot be
-            // recovered anyway because they're encrypted at epochs
-            // whose keys the joiner never had.
-
-            // Fetch task snapshot (NIP-44 encrypted, sent by inviter)
-            await fetchTaskSnapshot(group);
           } finally {
             resolveBarrier();
             joinBarrier = null;
@@ -671,52 +658,6 @@ export function useDeviceSync(
     // in refreshGroupSync alongside pendingRetry.delete. See Design
     // Decision 4 in specs/epic-mls-live-delivery-race/spec.md.
     const retryAttempts = new Map<string, Map<string, number>>();
-
-    /**
-     * Fetch a NIP-44 encrypted task snapshot from the group admin.
-     * Published as a replaceable event (kind 30078) with `#h` = group ID.
-     */
-    const fetchTaskSnapshot = async (group: MarmotGroup): Promise<void> => {
-      const members = getGroupMembers(group.state);
-      const hTag = nostrGroupId(group);
-      const relaysForGroup = group.relays ?? relays;
-
-      try {
-        const events = await client.network.request(relaysForGroup, [
-          {
-            kinds: [TASK_SNAPSHOT_KIND],
-            "#h": [hTag],
-            "#p": [pubkey],
-            limit: 1,
-          },
-        ]);
-        if (events.length === 0) return;
-
-        // Pick the most recent snapshot
-        const event = events.sort(
-          (a, b) => (b.created_at ?? 0) - (a.created_at ?? 0),
-        )[0];
-
-        // Verify sender is a group member
-        if (!members.includes(event.pubkey as string)) return;
-
-        // Decrypt NIP-44 content
-        const plaintext = await signer.nip44!.decrypt(
-          event.pubkey as string,
-          event.content as string,
-        );
-        const snapshot: TaskEvent = JSON.parse(plaintext);
-        if (snapshot.type !== "task.snapshot") return;
-
-        // Persist the snapshot
-        await appendEvent(group.idStr, snapshot);
-        console.debug(
-          `[device-sync] loaded task snapshot for ${group.idStr.slice(0, 8)} (${(snapshot as any).tasks?.length ?? 0} tasks)`,
-        );
-      } catch (err) {
-        console.debug("[device-sync] task snapshot fetch failed:", err);
-      }
-    };
 
     const getPendingRetryQueue = (groupId: string): PendingRetryQueue => {
       let queue = pendingRetry.get(groupId);
@@ -1361,47 +1302,3 @@ export function useDeviceSync(
   }, [client, pubkey, relays, signer]);
 }
 
-/**
- * Publish a NIP-44 encrypted task snapshot for a specific invitee.
- * Uses a replaceable event (kind 30078) so only the latest snapshot
- * is stored on relays.
- */
-export async function publishTaskSnapshot(
-  groupId: string,
-  groupHTag: string,
-  inviteeHex: string,
-  signer: EventSigner,
-  network: MarmotClient["network"],
-  relays: string[],
-): Promise<void> {
-  const events = await loadEvents(groupId);
-  if (events.length === 0) return;
-
-  const state = replayEvents(events);
-  const tasks = Array.from(state.values());
-  if (tasks.length === 0) return;
-
-  const snapshot: TaskEvent = { type: "task.snapshot", tasks };
-  const plaintext = JSON.stringify(snapshot);
-
-  const signerPubkey = await signer.getPublicKey();
-  const encrypted = await signer.nip44!.encrypt(inviteeHex, plaintext);
-
-  const unsignedEvent = {
-    kind: TASK_SNAPSHOT_KIND,
-    content: encrypted,
-    tags: [
-      ["d", `${SNAPSHOT_D_TAG}:${groupHTag}:${inviteeHex}`],
-      ["h", groupHTag],
-      ["p", inviteeHex],
-    ],
-    created_at: Math.floor(Date.now() / 1000),
-    pubkey: signerPubkey,
-  };
-
-  const signed = await signer.signEvent(unsignedEvent);
-  await network.publish(relays, signed);
-  console.debug(
-    `[device-sync] published task snapshot for ${groupId.slice(0, 8)} → ${inviteeHex.slice(0, 8)} (${tasks.length} tasks)`,
-  );
-}

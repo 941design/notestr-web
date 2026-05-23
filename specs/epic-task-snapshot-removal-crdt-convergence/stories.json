@@ -1,0 +1,186 @@
+{
+  "$schema": "stories.schema.json",
+  "epic_name": "task-snapshot-removal-crdt-convergence",
+  "created_at": "2026-05-23T00:00:00Z",
+  "total_stories": 5,
+  "story_order": [
+    "S1",
+    "S2",
+    "S3",
+    "S4",
+    "S5"
+  ],
+  "dependency_notes": "S1 must precede S2 \u2014 both touch task-events.ts and task-reducer.ts; S1 deletes the snapshot case first so S2 adds new logic to a clean union. S3 depends on S1 and S2 completing so the property tests reference a finalized TaskEvent union and correct reducer behavior. S4 (docs only) must come after S2 so the documented semantics match the final implementation; it is otherwise independent and can run in parallel with S3 if desired. S5 (build verification) must run last \u2014 it validates that all prior changes compile and all tests pass together.",
+  "mock_resolution_plan": "No temporary mocks are introduced by this epic. All cross-story dependencies flow through the same source files edited in sequence (task-events.ts, task-reducer.ts); no stubs are needed because the stories are strictly ordered.",
+  "seams": [],
+  "stories": [
+    {
+      "id": "S1",
+      "name": "remove-task-snapshot",
+      "title": "Remove task.snapshot from type system, reducer, wire transport, and call sites",
+      "description": "Deletes the task.snapshot variant from the TaskEvent discriminated union, removes its reducer case, eliminates all wire transport code (publishTaskSnapshot, fetchTaskSnapshot, their constants), removes the call site in GroupManager, and strips kind-30078 from the NIP-46 perms string. After this story the variant does not exist anywhere in production code.",
+      "owning_module": "device-sync",
+      "acceptance_criteria": [
+        "AC-TYPE-1",
+        "AC-REDUCER-1",
+        "AC-WIRE-1",
+        "AC-WIRE-2",
+        "AC-WIRE-3",
+        "AC-WIRE-4"
+      ],
+      "scope": {
+        "includes": [
+          "src/store/task-events.ts \u2014 remove `| { type: \"task.snapshot\"; tasks: Task[] }` from TaskEvent union",
+          "src/store/task-reducer.ts \u2014 remove `case \"task.snapshot\"` block (lines 58-64)",
+          "src/marmot/device-sync.ts \u2014 delete TASK_SNAPSHOT_KIND constant, SNAPSHOT_D_TAG constant, fetchTaskSnapshot function (lines 676-718), publishTaskSnapshot function (lines 1364-1407), and the fetchTaskSnapshot call in the join barrier (line 607)",
+          "src/components/GroupManager.tsx \u2014 remove `import { publishTaskSnapshot }` and the snapshot publish block (lines 191-202)",
+          "src/lib/nostr.ts \u2014 remove `sign_event:30078` from NIP46_PERMS and the associated kind-30078 comment"
+        ],
+        "excludes": [
+          "task-reducer.ts reducer logic beyond removing the snapshot case (done in S2)",
+          "Task interface changes (updatedBy field added in S2)",
+          "Any test file changes (S3)",
+          "docs/task-protocol.md (S4)",
+          "persistence.ts, task-store.tsx \u2014 no snapshot-related code"
+        ]
+      },
+      "complexity": "medium",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "lighter_path": false,
+      "creates_seam": false,
+      "consumes_seams": [],
+      "notes": "After this story the TypeScript compiler will flag any remaining snapshot references as errors \u2014 that is the intended signal that cleanup is complete. The nostr.test.ts locality test (lines 137-159) must continue to pass without modification.",
+      "status": "done"
+    },
+    {
+      "id": "S2",
+      "name": "task-reducer-crdt-fixes",
+      "title": "Add updatedBy to Task and fix reducer to first-write-wins with deterministic LWW tie-breaker",
+      "description": "Adds `updatedBy: string` to the Task interface and updates createTask() accordingly. Fixes task.created to first-write-wins semantics. Adds a deterministic LWW tie-breaker to all four update event types using the updatedBy pubkey on equal timestamps. Ensures legacy Task records without updatedBy are handled via nullish coalescing.",
+      "owning_module": "task-reducer",
+      "acceptance_criteria": [
+        "AC-TYPE-2",
+        "AC-REDUCER-2",
+        "AC-REDUCER-3",
+        "AC-REDUCER-4",
+        "AC-REDUCER-5"
+      ],
+      "scope": {
+        "includes": [
+          "src/store/task-events.ts \u2014 add `updatedBy: string` to Task interface; update createTask() to set `updatedBy: createdBy`",
+          "src/store/task-reducer.ts \u2014 wrap task.created set with `if (!next.has(event.task.id))`; add tie-breaker condition `event.updatedAt > existing.updatedAt || (event.updatedAt === existing.updatedAt && event.updatedBy < (existing.updatedBy ?? \"\"))` to all four update cases; write `updatedBy: event.updatedBy` in each accepted update"
+        ],
+        "excludes": [
+          "device-sync.ts, GroupManager.tsx, nostr.ts \u2014 all wire removals done in S1",
+          "Any test file changes (S3)",
+          "docs/task-protocol.md (S4)",
+          "persistence.ts \u2014 no IDB migration; Task records with undefined updatedBy handled by reducer nullish coalescing"
+        ]
+      },
+      "complexity": "medium",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "lighter_path": false,
+      "creates_seam": false,
+      "consumes_seams": [],
+      "notes": "Must run after S1. Both stories touch task-events.ts and task-reducer.ts. S1 removes the snapshot variant so S2 operates on the clean, post-removal union. The `existing.updatedBy ?? \"\"` guard (AC-REDUCER-5) is the sole backwards-compatibility mechanism \u2014 no IDB migration is performed.",
+      "status": "done"
+    },
+    {
+      "id": "S3",
+      "name": "property-test-cleanup",
+      "title": "Delete vacuous snapshot tests and promote property-test assertions to enforced form",
+      "description": "Removes all task.snapshot references from the three test files. Deletes the D3 block in task-reducer.property.test.ts, promotes D1 to an enforced fc.assert assertion, adds an idempotence property test, adds a commutativity create+update property test. Deletes the D3 block and all snapshot guards from multi-client.property.test.ts. Deletes the snapshot describe block from task-reducer.test.ts.",
+      "owning_module": "task-reducer",
+      "acceptance_criteria": [
+        "AC-TEST-1",
+        "AC-TEST-2",
+        "AC-TEST-3",
+        "AC-TEST-4",
+        "AC-TEST-5",
+        "AC-TEST-6",
+        "AC-TEST-7",
+        "AC-TEST-8"
+      ],
+      "scope": {
+        "includes": [
+          "src/store/task-reducer.property.test.ts \u2014 delete D3 block (~lines 1055-1106); promote D1 to fc.assert with real expect assertions on title and updatedBy; add [IDEMPOTENCE] property test covering all post-epic TaskEvent types; add [COMMUTATIVITY-CREATE-UPDATE] property test; remove snapshot pass-through at line 945",
+          "src/store/multi-client.property.test.ts \u2014 delete D3 block (lines 820-877); remove all task.snapshot guards at lines 510, 706, 814, 863",
+          "src/store/task-reducer.test.ts \u2014 delete `describe` block \"task.snapshot replaces entire state\" (lines 121-133)"
+        ],
+        "excludes": [
+          "Production source files \u2014 all done in S1 and S2",
+          "docs/task-protocol.md (S4)",
+          "nostr.test.ts \u2014 already passes after S1; no snapshot references"
+        ]
+      },
+      "complexity": "medium",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "lighter_path": false,
+      "creates_seam": false,
+      "consumes_seams": [],
+      "notes": "Must run after both S1 and S2. The new property tests (AC-TEST-3, AC-TEST-4) depend on the finalized TaskEvent union (S1) and the correct reducer behavior (S2) to make meaningful assertions. The D1 promotion (AC-TEST-2) verifies the LWW tie-breaker from S2.",
+      "status": "done"
+    },
+    {
+      "id": "S4",
+      "name": "protocol-doc-update",
+      "title": "Document first-write-wins and LWW tie-breaker semantics in task-protocol.md",
+      "description": "Adds a 'Task reducer semantics' section to docs/task-protocol.md covering: task.created is first-write-wins (duplicate id is a no-op); update operations use LWW on updatedAt with a deterministic tie-breaker on updatedBy (lowest pubkey wins); no task.snapshot variant exists in this implementation.",
+      "owning_module": "task-reducer",
+      "acceptance_criteria": [
+        "AC-DOC-1"
+      ],
+      "scope": {
+        "includes": [
+          "docs/task-protocol.md \u2014 add new section `## Task reducer semantics` documenting FWW for task.created, LWW tie-breaker for updates, and absence of task.snapshot"
+        ],
+        "excludes": [
+          "All source files \u2014 no production code changes",
+          "All test files \u2014 no test changes",
+          "Any other documentation file"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "lighter_path": true,
+      "creates_seam": false,
+      "consumes_seams": [],
+      "notes": "Must run after S2 so the documented semantics accurately reflect the implemented behavior. Can run in parallel with S3 if the team splits. docs/task-protocol.md exists on disk \u2014 this is an edit, not a new-file creation.",
+      "status": "done"
+    },
+    {
+      "id": "S5",
+      "name": "build-verification",
+      "title": "Verify TypeScript compilation and full test suite pass after all changes",
+      "description": "Runs make build (or npx tsc --noEmit) and make test to confirm that all changes from S1 through S4 compose correctly: no unresolved type references, no unhandled discriminant arms, no new test failures. This story introduces no code changes; it is the quality gate for the entire epic.",
+      "owning_module": "task-reducer",
+      "acceptance_criteria": [
+        "AC-BUILD-1",
+        "AC-BUILD-2"
+      ],
+      "scope": {
+        "includes": [
+          "Run `make build` (or `npx tsc --noEmit`) \u2014 MUST succeed with zero new errors",
+          "Run `make test` \u2014 all surviving tests MUST pass; deleted tests (AC-TEST-1 through AC-TEST-8) are excluded from count"
+        ],
+        "excludes": [
+          "Any source or test file edits \u2014 this story only runs verification commands",
+          "E2E tests \u2014 not part of this epic's validation scope"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "lighter_path": false,
+      "creates_seam": false,
+      "consumes_seams": [],
+      "notes": "Must run last \u2014 depends on S1, S2, S3, and S4 all being complete. If tsc or test fails, the failing story is identified and the relevant prior story is reopened. AC-WIRE-4 specifies that nostr.test.ts (lines 137-159) must pass without modification; that is the primary cross-module validation signal for S1.",
+      "status": "done"
+    }
+  ],
+  "updated_at": "2026-05-23T20:19:06Z"
+}

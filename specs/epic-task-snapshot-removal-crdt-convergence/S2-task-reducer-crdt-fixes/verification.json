@@ -1,0 +1,72 @@
+{
+  "story_id": "S2",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-23T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S2-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does every call site that constructs a `Task` object (not only `createTask()`) supply an `updatedBy` value after S2? Run `grep -n 'updatedBy' src/store/task-events.ts src/store/task-reducer.ts` and show that every Task-literal construction assigns `updatedBy`. Confirm no call site leaves the field `undefined` by omission."
+    },
+    {
+      "question_id": "VQ-S2-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does the `task-reducer` module remain a pure functional core with no side effects after adding `updatedBy` to the Task interface and the LWW tie-breaker? Confirm that `src/store/task-reducer.ts` imports nothing from `src/marmot/` or `src/components/` and that `applyEvent` and `replayEvents` remain synchronous pure functions with no I/O."
+    },
+    {
+      "question_id": "VQ-S2-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could the `task-reducer` module be deleted and rewritten without modifying any file outside `src/store/task-reducer.ts` (its declared owning directory)? After S2, identify every import that flows across the `src/store/` boundary and confirm all of them are inbound (other modules importing task-reducer types), not outbound dependencies that would constrain a rewrite."
+    },
+    {
+      "question_id": "VQ-S2-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Do the existing unit tests in `src/store/task-reducer.test.ts` (after S1's snapshot-describe deletion) still all pass with no new failures after S2 adds `updatedBy` to the Task interface? Provide the `make test` output for that file, confirming zero failures and that the first-write-wins and LWW behaviors are covered by at least one test each."
+    },
+    {
+      "question_id": "VQ-S2-005",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does the LWW tie-breaker `event.updatedAt > existing.updatedAt || (event.updatedAt === existing.updatedAt && event.updatedBy < (existing.updatedBy ?? \"\"))` correctly reject a malicious late-arriving update that tries to overwrite a newer event by supplying a lower pubkey but an older timestamp? Walk through the condition for the case `event.updatedAt < existing.updatedAt` and confirm the update is rejected regardless of the pubkey comparison."
+    },
+    {
+      "question_id": "VQ-S2-006",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-TYPE-2",
+      "question": "Does `Task` in `src/store/task-events.ts` have `updatedBy: string` after S2, and does `createTask()` set `updatedBy` equal to its `createdBy` argument? Show the post-change `Task` interface definition and the `createTask()` function body. Provide a unit test (existing or new) that constructs a task via `createTask()` and asserts `task.updatedBy === createdBy`."
+    },
+    {
+      "question_id": "VQ-S2-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-REDUCER-2",
+      "question": "Does `applyEvent` in `src/store/task-reducer.ts` guard the `task.created` set with `if (!next.has(event.task.id))` so that a duplicate task-created event is a silent no-op? Show the post-change `case \"task.created\"` block. Provide evidence — a test or an fc.assert trace — that applying a second `task.created` for the same id leaves the map entry unchanged."
+    },
+    {
+      "question_id": "VQ-S2-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-REDUCER-3",
+      "question": "After applying any `task.updated`, `task.status_changed`, `task.assigned`, or `task.deleted` event, does the resulting `Task` entry in state have `updatedBy` equal to the event's `updatedBy` field — for all four event types? Show each of the four case blocks in `task-reducer.ts` and confirm `updatedBy: event.updatedBy` appears in the accepted-update path of each. Provide test output covering all four types."
+    },
+    {
+      "question_id": "VQ-S2-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-REDUCER-4",
+      "question": "Does the LWW tie-breaker produce identical final state when applying [eventA, eventB] versus [eventB, eventA], where both events share the same `updatedAt` and `eventA.updatedBy < eventB.updatedBy`? Show either a property test (fc.assert) or a pair of unit test assertions demonstrating both orderings yield the same winner. Confirm the winning entry has `updatedBy === eventA.updatedBy` (the lower pubkey)."
+    },
+    {
+      "question_id": "VQ-S2-010",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-REDUCER-5",
+      "question": "Does all reducer code that reads `existing.updatedBy` use `existing.updatedBy ?? \"\"` (nullish coalescing to empty string), so that a legacy Task record with `undefined` for `updatedBy` always loses tie-breakers to any real pubkey? Run `grep -n 'existing\\.updatedBy' src/store/task-reducer.ts` and show every occurrence uses the `?? \"\"` guard. Provide a test demonstrating that a legacy record (updatedBy undefined) is correctly overwritten by any new event on equal timestamps."
+    }
+  ]
+}

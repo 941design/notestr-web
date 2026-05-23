@@ -118,20 +118,6 @@ describe("applyEvent", () => {
     expect(state.has("task-1")).toBe(true);
   });
 
-  it("task.snapshot replaces entire state", () => {
-    const old = sampleTask({ id: "old" });
-    const t1 = sampleTask({ id: "t1", title: "One" });
-    const t2 = sampleTask({ id: "t2", title: "Two" });
-    let state: TaskState = new Map([["old", old]]);
-    state = applyEvent(state, {
-      type: "task.snapshot",
-      tasks: [t1, t2],
-    });
-    expect(state.has("old")).toBe(false);
-    expect(state.size).toBe(2);
-    expect(state.get("t1")!.title).toBe("One");
-  });
-
   it("always returns a new Map", () => {
     const state = emptyState();
     const next = applyEvent(state, {

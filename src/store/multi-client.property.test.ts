@@ -507,7 +507,6 @@ describe("multi-client property tests — S4 story", () => {
             if (e.type === "task.created") {
               return { ...e, task: { ...e.task, createdBy: fakeAuthor } };
             }
-            if (e.type === "task.snapshot") return e;
             return { ...e, updatedBy: fakeAuthor };
           });
 
@@ -703,7 +702,7 @@ describe("multi-client property tests — S4 story", () => {
                   createdBy: sharedPubkey,
                 },
               };
-            } else if (event.type !== "task.snapshot") {
+            } else {
               event = { ...event, updatedBy: sharedPubkey };
             }
             events.push(event);
@@ -805,76 +804,6 @@ describe("multi-client property tests — S4 story", () => {
     expect(true).toBe(true);
   });
 
-  // -------------------------------------------------------------------------
-  // D3: late-arriving snapshot overwrites newer events on at least one client
-  //     — labelled — AC-MC-8
-  //
-  // Client 0 dispatches a sequence of mutations at timestamps t0+1..t0+n.
-  // Client 1 receives those mutations (so it has the "newer" state).  Then a
-  // task.snapshot whose tasks reflect state at t0 (before the mutations) is
-  // force-applied to client 1.  The snapshot unconditionally clears state
-  // (task-reducer.ts:58–64), so client 1 loses the newer events.  Record
-  // whether the two clients diverge after this sequence.  NO assertion — D3
-  // is the known-divergent case.
-  // -------------------------------------------------------------------------
-  it("[D3] late-arriving snapshot overwrites newer events on at least one client — labelled", () => {
-    // D3: snapshot delivered after later individual events causes loss of
-    //     newer mutations on the receiving client.
-    fc.statistics(
-      fc.record({
-        task: arbTaskFresh,
-        mutationSteps: fc.array(
-          fc.record({ newStatus: arbTaskStatus, updatedBy: arbHexPubkey }),
-          { minLength: 1, maxLength: 5 },
-        ),
-      }),
-      ({ task, mutationSteps }) => {
-        const board = new FakeBoard(2);
-
-        // Dispatch creation from client 0; deliver to both clients.
-        const creation: TaskEvent = { type: "task.created", task };
-        board.dispatch(0, creation);
-        board.deliver(0, 1);
-
-        // Snapshot state at t0 (just the original task, before any mutations).
-        const snapshotAtT0: Task[] = [{ ...task }];
-
-        // Dispatch mutations from client 0 at strictly increasing timestamps.
-        for (let i = 0; i < mutationSteps.length; i++) {
-          const step = mutationSteps[i];
-          const mutEvent: TaskEvent = {
-            type: "task.status_changed",
-            taskId: task.id,
-            status: step.newStatus,
-            updatedAt: task.updatedAt + i + 1,
-            updatedBy: step.updatedBy,
-          };
-          board.dispatch(0, mutEvent);
-        }
-
-        // Deliver all mutations to client 1 so it has the "newer" state.
-        for (let bi = 1; bi < board.bus.length; bi++) {
-          board.deliver(bi, 1);
-        }
-
-        // Force-apply a snapshot (reflecting t0 state) to client 1 directly.
-        // This models a late-arriving snapshot delivered out-of-order.
-        const snapshotEvent: TaskEvent = {
-          type: "task.snapshot",
-          tasks: snapshotAtT0,
-        };
-        board.clients[1] = applyEvent(board.clients[1], snapshotEvent);
-
-        // Client 0 has the post-mutation state; client 1 has the snapshot state.
-        const diverged = !mapsEqual(board.clients[0], board.clients[1]);
-
-        return diverged ? "client1-loses-newer" : "clients-converge";
-      },
-      NUM_RUNS,
-    );
-    // No assertion — snapshot-overwrites-newer is expected and documented (D3).
-    expect(true).toBe(true);
-  });
 
   // -------------------------------------------------------------------------
   // Additional observability: event type distribution in generated logs

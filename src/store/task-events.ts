@@ -11,6 +11,7 @@ export interface Task {
   createdBy: string; // hex pubkey
   createdAt: number; // unix timestamp
   updatedAt: number; // unix timestamp
+  updatedBy: string; // hex pubkey of last writer; set to createdBy on creation
 }
 
 export type TaskEvent =
@@ -41,8 +42,7 @@ export type TaskEvent =
       taskId: string;
       updatedAt: number;
       updatedBy: string;
-    }
-  | { type: "task.snapshot"; tasks: Task[] };
+    };
 
 export function createTask(
   title: string,
@@ -59,5 +59,6 @@ export function createTask(
     createdBy,
     createdAt: now,
     updatedAt: now,
+    updatedBy: createdBy,
   };
 }

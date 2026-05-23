@@ -357,7 +357,6 @@ describe("reducer property tests — S2 story", () => {
               maxAccepted.delete(event.taskId);
             }
           }
-          // task.snapshot is excluded from arbEventSequence; skip here.
         }
 
         for (const [id, task] of state.entries()) {
@@ -460,12 +459,12 @@ describe("reducer property tests — S2 story", () => {
   // A2: task.status_changed non-stale postcondition
   // -------------------------------------------------------------------------
   it("[A2] task.status_changed non-stale sets status to event.status", () => {
-    // A2: status_changed with updatedAt >= existing.updatedAt applies status
+    // A2: status_changed with updatedAt > existing.updatedAt applies status
     fc.assert(
       fc.property(
         arbTaskFresh,
         arbTaskStatus,
-        fc.integer({ min: 0, max: 10_000 }),
+        fc.integer({ min: 1, max: 10_000 }),
         arbHexPubkey,
         (task, newStatus, delta, updatedBy) => {
           const pre: TaskState = new Map([[task.id, task]]);
@@ -493,7 +492,7 @@ describe("reducer property tests — S2 story", () => {
       fc.property(
         arbTaskFresh,
         fc.string({ minLength: 1, maxLength: 60 }),
-        fc.integer({ min: 0, max: 10_000 }),
+        fc.integer({ min: 1, max: 10_000 }),
         arbHexPubkey,
         (task, newTitle, delta, updatedBy) => {
           const pre: TaskState = new Map([[task.id, task]]);
@@ -525,12 +524,12 @@ describe("reducer property tests — S2 story", () => {
   // A4: task.assigned non-stale sets assignee (incl. null)
   // -------------------------------------------------------------------------
   it("[A4] task.assigned non-stale sets assignee including null unassign", () => {
-    // A4: assigned with updatedAt >= existing sets assignee to event.assignee
+    // A4: assigned with updatedAt > existing sets assignee to event.assignee
     fc.assert(
       fc.property(
         arbTaskFresh,
         fc.option(arbHexPubkey, { nil: null }),
-        fc.integer({ min: 0, max: 10_000 }),
+        fc.integer({ min: 1, max: 10_000 }),
         arbHexPubkey,
         (task, assignee, delta, updatedBy) => {
           const pre: TaskState = new Map([[task.id, task]]);
@@ -553,11 +552,11 @@ describe("reducer property tests — S2 story", () => {
   // A5: task.deleted non-stale removes task
   // -------------------------------------------------------------------------
   it("[A5] task.deleted non-stale removes the task from state", () => {
-    // A5: deleted with updatedAt >= existing.updatedAt removes task
+    // A5: deleted with updatedAt > existing.updatedAt removes task
     fc.assert(
       fc.property(
         arbTaskFresh,
-        fc.integer({ min: 0, max: 10_000 }),
+        fc.integer({ min: 1, max: 10_000 }),
         arbHexPubkey,
         (task, delta, updatedBy) => {
           const pre: TaskState = new Map([[task.id, task]]);
@@ -649,10 +648,10 @@ describe("reducer property tests — S2 story", () => {
   });
 
   // -------------------------------------------------------------------------
-  // A13: idempotence — re-applying any non-snapshot event is a no-op
+  // A13: idempotence of task.created — re-applying to an existing state is a no-op
   // -------------------------------------------------------------------------
   it("[A13] idempotence — applyEvent(applyEvent(s,e),e) deep-equals applyEvent(s,e)", () => {
-    // A13: for any non-snapshot event e and any state s, applying e twice == applying once
+    // A13: for any task.created event e and any state s, applying e twice == applying once
     fc.assert(
       fc.property(
         arbEventSequence(10),
@@ -925,15 +924,32 @@ describe("reducer property tests — S2 story", () => {
   // C2: author-irrelevance
   // -------------------------------------------------------------------------
   it("[C2] author-irrelevance — re-labelling updatedBy does not change task ids, status, assignee, title, description", () => {
-    // C2: the final task state (excluding createdBy/updatedBy fields) is
+    // C2: for strictly-ordered event sequences (no timestamp ties per task),
+    //     the final task state (excluding createdBy/updatedBy fields) is
     //     independent of which pubkey authored each event.  We replace every
     //     updatedBy (and createdBy on task.created) with a single fresh pubkey
     //     and assert that all task-content fields are identical.
+    //
+    //     Note: we skip sequences with tied timestamps because the new LWW
+    //     tie-breaker uses updatedBy to break ties — relabelling all events
+    //     to the same pubkey changes the winner in that case.
     fc.assert(
       fc.property(
         arbEventSequence(),
         arbHexPubkey, // replacement author pubkey
         (events, fakeAuthor) => {
+          // Skip sequences with per-task timestamp ties — the tie-breaker
+          // uses updatedBy, so relabelling changes outcomes in that case.
+          const seenTimes = new Map<string, Set<number>>();
+          for (const e of events) {
+            if (e.type === "task.created") continue;
+            const taskId = e.taskId;
+            if (!seenTimes.has(taskId)) seenTimes.set(taskId, new Set());
+            const ts = e.updatedAt;
+            if (seenTimes.get(taskId)!.has(ts)) return; // skip this example
+            seenTimes.get(taskId)!.add(ts);
+          }
+
           // Re-label all author fields.
           const relabelled: TaskEvent[] = events.map((e) => {
             if (e.type === "task.created") {
@@ -941,9 +957,6 @@ describe("reducer property tests — S2 story", () => {
                 ...e,
                 task: { ...e.task, createdBy: fakeAuthor },
               };
-            }
-            if (e.type === "task.snapshot") {
-              return e;
             }
             return { ...e, updatedBy: fakeAuthor };
           });
@@ -1006,101 +1019,112 @@ describe("reducer property tests — S2 story", () => {
   });
 
   // -------------------------------------------------------------------------
-  // D1: equal-timestamp updates may diverge (labelled only — never fails build)
+  // D1: equal-timestamp updates are deterministic (LWW tie-breaker on updatedBy)
   // -------------------------------------------------------------------------
-  it("[D1] equal-timestamp updates may diverge — labelled via fc.statistics, no assertion", () => {
-    // D1: when two task.updated events targeting the same task share an identical
-    //     updatedAt, the reducer's >= comparison accepts whichever arrives last.
-    //     This means [e1, e2] and [e2, e1] may produce different final states.
-    //     We measure the divergence rate via fc.statistics; the build never fails.
-    //     (See spec §D1 and TP-90/TP-91 fixme scenarios.)
-    fc.statistics(
-      fc.tuple(
+  it("[D1] equal-timestamp task.updated is commutative — lower updatedBy pubkey wins", () => {
+    // After the CRDT fix, the reducer uses a deterministic tie-breaker:
+    // when two events share the same updatedAt, the one with the lexicographically
+    // lower updatedBy pubkey wins, regardless of application order.
+    fc.assert(
+      fc.property(
         arbTaskFresh,
         arbHexPubkey,
         arbHexPubkey,
         fc.string({ minLength: 1, maxLength: 40 }), // title for e1
         fc.string({ minLength: 1, maxLength: 40 }), // title for e2
         fc.integer({ min: 1, max: 1_000 }),          // updatedAt offset
+        (task, author1, author2, title1, title2, offset) => {
+          // Ensure authors are distinct so the tie-breaker is unambiguous.
+          fc.pre(author1 !== author2);
+          const tieAt = task.updatedAt + offset;
+          const creation: TaskEvent = { type: "task.created", task };
+          const e1: TaskEvent = {
+            type: "task.updated",
+            taskId: task.id,
+            changes: { title: title1 },
+            updatedAt: tieAt,
+            updatedBy: author1,
+          };
+          const e2: TaskEvent = {
+            type: "task.updated",
+            taskId: task.id,
+            changes: { title: title2 },
+            updatedAt: tieAt,
+            updatedBy: author2,
+          };
+          const stateAB = replayEvents([creation, e1, e2]);
+          const stateBA = replayEvents([creation, e2, e1]);
+          const taskAB = stateAB.get(task.id);
+          const taskBA = stateBA.get(task.id);
+          // Both orderings must produce identical title and updatedBy.
+          expect(taskAB?.title).toBe(taskBA?.title);
+          expect(taskAB?.updatedBy).toBe(taskBA?.updatedBy);
+          // The winner must be the one with the lower pubkey.
+          const winner = author1 < author2 ? e1 : e2;
+          expect(taskAB?.title).toBe(winner.changes.title);
+          expect(taskAB?.updatedBy).toBe(winner.updatedBy);
+        },
       ),
-      ([task, author1, author2, title1, title2, offset]) => {
-        const tieAt = task.updatedAt + offset;
-        const creation: TaskEvent = { type: "task.created", task };
-        const e1: TaskEvent = {
-          type: "task.updated",
-          taskId: task.id,
-          changes: { title: title1 },
-          updatedAt: tieAt,
-          updatedBy: author1,
-        };
-        const e2: TaskEvent = {
-          type: "task.updated",
-          taskId: task.id,
-          changes: { title: title2 },
-          updatedAt: tieAt,
-          updatedBy: author2,
-        };
-        const stateAB = replayEvents([creation, e1, e2]);
-        const stateBA = replayEvents([creation, e2, e1]);
-        const taskAB = stateAB.get(task.id);
-        const taskBA = stateBA.get(task.id);
-        if (taskAB === undefined || taskBA === undefined) return "missing-task";
-        return taskAB.title === taskBA.title ? "equal" : "divergent";
-      },
+      { numRuns: NUM_RUNS },
     );
-    // D1 is a labelled probe — we do NOT assert any outcome.
-    expect(true).toBe(true);
   });
 
   // -------------------------------------------------------------------------
-  // D3: late-arriving task.snapshot overwrites newer events (labelled only)
+  // [IDEMPOTENCE]: applying any event twice is the same as applying it once
   // -------------------------------------------------------------------------
-  it("[D3] late-arriving snapshot overwrites newer events — labelled via fc.statistics, no assertion", () => {
-    // D3: the reducer unconditionally replaces all state on task.snapshot
-    //     (task-reducer.ts:58–64). A snapshot arriving after individual mutation
-    //     events destroys all post-snapshot-timestamp changes. We measure how
-    //     often all newer events are lost ("snapshot-overwrites-newer") via
-    //     fc.statistics. The build never fails on any divergence rate.
-    fc.statistics(
-      fc.tuple(
-        arbTaskFresh,                                 // the base task
-        fc.array(arbRawStep, { minLength: 1, maxLength: 5 }), // mutation steps
+  it("[IDEMPOTENCE] applying any TaskEvent twice produces the same state as once", () => {
+    fc.assert(
+      fc.property(
+        arbEventSequence(),
+        (events) => {
+          // For each event in the sequence, apply it to a pre-rolled state and
+          // verify applying it a second time leaves state unchanged.
+          let state: TaskState = new Map();
+          for (const event of events) {
+            const stateOnce = applyEvent(state, event);
+            const stateTwice = applyEvent(stateOnce, event);
+            expect(mapsEqual(stateOnce, stateTwice)).toBe(true);
+            state = stateOnce;
+          }
+        },
       ),
-      ([baseTask, steps]) => {
-        // Build the initial state by applying the base task creation.
-        let stateAtT0: TaskState = applyEvent(new Map(), {
-          type: "task.created",
-          task: baseTask,
-        });
-
-        // Apply mutation steps on top to produce state at T0+n.
-        let stateAfterMutations = stateAtT0;
-        for (const step of steps) {
-          const event = interpretStep(step, stateAfterMutations);
-          stateAfterMutations = applyEvent(stateAfterMutations, event);
-        }
-
-        // Now apply a task.snapshot carrying the T0 state (base task only).
-        // This simulates a snapshot arriving late after the mutation events.
-        const snapshotTasks = Array.from(stateAtT0.values());
-        const snapshotEvent: TaskEvent = {
-          type: "task.snapshot",
-          tasks: snapshotTasks,
-        };
-        const stateAfterSnapshot = applyEvent(
-          stateAfterMutations,
-          snapshotEvent,
-        );
-
-        // Compare to the pure snapshot-as-initial state.
-        const stateSnapshotOnly = replayEvents([snapshotEvent]);
-
-        return mapsEqual(stateAfterSnapshot, stateSnapshotOnly)
-          ? "snapshot-overwrites-newer"
-          : "partial";
-      },
+      { numRuns: NUM_RUNS },
     );
-    // D3 is a labelled probe — we do NOT assert any outcome.
-    expect(true).toBe(true);
   });
+
+  // -------------------------------------------------------------------------
+  // [COMMUTATIVITY-CREATE-UPDATE]: a stale task.updated (updatedAt strictly
+  // before task.createdAt) converges regardless of delivery order.
+  // When the update arrives before the task exists it is a no-op.
+  // When the update arrives after creation it is rejected by LWW (stale).
+  // Both orderings therefore yield the same state: the unmodified created task.
+  // -------------------------------------------------------------------------
+  it("[COMMUTATIVITY-CREATE-UPDATE] stale task.updated before or after task.created yields identical state", () => {
+    fc.assert(
+      fc.property(
+        arbTaskFresh.filter((t) => t.createdAt > 1), // need room to go stale
+        arbHexPubkey,
+        fc.string({ minLength: 1, maxLength: 40 }),
+        fc.integer({ min: 1, max: 1_000 }), // how far back the update is
+        (task, updater, newTitle, staleBack) => {
+          const staleAt = Math.max(1, task.createdAt - staleBack);
+          const creation: TaskEvent = { type: "task.created", task };
+          const staleUpdate: TaskEvent = {
+            type: "task.updated",
+            taskId: task.id,
+            changes: { title: newTitle },
+            updatedAt: staleAt, // strictly before task.updatedAt
+            updatedBy: updater,
+          };
+          // [creation, staleUpdate]: staleUpdate rejected by LWW → original task
+          // [staleUpdate, creation]: staleUpdate is no-op, creation creates task → original task
+          const stateCreatFirst = replayEvents([creation, staleUpdate]);
+          const stateUpdateFirst = replayEvents([staleUpdate, creation]);
+          expect(mapsEqual(stateCreatFirst, stateUpdateFirst)).toBe(true);
+        },
+      ),
+      { numRuns: NUM_RUNS },
+    );
+  });
+
 });

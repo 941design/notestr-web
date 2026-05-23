@@ -1,0 +1,44 @@
+{
+  "story_id": "S4",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-23T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S4-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does `docs/task-protocol.md` contain no stale references to `task.snapshot` as an existing feature after S4? Run `grep -n 'task\\.snapshot' docs/task-protocol.md` and confirm the only occurrence (if any) is in the new section's negation statement (\"no task.snapshot variant exists\"). There must be no prose that implies snapshot is a live mechanism."
+    },
+    {
+      "question_id": "VQ-S4-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does the new `## Task reducer semantics` section in `docs/task-protocol.md` accurately reflect the implementation decisions in `architecture.md` — specifically: (a) FWW for `task.created`, (b) LWW on `updatedAt` with `updatedBy` tie-breaker, (c) explicit statement that `task.snapshot` does not exist? Compare the doc section against the Implementation Constraints in `architecture.md` and flag any discrepancy."
+    },
+    {
+      "question_id": "VQ-S4-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could the `task-reducer` module (which owns S4 per stories.json) be deleted and rewritten without modifying any file outside its allowed dependencies? Confirm that the doc edit in `docs/task-protocol.md` does not introduce any new coupling — no source file imports the doc, and the doc references only stable type/function names that already appear in `src/store/task-events.ts` and `src/store/task-reducer.ts`."
+    },
+    {
+      "question_id": "VQ-S4-004",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does the new `## Task reducer semantics` section include a concrete code example (even if pseudocode) that shows the tie-breaker condition `event.updatedAt > existing.updatedAt || (event.updatedAt === existing.updatedAt && event.updatedBy < (existing.updatedBy ?? \"\"))` or its equivalent? Show the code block from the doc."
+    },
+    {
+      "question_id": "VQ-S4-005",
+      "phase": "pre-impl",
+      "category": "BEST_PRACTICES",
+      "question": "Is the new section written in normative language consistent with the rest of `docs/task-protocol.md` — using MUST/MUST NOT for invariants and clearly separating the three sub-topics (FWW for created, LWW for updates, absence of snapshot) into distinct sub-points or paragraphs? Show the full new section text."
+    },
+    {
+      "question_id": "VQ-S4-006",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-DOC-1",
+      "question": "Does `docs/task-protocol.md` contain a section that explicitly documents all three required points: (a) `task.created` is first-write-wins and a duplicate id is a no-op, (b) `task.updated` / `task.status_changed` / `task.assigned` / `task.deleted` use LWW on `updatedAt` with a deterministic tie-breaker on `updatedBy` (lowest pubkey wins), and (c) no `task.snapshot` variant exists in this implementation? Run `grep -n 'first-write-wins\\|lowest pubkey\\|no task.snapshot\\|does not exist' docs/task-protocol.md` and show the matching lines for each of the three points."
+    }
+  ]
+}

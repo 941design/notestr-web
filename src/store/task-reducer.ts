@@ -7,17 +7,26 @@ export function applyEvent(state: TaskState, event: TaskEvent): TaskState {
 
   switch (event.type) {
     case "task.created": {
-      next.set(event.task.id, event.task);
+      // First-write-wins: a duplicate task.created for an existing id is a no-op.
+      if (!next.has(event.task.id)) {
+        next.set(event.task.id, event.task);
+      }
       break;
     }
 
     case "task.updated": {
       const existing = next.get(event.taskId);
-      if (existing && event.updatedAt >= existing.updatedAt) {
+      if (
+        existing &&
+        (event.updatedAt > existing.updatedAt ||
+          (event.updatedAt === existing.updatedAt &&
+            event.updatedBy < (existing.updatedBy ?? "")))
+      ) {
         next.set(event.taskId, {
           ...existing,
           ...event.changes,
           updatedAt: event.updatedAt,
+          updatedBy: event.updatedBy,
         });
       }
       break;
@@ -25,11 +34,17 @@ export function applyEvent(state: TaskState, event: TaskEvent): TaskState {
 
     case "task.status_changed": {
       const existing = next.get(event.taskId);
-      if (existing && event.updatedAt >= existing.updatedAt) {
+      if (
+        existing &&
+        (event.updatedAt > existing.updatedAt ||
+          (event.updatedAt === existing.updatedAt &&
+            event.updatedBy < (existing.updatedBy ?? "")))
+      ) {
         next.set(event.taskId, {
           ...existing,
           status: event.status,
           updatedAt: event.updatedAt,
+          updatedBy: event.updatedBy,
         });
       }
       break;
@@ -37,11 +52,17 @@ export function applyEvent(state: TaskState, event: TaskEvent): TaskState {
 
     case "task.assigned": {
       const existing = next.get(event.taskId);
-      if (existing && event.updatedAt >= existing.updatedAt) {
+      if (
+        existing &&
+        (event.updatedAt > existing.updatedAt ||
+          (event.updatedAt === existing.updatedAt &&
+            event.updatedBy < (existing.updatedBy ?? "")))
+      ) {
         next.set(event.taskId, {
           ...existing,
           assignee: event.assignee,
           updatedAt: event.updatedAt,
+          updatedBy: event.updatedBy,
         });
       }
       break;
@@ -49,16 +70,13 @@ export function applyEvent(state: TaskState, event: TaskEvent): TaskState {
 
     case "task.deleted": {
       const existing = next.get(event.taskId);
-      if (existing && event.updatedAt >= existing.updatedAt) {
+      if (
+        existing &&
+        (event.updatedAt > existing.updatedAt ||
+          (event.updatedAt === existing.updatedAt &&
+            event.updatedBy < (existing.updatedBy ?? "")))
+      ) {
         next.delete(event.taskId);
-      }
-      break;
-    }
-
-    case "task.snapshot": {
-      next.clear();
-      for (const task of event.tasks) {
-        next.set(task.id, task);
       }
       break;
     }

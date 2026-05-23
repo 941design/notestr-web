@@ -103,7 +103,6 @@ const REQUIRED_KINDS: ReadonlyArray<number> = [
   13, // NIP-59 Seal (applesauce-common gift-wrap used by marmot-ts invitations)
   10051, // Relay list (client.tsx)
   22242, // NIP-42 AUTH (NDK-internal via EventSignerNdkAdapter)
-  30078, // Task snapshot (device-sync.ts)
   30443, // Addressable key package (marmot-ts key-package-manager)
 ];
 
@@ -175,7 +174,7 @@ describe("NIP46_PERMS (AC-PERMS-1 and AC-PERMS-2)", () => {
     // Kinds that are used via named constants — their numeric values are
     // verified by the REQUIRED_KINDS array above; we exclude them from the
     // literal scan to avoid false positives from other numeric references.
-    const constantMappedKinds = new Set([30078, 30443]);
+    const constantMappedKinds = new Set([30443]);
 
     const undeclaredKinds: Array<{ file: string; kind: number }> = [];
     for (const file of filesWithSignEvent) {

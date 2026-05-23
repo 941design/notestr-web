@@ -406,3 +406,61 @@ tracked as a follow-up (see `BACKLOG.json`, slug
   exercise the MLS receive pipeline in multi-context scenarios. F1/F2 fixes
   improve their reliability; `awaitDeviceJoin` polling in the multi-device spec
   benefits from Solution A's gap closure.
+
+---
+
+## Task reducer semantics
+
+The `applyEvent` function in `src/store/task-reducer.ts` implements CRDT-safe
+task state. The rules below are invariants that hold across all devices and
+event orderings:
+
+### task.created — first-write-wins (FWW)
+
+A `task.created` event is a **no-op** if the task id already exists in state.
+The first observed `task.created` event for a given id is canonical; subsequent
+duplicates are silently discarded. This makes task creation idempotent and
+ensures that replaying the event log produces the same state regardless of how
+many times creation events appear.
+
+```
+if (!state.has(event.task.id)) {
+  state.set(event.task.id, event.task);
+}
+```
+
+### task.updated / task.status_changed / task.assigned / task.deleted — LWW with deterministic tie-breaker
+
+The four mutation event types use **Last-Write-Wins (LWW)** on `updatedAt`,
+with a deterministic tie-breaker for equal timestamps:
+
+```
+event wins iff:
+  event.updatedAt > existing.updatedAt
+  || (event.updatedAt === existing.updatedAt && event.updatedBy < existing.updatedBy)
+```
+
+When two events share the same `updatedAt`, the one with the **lexicographically
+lower `updatedBy` pubkey** (hex string) wins. This ensures that applying
+`[eventA, eventB]` and `[eventB, eventA]` produces identical state, making
+the reducer commutative and convergent under any delivery order.
+
+Every accepted mutation event writes `updatedBy: event.updatedBy` into the
+stored `Task` record so that future tie-breaking has access to the last winner's
+pubkey.
+
+### Legacy Task records
+
+`Task` records stored before the `updatedBy` field was introduced will have
+`undefined` for that field. All reducer code reads `existing.updatedBy ?? ""`
+(nullish coalescing to empty string) to treat legacy records as if they were
+last updated by the lowest possible pubkey value — ensuring they always lose
+tie-breakers to any real pubkey and thus always accept incoming updates for
+equal timestamps. No IDB migration is required.
+
+### No task.snapshot variant
+
+This implementation does **not** have a `task.snapshot` event type. All task
+state flows through the MLS kind-445 application message pipeline using the
+event types listed above. There is no out-of-band NIP-44 kind-30078 snapshot
+mechanism.

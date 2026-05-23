@@ -1,0 +1,93 @@
+{
+  "story_id": "S3",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-23T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S3-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "After S3, does `grep -rn 'task\\.snapshot\\|task_snapshot' src/store/task-reducer.property.test.ts src/store/multi-client.property.test.ts src/store/task-reducer.test.ts` return zero matches? Provide the exact empty output as evidence. Also confirm that no `expect(true).toBe(true)` no-op placeholder was introduced in place of any deleted block."
+    },
+    {
+      "question_id": "VQ-S3-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Do the promoted and newly added property tests in `task-reducer.property.test.ts` remain within the `task-reducer` module boundary — importing only from `src/store/task-reducer.ts`, `src/store/task-events.ts`, and fast-check — without introducing any dependency on `src/marmot/` or `src/components/`? Show the import block of the file after S3."
+    },
+    {
+      "question_id": "VQ-S3-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could the `task-reducer` module (owning S3) be deleted and rewritten without modifying any file outside its allowed dependencies? After S3, confirm that the test files only import from `src/store/` and that no new cross-module seam was introduced to make the property tests work."
+    },
+    {
+      "question_id": "VQ-S3-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does the promoted D1 test (fc.assert commutativity for `task.updated` on equal timestamps) fail on a checkout that still has the pre-S2 reducer (without the LWW tie-breaker), and pass on the post-S2 checkout? Describe the expected failure mode on the pre-S2 reducer (which event wins when the tie-breaker is absent) and confirm the test distinguishes both states — this validates the test actually caught the bug the epic fixes."
+    },
+    {
+      "question_id": "VQ-S3-005",
+      "phase": "pre-impl",
+      "category": "BEST_PRACTICES",
+      "question": "Do the new idempotence (AC-TEST-3) and commutativity create-update (AC-TEST-4) property tests use `fc.assert(fc.property(...))` with real `expect` assertions — not `fc.statistics` probes, `.log()` calls, or labelled-only forms? Show the test bodies and confirm that each `fc.assert` call contains at least one `expect` statement that would throw on a violated invariant."
+    },
+    {
+      "question_id": "VQ-S3-006",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-TEST-1",
+      "question": "Is the D3 block (approximately lines 1055-1106) in `src/store/task-reducer.property.test.ts` entirely absent after S3? Run `grep -n 'task\\.snapshot\\|D3\\|labelled.*snapshot\\|snapshot.*labelled' src/store/task-reducer.property.test.ts` and show zero matches. Confirm no stub, no-op `expect`, or commented-out block remains in its place."
+    },
+    {
+      "question_id": "VQ-S3-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-TEST-2",
+      "question": "Does the test formerly labelled D1 in `src/store/task-reducer.property.test.ts` now use `fc.assert(fc.property(...))` with real `expect` assertions verifying that applying two `task.updated` events with the same `updatedAt` in either order produces identical `title` and `updatedBy` in the resulting task? Show the post-change test body and the `make test` output confirming it passes."
+    },
+    {
+      "question_id": "VQ-S3-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-TEST-3",
+      "question": "Does the new idempotence property test in `src/store/task-reducer.property.test.ts` cover all post-epic `TaskEvent` types (excluding `task.snapshot` which is gone), use `fc.assert`, and assert that `applyEvent(applyEvent(state, e), e)` deep-equals `applyEvent(state, e)` for any event `e`? Show the full test body and confirm `make test` passes it."
+    },
+    {
+      "question_id": "VQ-S3-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-TEST-4",
+      "question": "Does the new commutativity create-update property test in `src/store/task-reducer.property.test.ts` use `fc.assert` and assert that `[task.created, task.updated]` and `[task.updated, task.created]` applied to an empty state produce the same final task state? Show the full test body and `make test` output confirming it passes."
+    },
+    {
+      "question_id": "VQ-S3-010",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-TEST-5",
+      "question": "Is the `describe` block \"task.snapshot replaces entire state\" (lines 121-133) entirely absent from `src/store/task-reducer.test.ts` after S3? Run `grep -n 'task\\.snapshot\\|next\\.clear\\|replaces entire state' src/store/task-reducer.test.ts` and show zero matches. Confirm `make test` passes the file."
+    },
+    {
+      "question_id": "VQ-S3-011",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-TEST-6",
+      "question": "Is the D3 block (lines 820-877) in `src/store/multi-client.property.test.ts` entirely deleted after S3? Run `grep -n 'task\\.snapshot\\|snapshotAtT0\\|late-arriving snapshot' src/store/multi-client.property.test.ts` and show zero matches in the D3 region. Confirm `make test` passes the file."
+    },
+    {
+      "question_id": "VQ-S3-012",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-TEST-7",
+      "question": "Are all four snapshot guards (`if (e.type === \"task.snapshot\") return e;` at lines 510, 706, 814, 863 and any `if (event.type !== \"task.snapshot\")` variants) removed from `src/store/multi-client.property.test.ts` after S3? Run `grep -n 'task\\.snapshot' src/store/multi-client.property.test.ts` and show zero matches. Confirm the surrounding test blocks still compile and pass."
+    },
+    {
+      "question_id": "VQ-S3-013",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-TEST-8",
+      "question": "Is the `if (e.type === \"task.snapshot\") { return e; }` pass-through at `src/store/task-reducer.property.test.ts:945` removed after S3? Run `grep -n 'task\\.snapshot' src/store/task-reducer.property.test.ts` and show zero matches. Confirm the C2 event-relabelling map still compiles (TypeScript exhaustiveness check passes) and that `make test` passes the C2 test."
+    }
+  ]
+}

@@ -1,0 +1,75 @@
+{
+  "created_at": "2026-05-23T19:38:47Z",
+  "focus_areas": {
+    "similar-features": {
+      "summary": "Confirmed all five bugs from the coordination memo. Full type and test scope mapped.",
+      "key_findings": [
+        "task.snapshot variant is at task-events.ts:45; all production consumers are device-sync.ts (2 sites) and task-reducer.ts:58-64",
+        "task-reducer.test.ts:121-133 has a unit test 'task.snapshot replaces entire state' — must be deleted",
+        "multi-client.property.test.ts also has D3 at lines 820-877 AND snapshot guards at lines 510, 706, 814, 863 — ALL need removal",
+        "task-reducer.property.test.ts C2 guard at line 945 passes through task.snapshot events — needs removal",
+        "arbEventSequence already excludes task.snapshot (line 360) — that exclusion comment can simply be removed",
+        "task.created reducer (line 10): unconditional next.set — confirmed last-write-wins defect",
+        "All mutation events use >= guard (lines 16,27,39,51) — equal-timestamp is last-delivery-wins; D1 measures this",
+        "replayEvents used only on mount (task-store.tsx:87); applyEvent used incrementally at runtime (task-store.tsx:148,188)"
+      ],
+      "key_files": [
+        "src/store/task-events.ts:1-63",
+        "src/store/task-reducer.ts:1-77",
+        "src/store/task-store.tsx:85-192",
+        "src/store/persistence.ts:1-34",
+        "src/store/task-reducer.test.ts:121-133",
+        "src/store/task-reducer.property.test.ts:360,945,1011-1106",
+        "src/store/multi-client.property.test.ts:510,706,814,820-877"
+      ]
+    },
+    "architecture": {
+      "summary": "One-way import from marmot → store. Persistence.ts is the seam. No IDB migration system. NIP46_PERMS locality enforced by nostr.test.ts.",
+      "key_findings": [
+        "Boundary: src/marmot/ imports from src/store/; never reverse (except task-store.tsx imports marmot coordination primitives for publish-window only)",
+        "Seam: persistence.ts exports appendEvent/loadEvents/saveEvents/clearEvents — the only surface marmot/ touches in store/",
+        "device-sync.ts imports: TASK_EVENT_KIND, TaskEvent from task-events (line 40); appendEvent, loadEvents from persistence (line 41); replayEvents from task-reducer (line 42)",
+        "fetchTaskSnapshot appends task.snapshot to END of the event log — so replayEvents encounters it last and wipes all prior state",
+        "No IDB migration system: idb-keyval direct get/set with TaskEvent[] type; adding updatedBy to Task means old stored tasks have undefined for this field",
+        "NIP46_PERMS at nostr.ts:26-27; consumed ONLY at startNostrConnect (line 185); nostr.test.ts:137-159 enforces single-source-of-truth (no other file may contain sign_event:N tokens)",
+        "notestr-test-hooks.d.ts:4 imports Task, TaskEvent — may need update if type union changes",
+        "Dual persistence writers: task-store.tsx:192 (local dispatch) and device-sync.ts:935 (remote receive) — pre-existing, out of scope",
+        "Board.tsx and TaskCard.tsx import Task/TaskStatus/createTask — NOT task.snapshot; safe",
+        "NIP46_PERMS test: removing sign_event:30078 must keep test passing (test checks REQUIRED_KINDS are present, not that 30078 exists specifically)"
+      ],
+      "key_files": [
+        "src/store/task-events.ts",
+        "src/store/persistence.ts",
+        "src/store/task-store.tsx",
+        "src/marmot/device-sync.ts:40-42,679-719,935,1365-1407",
+        "src/components/GroupManager.tsx:161-212",
+        "src/lib/nostr.ts:26-27",
+        "src/types/notestr-test-hooks.d.ts"
+      ]
+    },
+    "testing-and-conventions": {
+      "summary": "Vitest globals:false. NUM_RUNS env pattern. D1/D3 use fc.statistics no-op pattern. C2 has task.snapshot pass-through.",
+      "key_findings": [
+        "Vitest config: globals:false — all describe/it/expect must be explicitly imported from 'vitest'",
+        "Test files: vitest + fast-check 3.23.x; environment: node; no DOM",
+        "NUM_RUNS: const NUM_RUNS = Number(process.env.FAST_CHECK_NUM_RUNS) || 1000 (task-reducer) / 500 (multi-client)",
+        "make test runs ALL tests including property tests at default NUM_RUNS; make test-property runs only property files at 10000",
+        "D1 (lines 1011-1053): fc.statistics labelled probe; no assertion. Replace with fc.assert(fc.property(...)) wrapping same commutativity check",
+        "D3 (lines 1058-1106): fc.statistics labelled probe + expect(true).toBe(true) no-op. Delete entire block after removing task.snapshot",
+        "C2 (line 945): if (e.type === 'task.snapshot') { return e; } pass-through — remove after snapshot type is deleted",
+        "multi-client.property.test.ts C2 guard at line 706, A15 guard at line 814, snapshot references at 510, 863 — all need removal",
+        "Bracketed invariant IDs in test titles: [S1], [D1], [C0] etc.",
+        "No shared fixture files; all helpers (sampleTask, mapsEqual) defined locally per file",
+        "TypeScript strict: true; noUnusedLocals/Parameters: false",
+        "Stryker configured in stryker.cohesive.conf.json for task-reducer.ts; disableTypeChecks: true for mutation runs"
+      ],
+      "key_files": [
+        "src/store/task-reducer.property.test.ts:945,1011-1106",
+        "src/store/multi-client.property.test.ts:510,706,814,820-877",
+        "src/store/task-reducer.test.ts:121-133",
+        "vitest.config.ts",
+        "Makefile"
+      ]
+    }
+  }
+}

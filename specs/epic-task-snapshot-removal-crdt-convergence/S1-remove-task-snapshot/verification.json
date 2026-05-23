@@ -1,0 +1,85 @@
+{
+  "story_id": "S1",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-23T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S1-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "After removing the task.snapshot variant and all its call sites, does `grep -rn 'task\\.snapshot\\|task_snapshot\\|TASK_SNAPSHOT\\|SNAPSHOT_D_TAG\\|publishTaskSnapshot\\|fetchTaskSnapshot\\|sign_event:30078' src/` return zero matches? Provide the exact command output (empty) as evidence that no production code retains any snapshot reference."
+    },
+    {
+      "question_id": "VQ-S1-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does the device-sync module (`src/marmot/device-sync.ts`) remain within its declared boundary after the removals — specifically, does it still only import task-domain types from `src/store/` via the four seam functions (`appendEvent`, `loadEvents`, `saveEvents`, `clearEvents`) and not introduce any new cross-module import to compensate for the removed snapshot code? Show the import block after the change."
+    },
+    {
+      "question_id": "VQ-S1-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could the `device-sync` module be deleted and rewritten without modifying any file outside its `src/marmot/` directory and the four seam functions declared in `persistence.ts`? After S1's removals, identify any remaining cross-module dependencies from `device-sync.ts` and confirm they all flow through the `appendEvent` / `loadEvents` / `saveEvents` / `clearEvents` seam contract defined in architecture.md."
+    },
+    {
+      "question_id": "VQ-S1-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does `src/lib/nostr.test.ts` (lines 137-159, the NIP46_PERMS locality test) pass without any modification after `sign_event:30078` is removed from `NIP46_PERMS` in `src/lib/nostr.ts`? Provide the test runner output showing that test passing. Additionally, confirm that the test does NOT assert on 30078 being absent — only that all `sign_event:<N>` tokens in non-test files are in the `REQUIRED_KINDS` set."
+    },
+    {
+      "question_id": "VQ-S1-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "After the join-barrier edit in `device-sync.ts`, does the MLS join flow still call `resolveBarrier()` on completion, and does it do so without any reference to `fetchTaskSnapshot`? Provide the post-change join barrier code block and confirm that `resolveBarrier` is still invoked at the correct point."
+    },
+    {
+      "question_id": "VQ-S1-006",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does removing `sign_event:30078` from `NIP46_PERMS` cause the NIP-46 signer to lose any capability that is still required by production code? Enumerate all remaining `sign_event:<N>` entries in `NIP46_PERMS` after the change and confirm that kind 30078 is not referenced by any surviving production event-publishing code path."
+    },
+    {
+      "question_id": "VQ-S1-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-TYPE-1",
+      "question": "Does `TaskEvent` in `src/store/task-events.ts` contain no `task.snapshot` variant after the change? Show the complete union definition and confirm TypeScript compiles (`npx tsc --noEmit`) with zero errors. Confirm no `@ts-ignore` comment shields any snapshot-related line. Show the compiler output as evidence."
+    },
+    {
+      "question_id": "VQ-S1-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-REDUCER-1",
+      "question": "Does `src/store/task-reducer.ts` contain no `case \"task.snapshot\"` string in any form after S1? Run `grep -n 'task\\.snapshot' src/store/task-reducer.ts` and show that the output is empty. Also confirm that `applyEvent` compiles cleanly with no exhaustiveness error introduced by the removal."
+    },
+    {
+      "question_id": "VQ-S1-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-WIRE-1",
+      "question": "Does `src/marmot/device-sync.ts` export no `publishTaskSnapshot` function and contain no `TASK_SNAPSHOT_KIND` or `SNAPSHOT_D_TAG` constant after S1? Run `grep -n 'publishTaskSnapshot\\|TASK_SNAPSHOT_KIND\\|SNAPSHOT_D_TAG' src/marmot/device-sync.ts` and show the empty output. If the file does not exist, explain what happened to it."
+    },
+    {
+      "question_id": "VQ-S1-010",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-WIRE-2",
+      "question": "Does the MLS join barrier in `src/marmot/device-sync.ts` contain no call to `fetchTaskSnapshot` after S1? Show the post-change join barrier region and confirm: (a) `fetchTaskSnapshot` is not called, (b) no `appendEvent` call for a kind-30078 event exists at the former line 712 or anywhere nearby, and (c) a test or manual trace confirms the join still resolves."
+    },
+    {
+      "question_id": "VQ-S1-011",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-WIRE-3",
+      "question": "Does `src/components/GroupManager.tsx` contain no import of `publishTaskSnapshot` and no call to it after S1? Run `grep -n 'publishTaskSnapshot' src/components/GroupManager.tsx` and show the empty output. Also confirm the invite flow compiles and that no kind-30078 event is published anywhere in the invite code path."
+    },
+    {
+      "question_id": "VQ-S1-012",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-WIRE-4",
+      "question": "Does the `NIP46_PERMS` string in `src/lib/nostr.ts` contain no `sign_event:30078` substring and no associated kind-30078 comment after S1? Run `grep -n '30078' src/lib/nostr.ts` and show the empty output. Additionally, provide the `make test` output (or the `nostr.test.ts` section alone) confirming the locality test at lines 137-159 still passes without modification."
+    }
+  ]
+}

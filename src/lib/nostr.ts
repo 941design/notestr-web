@@ -20,11 +20,10 @@ const AUTH_METHOD_KEY = "notestr-auth-method";
  *   10051  – Relay list (client.tsx)
  *   22242  – NIP-42 AUTH (NDK-internal; EventSignerNdkAdapter routes AUTH
  *            challenges through the app signer)
- *   30078  – Task snapshot (device-sync.ts publishTaskSnapshot)
  *   30443  – Addressable key package (marmot-ts key-package-manager publish/rotate)
  */
 export const NIP46_PERMS =
-  "sign_event:5,sign_event:13,sign_event:10051,sign_event:22242,sign_event:30078,sign_event:30443,nip44_encrypt,nip44_decrypt";
+  "sign_event:5,sign_event:13,sign_event:10051,sign_event:22242,sign_event:30443,nip44_encrypt,nip44_decrypt";
 
 export function getNip07Signer(): EventSigner | null {
   if (!window.nostr) return null;

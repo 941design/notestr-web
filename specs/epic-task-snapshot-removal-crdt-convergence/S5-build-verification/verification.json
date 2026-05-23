@@ -1,0 +1,51 @@
+{
+  "story_id": "S5",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-23T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S5-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does `npx tsc --noEmit` (or `make build`) complete with zero errors and zero warnings after all S1-S4 changes are applied? Provide the full compiler output (which must be empty on success). If any error appears, name the file and line so the owning story can be reopened."
+    },
+    {
+      "question_id": "VQ-S5-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "After all epic changes compile cleanly, does the TypeScript compiler confirm that no switch statement in any production file has an unhandled discriminant arm caused by the removal of `task.snapshot` from the union? The absence of errors from `npx tsc --noEmit` is the evidence — confirm the output is clean and that no `@ts-ignore` was added to suppress exhaustiveness errors in any file under `src/`."
+    },
+    {
+      "question_id": "VQ-S5-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could the `task-reducer` module (which owns S5 per stories.json) be deleted and rewritten without modifying any file outside its declared dependencies? S5 introduces no code changes — confirm this by showing that the S5 scope contains only command invocations and no file edits, and that all cross-module contracts established by S1-S4 flow through the declared seam in `persistence.ts`."
+    },
+    {
+      "question_id": "VQ-S5-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does `make test` pass all surviving tests (i.e. tests not deliberately deleted by AC-TEST-1 through AC-TEST-8) with zero new failures after all epic changes? Provide the `make test` output summary showing total passing count and zero failures. Confirm that the deleted test count matches the expected deletions: one describe block in `task-reducer.test.ts`, the D3 block and snapshot guards in `multi-client.property.test.ts`, and the D3 block plus the snapshot pass-through in `task-reducer.property.test.ts`."
+    },
+    {
+      "question_id": "VQ-S5-005",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "After all changes compile and tests pass, does `grep -rn 'task\\.snapshot\\|TASK_SNAPSHOT_KIND\\|SNAPSHOT_D_TAG\\|publishTaskSnapshot\\|fetchTaskSnapshot\\|sign_event:30078' src/` return zero matches across all production files? Provide the empty output as the final confirmation that no snapshot artifact survives in the production codebase."
+    },
+    {
+      "question_id": "VQ-S5-006",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-BUILD-1",
+      "question": "Does `make build` (or `npx tsc --noEmit`) succeed with zero new TypeScript errors after all S1-S4 changes? Confirm specifically: (a) no unhandled discriminant arm errors remain from the union shrink, (b) no unresolved reference to any deleted symbol (`publishTaskSnapshot`, `fetchTaskSnapshot`, `TASK_SNAPSHOT_KIND`, `SNAPSHOT_D_TAG`) remains in any file, and (c) `src/types/notestr-test-hooks.d.ts` still imports `TaskEvent` validly without modification. Show the compiler output."
+    },
+    {
+      "question_id": "VQ-S5-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-BUILD-2",
+      "question": "Does `make test` pass all surviving tests — including `src/lib/nostr.test.ts` lines 137-159 (the NIP46_PERMS locality test, validating AC-WIRE-4) — with zero failures? Provide the full `make test` output. Confirm that `nostr.test.ts` was not modified to make it pass, by showing `git diff src/lib/nostr.test.ts` is empty after all epic changes are applied."
+    }
+  ]
+}
