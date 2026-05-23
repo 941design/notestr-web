@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { LogOut, Plus, UserPlus, Users, QrCode, ScanLine, X } from "lucide-react";
+import { Check, Copy, LogOut, Plus, UserPlus, Users, QrCode, ScanLine, X } from "lucide-react";
 import { useMarmot } from "@/marmot/client";
 import { npubToHex, shortenPubkey, hexToNpub } from "@/lib/nostr";
 import { DeviceList } from "@/components/DeviceList";
@@ -32,6 +32,25 @@ interface GroupManagerProps {
   onGroupSelect: (groupId: string, groupName: string) => void;
   onGroupLeft?: () => void;
   selectedGroupId: string | null;
+}
+
+function CopyIconButton({ text, label }: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-xs"
+      aria-label={copied ? `${label} copied` : `Copy ${label}`}
+      onClick={() => {
+        navigator.clipboard.writeText(text).catch(() => {});
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }}
+    >
+      {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+    </Button>
+  );
 }
 
 export function GroupManager({
@@ -372,6 +391,24 @@ export function GroupManager({
           {creating ? "Creating..." : "Create"}
         </Button>
       </form>
+
+      {selectedGroup && !detachedGroupIds.has(selectedGroup.idStr) && (
+        <section data-testid="group-id-section" className="mb-4">
+          <Label className="mb-2 block text-xs font-semibold text-muted-foreground">
+            Group ID
+          </Label>
+          <div className="flex items-start gap-1 px-3">
+            <p
+              data-testid="group-id-value"
+              className="flex-1 break-all text-xs font-mono text-muted-foreground"
+              title={selectedGroup.idStr}
+            >
+              {selectedGroup.idStr}
+            </p>
+            <CopyIconButton text={selectedGroup.idStr} label="group ID" />
+          </div>
+        </section>
+      )}
 
       {selectedGroupId && !detachedGroupIds.has(selectedGroupId) && (() => {
         const selectedRelays = selectedGroup ? getGroupRelays(selectedGroup, DEFAULT_RELAYS) : DEFAULT_RELAYS;

@@ -95,3 +95,21 @@ test('selected group shows relay list in sidebar', async ({ page }) => {
   // Group should already be selected after creation — relay list should be visible
   await expect(page.locator('[data-testid="group-relay-list"]').first()).toBeVisible({ timeout: 5000 });
 });
+
+test('selected group shows group ID in sidebar', async ({ page }) => {
+  await openDrawerIfMobile(page);
+
+  const GROUP_NAME = 'E2E Group ID Display';
+  await page.getByPlaceholder('Group name').first().fill(GROUP_NAME);
+  await page.getByRole('button', { name: 'Create', exact: true }).first().click();
+
+  const sidebar = page.locator('aside');
+  await expect(sidebar.getByText(GROUP_NAME).first()).toBeVisible({ timeout: 30000 });
+
+  // The Group ID section should appear once the freshly created group is selected.
+  const idValue = page.locator('[data-testid="group-id-value"]').first();
+  await expect(idValue).toBeVisible({ timeout: 5000 });
+
+  // Group IDs are 32-byte hex strings (64 lowercase hex chars).
+  await expect(idValue).toHaveText(/^[0-9a-f]{64}$/);
+});
