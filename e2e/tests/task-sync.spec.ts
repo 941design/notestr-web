@@ -1,16 +1,20 @@
 /**
- * E2E test: Tasks created before a member joins should be visible after joining.
+ * E2E test: MLS epoch boundary — tasks created before a member joins are not
+ * visible to the new member.
  *
  * Scenario:
- * 1. User A creates a group and adds a task
- * 2. User A invites User B (publishes NIP-44 encrypted task snapshot)
+ * 1. User A creates a group and adds a task (kind-445, epoch 0)
+ * 2. User A invites User B — the Add commit advances the group to epoch 1
  * 3. User B joins the group via device-sync
- * 4. User B should see the pre-existing task (loaded from NIP-44 snapshot)
+ * 4. User B fetches kind-445 history but CANNOT decrypt epoch-0 messages
+ *    (MLS forward secrecy — joiner only holds keys for epochs ≥ their join epoch)
+ * 5. User B sees an empty task board
  *
- * MLS application messages from before the join epoch are undecryptable by
- * new members by design. The fix is to publish a NIP-44 encrypted task
- * snapshot as a standard Nostr event when inviting, which the new member
- * fetches and decrypts outside MLS.
+ * This is TP-30 under the post-snapshot-removal protocol (v2). The NIP-44
+ * side-channel snapshot mechanism has been deliberately removed because it
+ * caused CRDT divergence (fan-out of empty snapshots wiping task state).
+ * Pre-join task visibility is an accepted trade-off documented in
+ * docs/task-protocol.md § State Bootstrap.
  */
 
 import { type BrowserContext, type Page } from '@playwright/test';
@@ -114,7 +118,7 @@ test.describe.serial('task-sync: older tasks visible after joining', () => {
     await expect(sidebarB.getByText(GROUP_NAME)).toBeVisible({ timeout: 60000 });
   });
 
-  test('User B sees the pre-existing task', async () => {
+  test('User B sees an empty board — pre-join tasks are not visible (MLS epoch boundary)', async () => {
     test.skip(skipMobile, 'Multi-context MLS tests require desktop viewport');
     // Click on the group to select it
     const sidebarB = pageB.locator('aside');
@@ -123,8 +127,8 @@ test.describe.serial('task-sync: older tasks visible after joining', () => {
     // Wait for the task board to load
     await expect(pageB.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 10000 });
 
-    // The pre-existing task should appear in the Open column
-    const openColumn = pageB.locator('[data-column="open"]').first();
-    await expect(openColumn).toContainText(TASK_TITLE, { timeout: 30000 });
+    // The pre-existing task must NOT appear: it was published under epoch 0,
+    // before B joined. MLS forward secrecy makes it permanently unrecoverable.
+    await expect(pageB.getByText(TASK_TITLE)).toHaveCount(0, { timeout: 15000 });
   });
 });

@@ -27,12 +27,26 @@ Once decrypted, a kind-445 application message yields a Nostr rumor of kind
 JSON-encoded `TaskEvent` discriminated union:
 
 ```ts
+type TaskStatus = "open" | "in_progress" | "done";
+
+interface Task {
+  id: string;
+  title: string;
+  description: string;
+  status: TaskStatus;
+  assignee: string | null;
+  createdBy: string;   // hex pubkey of creator
+  createdAt: number;   // unix seconds
+  updatedAt: number;   // unix seconds of last mutation
+  updatedBy: string;   // hex pubkey of last mutator
+}
+
 type TaskEvent =
-  | { type: "task.created";        id: string; title: string; description?: string; created_at: number }
-  | { type: "task.updated";        id: string; title?: string; description?: string }
-  | { type: "task.status_changed"; id: string; status: "open" | "in_progress" | "done" }
-  | { type: "task.assigned";       id: string; assignee: string }
-  | { type: "task.deleted";        id: string };
+  | { type: "task.created";        task: Task }
+  | { type: "task.updated";        taskId: string; changes: Partial<Pick<Task, "title" | "description">>; updatedAt: number; updatedBy: string }
+  | { type: "task.status_changed"; taskId: string; status: TaskStatus; updatedAt: number; updatedBy: string }
+  | { type: "task.assigned";       taskId: string; assignee: string | null; updatedAt: number; updatedBy: string }
+  | { type: "task.deleted";        taskId: string; updatedAt: number; updatedBy: string };
 ```
 
 The rumor also carries `tags: [["t", "task"]]`, which the `task-store` uses to
@@ -464,3 +478,34 @@ This implementation does **not** have a `task.snapshot` event type. All task
 state flows through the MLS kind-445 application message pipeline using the
 event types listed above. There is no out-of-band NIP-44 kind-30078 snapshot
 mechanism.
+
+---
+
+## State Bootstrap
+
+### Pre-join task visibility — accepted trade-off
+
+A member who joins a group at epoch N **cannot decrypt** kind-445 application
+messages that were published at epochs < N. This is a fundamental property of
+MLS forward secrecy: keys for earlier epochs are not included in the Welcome
+message. As a result, tasks created and mutated before the invite are invisible
+to the new joiner; their initial board is empty.
+
+This trade-off was evaluated and accepted when the `task.snapshot` side-channel
+was removed. The prior snapshot mechanism (kind-30078 NIP-44 published by the
+inviting device after each invite) was supposed to bootstrap pre-join state, but
+it caused CRDT divergence: the fan-out of empty snapshots wiped task state on
+all connected devices. The fix was to remove the snapshot path entirely.
+
+**Design decision:** Relay backfill is the bootstrap path. A member who joins
+at epoch N will accumulate task state from epoch N onward. If pre-join history
+is operationally important, the group can be re-seeded by any existing member
+dispatching fresh `task.created` events — this is an intentional group admin
+action, not an automatic mechanism.
+
+### What this means for E2E tests
+
+Tests that cover the join flow (TP-30, TP-31, TP-32) verify the absence of
+pre-join tasks on B's board, not their presence. The epoch boundary is the
+correct behavior: B sees an empty board immediately after joining and accumulates
+state from new events as they arrive.

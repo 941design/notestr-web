@@ -1,16 +1,26 @@
 /**
- * E2E tests: NIP-44 task-snapshot at invite time captures merged history.
+ * E2E tests: MLS epoch boundary — pre-join task mutations are not visible
+ * to a newly invited member.
  *
  * Covers permutations TP-31 and TP-32 from
- * `docs/two-party-permutation-matrix.md`. The existing
- * `task-sync.spec.ts` already covers TP-30 (`task.created` survives the
- * snapshot path); these tests pin that the snapshot reflects all event
- * variants, not just creates.
+ * `docs/two-party-permutation-matrix.md` under the post-snapshot-removal
+ * protocol (v2). The NIP-44 side-channel snapshot mechanism has been
+ * deliberately removed because it caused CRDT divergence (fan-out of empty
+ * snapshots wiping task state on all devices).
  *
- * The snapshot publisher (`publishTaskSnapshot` in `marmot/device-sync.ts`)
- * runs `replayEvents` over the inviter's persisted task event log and ships
- * the merged `Task[]` as a `task.snapshot`. That means status/assign/update/
- * delete should all be reflected in the joiner's first view of the board.
+ * Under the new protocol:
+ * - All task events flow as kind-445 MLS application messages only.
+ * - A new member joining at epoch N cannot decrypt application messages
+ *   from epochs < N (MLS forward secrecy).
+ * - Tasks created and mutated before the invite are in epoch 0; the joiner
+ *   holds keys only from their join epoch onward.
+ * - Result: the joiner's initial board is empty for pre-join tasks.
+ *
+ * These tests verify that the epoch boundary behaves as documented rather
+ * than accidentally leaking pre-join state through a side channel.
+ *
+ * Pre-join task visibility is an accepted trade-off documented in
+ * docs/task-protocol.md § State Bootstrap.
  */
 
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
@@ -32,9 +42,9 @@ const SKIP_MOBILE_REASON = "Multi-context MLS tests require desktop viewport";
 const TIMEOUT = 180_000;
 
 // ---------------------------------------------------------------------------
-// TP-31: A creates a task, mutates it, THEN invites B → B sees merged state.
+// TP-31: A creates a task, mutates it, THEN invites B → B sees empty board.
 // ---------------------------------------------------------------------------
-test.describe.serial("TP-31: snapshot reflects status + assign", () => {
+test.describe.serial("TP-31: epoch boundary — pre-join mutations invisible", () => {
   test.setTimeout(TIMEOUT);
 
   let contextA: BrowserContext;
@@ -82,6 +92,7 @@ test.describe.serial("TP-31: snapshot reflects status + assign", () => {
         createdBy: pubkeyA,
         createdAt: now,
         updatedAt: now,
+        updatedBy: pubkeyA,
       },
     });
     await dispatchTaskEvent(pageA, {
@@ -105,35 +116,25 @@ test.describe.serial("TP-31: snapshot reflects status + assign", () => {
     );
   });
 
-  test("A invites B → B sees task in in_progress with assignee=A", async () => {
+  test("A invites B → B sees empty board (pre-join epoch unreadable)", async () => {
     test.skip(skipMobile, SKIP_MOBILE_REASON);
     await inviteByNpub(pageA, USER_B_NPUB);
-    // Give the snapshot a moment to publish.
     await settle(pageA, 2000);
 
     await reload(pageB);
     await selectGroup(pageB, GROUP_NAME);
 
-    // Status preserved: task is in the in_progress column.
-    await expect(pageB.locator('[data-column="in_progress"]')).toContainText(
-      TASK_TITLE,
-      { timeout: 30000 },
-    );
-
-    // Assignee preserved: the card shows A's shortened pubkey.
-    const pubkeyA = await getPubkeyHex(pageA);
-    const shortA = `${pubkeyA.slice(0, 8)}...${pubkeyA.slice(-4)}`;
-    await expect(pageB.locator('[data-testid="task-card"]').first()).toContainText(
-      shortA,
-      { timeout: 15000 },
-    );
+    // B cannot decrypt epoch-0 messages (MLS forward secrecy). The task board
+    // loads but is empty — pre-join task state is permanently unrecoverable.
+    await expect(pageB.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 30000 });
+    await expect(pageB.getByText(TASK_TITLE)).toHaveCount(0, { timeout: 5000 });
   });
 });
 
 // ---------------------------------------------------------------------------
-// TP-32: A creates AND deletes a task before inviting → B never sees it.
+// TP-32: A creates+keeps and creates+deletes before inviting → B sees neither.
 // ---------------------------------------------------------------------------
-test.describe.serial("TP-32: snapshot honours deletes", () => {
+test.describe.serial("TP-32: epoch boundary — board empty for all pre-join tasks", () => {
   test.setTimeout(TIMEOUT);
 
   let contextA: BrowserContext;
@@ -184,6 +185,7 @@ test.describe.serial("TP-32: snapshot honours deletes", () => {
         createdBy: pubkeyA,
         createdAt: now,
         updatedAt: now,
+        updatedBy: pubkeyA,
       },
     });
     await dispatchTaskEvent(pageA, {
@@ -197,6 +199,7 @@ test.describe.serial("TP-32: snapshot honours deletes", () => {
         createdBy: pubkeyA,
         createdAt: now,
         updatedAt: now,
+        updatedBy: pubkeyA,
       },
     });
     await dispatchTaskEvent(pageA, {
@@ -207,7 +210,7 @@ test.describe.serial("TP-32: snapshot honours deletes", () => {
     });
   });
 
-  test("A invites B → B sees the kept task but not the deleted one", async () => {
+  test("A invites B → B sees neither task (both pre-join epoch)", async () => {
     test.skip(skipMobile, SKIP_MOBILE_REASON);
     await inviteByNpub(pageA, USER_B_NPUB);
     await settle(pageA, 2000);
@@ -215,10 +218,11 @@ test.describe.serial("TP-32: snapshot honours deletes", () => {
     await reload(pageB);
     await selectGroup(pageB, GROUP_NAME);
 
-    await expect(pageB.locator('[data-column="open"]').first()).toContainText(
-      KEEP_TITLE,
-      { timeout: 30000 },
-    );
+    // B cannot decrypt epoch-0 messages. The board loads but is empty for all
+    // pre-join tasks — including the "kept" one. CRDT delete semantics are moot
+    // because neither event is decryptable by B.
+    await expect(pageB.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 30000 });
+    await expect(pageB.getByText(KEEP_TITLE)).toHaveCount(0, { timeout: 5000 });
     await expect(pageB.getByText(DELETED_TITLE)).toHaveCount(0, { timeout: 5000 });
   });
 });
