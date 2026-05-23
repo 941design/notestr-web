@@ -1,0 +1,59 @@
+{
+  "story_id": "S4",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-24T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S4-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-1",
+      "question": "Does the updated TP-30 test in `e2e/tests/task-sync.spec.ts` assert that User B SEES the pre-join task (not that B does NOT see it)? Run `grep -n 'TASK_TITLE\\|toHaveCount\\|toContainText\\|toBeVisible' e2e/tests/task-sync.spec.ts` — the assertion for B's board MUST use a positive expectation (e.g. `expect(pageB.getByText(TASK_TITLE)).toBeVisible(...)` or `expect(openColumn).toContainText(TASK_TITLE, ...)`) rather than the old `toHaveCount(0, ...)`. Show the updated assertion. Confirm the test waits up to 5000ms for the bootstrap to complete before asserting (AC-1 allows up to 5 seconds)."
+    },
+    {
+      "question_id": "VQ-S4-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-3",
+      "question": "Does `e2e/tests/task-sync.spec.ts` contain a new test case for AC-3 (empty group, B joins, sees empty board, no error)? Run `grep -n 'AC-3\\|empty.*group\\|no.*task\\|empty.*board' e2e/tests/task-sync.spec.ts` — there MUST be a test block addressing the zero-task scenario. Show the test body: it MUST (a) have A create a group with no tasks, (b) invite B, (c) have B join, (d) assert B's board is empty (e.g. `expect(pageB.getByRole('heading', { name: 'Tasks' })).toBeVisible()` and no error indicator visible). Confirm the test does NOT assert `TASK_TITLE` is visible (there is no task to see)."
+    },
+    {
+      "question_id": "VQ-S4-003",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the TP-30 test `describe.serial` block title remain unchanged after the assertion inversion? Run `grep -n 'describe.serial\\|describe(' e2e/tests/task-sync.spec.ts` and show all describe block titles. The outer describe title MUST NOT reference 'pre-join tasks not visible' (the old pre-feature behavior) after the update, OR the title MUST be updated to reflect the new expected behavior. Confirm no dead assertion (`toHaveCount(0`) for `TASK_TITLE` remains in the file after S4's edit."
+    },
+    {
+      "question_id": "VQ-S4-004",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does S4's diff touch ONLY `e2e/tests/task-sync.spec.ts` and no `src/` files? Run `git diff --name-only` against the story's commit range. Any modification to `src/marmot/device-sync.ts`, `src/store/task-store.tsx`, `src/components/GroupManager.tsx`, or any `src/store/` file is a scope violation for S4. The story explicitly excludes all `src/` changes."
+    },
+    {
+      "question_id": "VQ-S4-005",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `e2e/tests/task-sync.spec.ts` (the owning module for S4) be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? The test imports only from `@playwright/test` and `../fixtures/*`. Confirm that S4 did not introduce any new fixture file or modify any existing fixture (two-party.ts, auth-helper.ts, etc.). Run `grep -n 'import' e2e/tests/task-sync.spec.ts` and show all import lines — no new cross-module dependencies beyond existing fixtures are permitted."
+    },
+    {
+      "question_id": "VQ-S4-006",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-1",
+      "question": "Does the updated TP-30 scenario include a wait step between User A's invite completing and User B's board assertion, to allow the bootstrap fetch to complete? The bootstrap is asynchronous — B's board assertion on `TASK_TITLE` MUST use a timeout of at least 5000ms (per AC-1: 'within 5 seconds'). Run `grep -n 'timeout\\|waitForTimeout\\|waitFor' e2e/tests/task-sync.spec.ts` in the context of B's post-join assertion. Show that the relevant `expect` call uses `{ timeout: 5000 }` or greater, or that a `waitFor` call precedes the assertion."
+    },
+    {
+      "question_id": "VQ-S4-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-3",
+      "question": "Does the AC-3 test case confirm that no error indicator is shown to B after joining an empty group? Show the assertion that validates no error state: e.g. `expect(pageB.getByRole('alert')).toHaveCount(0)` or `expect(pageB.getByText(/error/i)).not.toBeVisible()`. Confirm the test also asserts the task board heading IS visible (the UI rendered correctly, just with zero tasks) — the test distinguishes 'empty board rendered correctly' from 'board failed to load'."
+    },
+    {
+      "question_id": "VQ-S4-008",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Do both new/updated test cases in `e2e/tests/task-sync.spec.ts` include `test.skip(skipMobile, ...)` guards matching the existing pattern in the file? Run `grep -n 'skipMobile' e2e/tests/task-sync.spec.ts` — every test block in the serial describe that asserts UI state MUST include `test.skip(skipMobile, 'Multi-context MLS tests require desktop viewport')` as its first line. Missing skip guards cause false failures on mobile Playwright projects."
+    }
+  ]
+}

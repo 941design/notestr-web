@@ -1,0 +1,5 @@
+{
+  "decision": "lighter_path",
+  "architect_skipped": true,
+  "reason": "single markdown file target, fully specified AC-10 with all required content enumerated"
+}

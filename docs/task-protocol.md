@@ -472,12 +472,16 @@ last updated by the lowest possible pubkey value — ensuring they always lose
 tie-breakers to any real pubkey and thus always accept incoming updates for
 equal timestamps. No IDB migration is required.
 
-### No task.snapshot variant
+### No task.snapshot event type
 
 This implementation does **not** have a `task.snapshot` event type. All task
 state flows through the MLS kind-445 application message pipeline using the
-event types listed above. There is no out-of-band NIP-44 kind-30078 snapshot
-mechanism.
+event types listed above.
+
+Pre-join state bootstrapping for new members is handled by the separate
+kind-30078 state sync mechanism described in the "New Member Task State Sync"
+section below — this is a NIP-44 encrypted Nostr event, not an MLS application
+message, and it is subject to a CRDT merge gate rather than a fan-out write.
 
 ---
 
@@ -491,17 +495,21 @@ MLS forward secrecy: keys for earlier epochs are not included in the Welcome
 message. As a result, tasks created and mutated before the invite are invisible
 to the new joiner; their initial board is empty.
 
-This trade-off was evaluated and accepted when the `task.snapshot` side-channel
-was removed. The prior snapshot mechanism (kind-30078 NIP-44 published by the
-inviting device after each invite) was supposed to bootstrap pre-join state, but
-it caused CRDT divergence: the fan-out of empty snapshots wiped task state on
-all connected devices. The fix was to remove the snapshot path entirely.
+The earlier `task.snapshot` side-channel (a kind-30078 NIP-44 event published
+by the inviting device) was removed when it was found to cause CRDT divergence:
+the fan-out of empty snapshots wiped task state on all connected devices.
 
-**Design decision:** Relay backfill is the bootstrap path. A member who joins
-at epoch N will accumulate task state from epoch N onward. If pre-join history
-is operationally important, the group can be re-seeded by any existing member
-dispatching fresh `task.created` events — this is an intentional group admin
-action, not an automatic mechanism.
+**Current design:** The new member task state sync mechanism (kind-30078, see
+below) replaces it with a CRDT-safe approach. The inviter publishes a snapshot
+of non-deleted tasks immediately after the Welcome, and the new member applies
+each received payload through the same FWW/LWW merge gate as the task reducer.
+This makes concurrent invites from multiple members safe and prevents empty
+payloads from wiping existing state.
+
+A member who joins at epoch N will accumulate all task state from the sync
+payload plus any kind-445 events published at epoch N onward. If no sync
+payload is available (publish failed or inviter was offline), the new member
+gracefully starts from an empty board and accumulates state as new events arrive.
 
 ### What this means for E2E tests
 
@@ -509,3 +517,101 @@ Tests that cover the join flow (TP-30, TP-31, TP-32) verify the absence of
 pre-join tasks on B's board, not their presence. The epoch boundary is the
 correct behavior: B sees an empty board immediately after joining and accumulates
 state from new events as they arrive.
+
+---
+
+## New Member Task State Sync (kind 30078)
+
+### Purpose
+
+When a new member is invited via MLS Welcome, their client cannot decrypt
+pre-join kind-445 task events because MLS forward secrecy does not include keys
+for earlier epochs in the Welcome message. To bridge this gap, the inviter
+publishes a snapshot of the current merged task state as a NIP-44 encrypted
+kind-30078 event addressed to the new member's Nostr pubkey.
+
+This mechanism replaces the earlier `task.snapshot` approach that caused CRDT
+divergence. The new design applies a CRDT merge gate on the receiver side (see
+below), making concurrent invites from multiple inviters safe.
+
+### Event format
+
+- **Kind:** 30078 (parameterized replaceable event)
+- **d-tag:** `notestr:task-sync:{groupId}:{inviteePubkey}` where `groupId` is
+  the MLS group ID hex (`group.idStr`) — this is distinct from the Nostr `#h`
+  group ID used on kind-445 events
+- **Encryption:** NIP-44 v2, sender = inviter's Nostr keypair, recipient =
+  invitee's Nostr pubkey
+- **Content:** NIP-44 encrypted JSON payload (see schema below)
+
+### Payload schema (TaskStateSyncPayload v1)
+
+```json
+{
+  "version": 1,
+  "type": "task.state_sync",
+  "groupId": "<MLS group ID hex (group.idStr)>",
+  "tasks": [<Task objects — non-deleted tasks only>],
+  "syncedAt": 1716000000,
+  "inviterPubkey": "<inviter hex pubkey>"
+}
+```
+
+`tasks` contains full `Task` objects with fields: `id`, `title`, `description`,
+`status`, `assignee`, `createdBy`, `createdAt`, `updatedAt`, `updatedBy`.
+
+All six payload fields (`version`, `type`, `groupId`, `tasks`, `syncedAt`,
+`inviterPubkey`) are required. An empty `tasks` array is valid and has zero
+effect on the receiver's existing state.
+
+### Publish lifecycle (inviter)
+
+1. **Trigger:** the inviter's client calls `publishTaskStateSync` immediately
+   after `group.inviteByKeyPackageEvent(kpEvent)` succeeds.
+2. **Fire-and-forget:** publish failure is non-fatal. If the relay rejects the
+   event or the network is unavailable, the new member gracefully degrades to
+   an empty initial state and accumulates tasks from epoch N onward via
+   kind-445 events.
+3. **Multiple inviters:** safe by design. If two members simultaneously invite
+   the same pubkey, both publish a kind-30078 state sync event. The new member
+   fetches all matching events and applies the CRDT merge gate to each one
+   independently, converging to the same final state regardless of delivery
+   order.
+
+### Fetch lifecycle (new member)
+
+**Trigger.** `task-store.tsx:load()` detects that both conditions hold:
+- `events.length === 0` (IndexedDB is empty for this group)
+- `isGroupJoinedFromWelcome(groupId) === true` (the member joined via a Welcome,
+  not as a creator)
+
+**Relay query.** A one-shot request is issued with the filter:
+
+```json
+{ "kinds": [30078], "#d": ["notestr:task-sync:{groupId}:{ownPubkey}"], "limit": 10 }
+```
+
+**Per-event processing.** For each event returned:
+
+1. NIP-44 decrypt the content using `signer.nip44.decrypt` with `event.pubkey`
+   as the sender.
+2. Parse and validate the `TaskStateSyncPayload` (check `version === 1`,
+   `type === "task.state_sync"`, presence of all six fields).
+3. Apply the CRDT merge gate for each task in `payload.tasks`.
+
+**CRDT merge gate.** Each task in the payload is merged into the local store
+using the same FWW/LWW rules as the task reducer:
+
+| Condition | Action |
+|-----------|--------|
+| Task not in store | Insert (first-write-wins) |
+| Task in store, `payload.updatedAt > existing.updatedAt` | Accept (LWW win) |
+| Task in store, `payload.updatedAt === existing.updatedAt` AND `payload.updatedBy < existing.updatedBy` | Accept (tie-breaker: lower pubkey wins) |
+| Otherwise | Skip |
+
+**Persistence.** Bootstrap tasks accepted by the merge gate are stored as
+synthetic `task.created` events in IndexedDB, making them durable across page
+reloads. They are indistinguishable from tasks learned via kind-445 once stored.
+
+**Safety invariant.** An empty `tasks` array in any payload has zero effect on
+existing store state. The fetch path cannot wipe tasks that are already present.

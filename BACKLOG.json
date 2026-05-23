@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-05-23T20:19:24Z",
+  "updated_at": "2026-05-23T23:03:07Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -101,6 +101,11 @@
       "path": "specs/epic-task-snapshot-removal-crdt-convergence/",
       "status": "DONE",
       "next_action": "all stories verified 2026-05-23"
+    },
+    {
+      "path": "specs/epic-new-member-task-state-sync/",
+      "status": "DONE",
+      "next_action": "all 5 stories verified, 250 tests passing"
     }
   ],
   "findings": [
@@ -389,6 +394,30 @@
       "motivation": "markGroupJoinedFromWelcome / isGroupJoinedFromWelcome / forgetJoinedGroup form the sibling-auto-invite suppression substrate; no AC defines them. AC-CLEANUP-4 mentions the store but not the helpers' semantics.",
       "behavior": "mark sets the group as joined-from-welcome; is checks it; forget undoes it; cross-group isolation holds.",
       "kind": "spec-gap"
+    },
+    {
+      "slug": "fetch-task-bootstrap-no-mls-author-check",
+      "scope": "any",
+      "anchor": {
+        "path": "src/marmot/device-sync.ts"
+      },
+      "text": "fetchAndApplyTaskBootstrap: no MLS-membership check on relay event author — any Nostr key can send a task-sync payload and have it CRDT-merged",
+      "created_at": "2026-05-24",
+      "motivation": "Author validation requires React context (MLS group membership state) which is unavailable in the stateless fetchAndApplyTaskBootstrap helper. The CRDT gate prevents data corruption but does not prevent a crafted payload from injecting arbitrary tasks. Attacker must know the d-tag format and the invitee pubkey. Exploitability is low but this is a deliberate architectural tradeoff deserving explicit tracking.",
+      "behavior": "fetchAndApplyTaskBootstrap accepts any kind-30078 relay event from any Nostr key and CRDT-merges its task payload into the new member's state, with no check that the author is a current MLS group member.",
+      "approach": "Pass MLS member pubkeys into fetchAndApplyTaskBootstrap and filter relay events to only authors present in the group membership list. Requires decoupling from React context or threading membership state through the call site."
+    },
+    {
+      "slug": "e2e-error-state-selector-ambiguity",
+      "scope": "e2e",
+      "anchor": {
+        "path": "e2e/tests/task-sync.spec.ts"
+      },
+      "text": "E2E error-state assertions rely on a non-standard selector — no canonical data-testid for error display components defined",
+      "created_at": "2026-05-24",
+      "motivation": "AC-3 ('no error is shown') requires an E2E assertion on error state, but there is no stable data-testid on the app's error display components. The test initially used a non-existent data-testid selector, which could make future error-state assertions brittle or invisible (a missing element reads as no error, masking real failures).",
+      "behavior": "Error display components in the app do not carry a data-testid attribute; E2E tests that assert on 'no error shown' cannot reliably distinguish a hidden error state from a missing DOM node.",
+      "approach": "Add data-testid='error-banner' (or equivalent) to the app's top-level error display components so E2E assertions on error state are unambiguous. Document the canonical selector in the E2E README."
     }
   ],
   "archive": [

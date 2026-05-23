@@ -1,5 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// Mock persistence so publishTaskStateSync does not hit real IDB.
+vi.mock("../store/persistence", () => ({
+  loadEvents: vi.fn().mockResolvedValue([]),
+  appendEvent: vi.fn().mockResolvedValue(undefined),
+  saveEvents: vi.fn().mockResolvedValue(undefined),
+  clearEvents: vi.fn().mockResolvedValue(undefined),
+}));
+
+// Mock task-reducer so replayEvents can be controlled per test.
+vi.mock("../store/task-reducer", () => ({
+  replayEvents: vi.fn().mockReturnValue(new Map()),
+  applyEvent: vi.fn(),
+}));
+
 vi.mock("@internet-privacy/marmot-ts", () => ({
   getKeyPackage: vi.fn((event: any) => event.keyPackage),
   getKeyPackageIdentifier: vi.fn((event: any) => event._slot as string | undefined),
@@ -44,13 +58,18 @@ import {
   consumeExpectedPublishForKind445,
   endDispatchPublishWindow,
   enqueueExpectedPublish,
+  fetchAndApplyTaskBootstrap,
   groupHasKeyPackageLeaf,
   isSlotForgotten,
   joinFromWelcomeInvite,
   MAX_RETRIES_PER_EPOCH,
+  publishTaskStateSync,
   removeExpectedPublishByRumorId,
   selectAndIncrementRetries,
 } from "./device-sync";
+import { replayEvents } from "../store/task-reducer";
+import { loadEvents } from "../store/persistence";
+import type { Task, TaskStateSyncPayload } from "../store/task-events";
 
 function makeKind445Event(id: string, hTag: string, createdAt = 1000): {
   id: string;
@@ -417,5 +436,807 @@ describe("AC-INVITE-* — isSlotForgotten (forgotten-slot skip predicate)", () =
 
     // After refresh: correctly skipped.
     expect(isSlotForgotten(event as any, forgottenSlots)).toBe(true);
+  });
+});
+
+/**
+ * AC-13 — publishTaskStateSync: fire-and-forget publish helper.
+ *
+ * Tests verify that:
+ * - Errors during publish are caught, logged, and NOT propagated.
+ * - Missing nip44 support causes an early return without calling publish.
+ * - Only non-deleted tasks (those present in the replayed TaskState Map)
+ *   are included in the published payload.
+ */
+describe("publishTaskStateSync (AC-13)", () => {
+  const mockReplayEvents = replayEvents as ReturnType<typeof vi.fn>;
+  const mockLoadEvents = loadEvents as ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLoadEvents.mockResolvedValue([]);
+    mockReplayEvents.mockReturnValue(new Map());
+  });
+
+  it("catches and logs errors without rethrowing (relay publish throws)", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const signer = {
+      nip44: {
+        encrypt: vi.fn().mockResolvedValue("encrypted-payload"),
+        decrypt: vi.fn(),
+      },
+      signEvent: vi.fn().mockResolvedValue({ id: "signed-event", kind: 30078 }),
+      getPublicKey: vi.fn().mockResolvedValue("aabbccdd"),
+    };
+    const client = {
+      network: {
+        publish: vi.fn().mockRejectedValue(new Error("relay unavailable")),
+      },
+    };
+
+    // Must resolve, not reject — error is caught internally.
+    await expect(
+      publishTaskStateSync("group1", "inviteepubkey", signer as any, client as any, []),
+    ).resolves.toBeUndefined();
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[task-sync] publishTaskStateSync failed"),
+      expect.any(Error),
+    );
+    consoleSpy.mockRestore();
+  });
+
+  it("catches and logs errors without rethrowing (nip44 encrypt throws)", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const signer = {
+      nip44: {
+        encrypt: vi.fn().mockRejectedValue(new Error("nip44 error")),
+        decrypt: vi.fn(),
+      },
+      signEvent: vi.fn(),
+      getPublicKey: vi.fn().mockResolvedValue("aabbccdd"),
+    };
+    const client = { network: { publish: vi.fn() } };
+
+    await expect(
+      publishTaskStateSync("group1", "pubkey1", signer as any, client as any, []),
+    ).resolves.toBeUndefined();
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[task-sync] publishTaskStateSync failed"),
+      expect.any(Error),
+    );
+    // publish was never reached.
+    expect(client.network.publish).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
+  it("skips publish when signer has no nip44 support", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const signer = {
+      // no nip44 property
+      getPublicKey: vi.fn(),
+      signEvent: vi.fn(),
+    };
+    const client = { network: { publish: vi.fn() } };
+
+    await expect(
+      publishTaskStateSync("group1", "pubkey1", signer as any, client as any, []),
+    ).resolves.toBeUndefined();
+
+    expect(client.network.publish).not.toHaveBeenCalled();
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[task-sync] signer does not support NIP-44"),
+    );
+    consoleSpy.mockRestore();
+  });
+
+  it("includes only non-deleted tasks (deleted tasks are absent from TaskState map)", async () => {
+    // The reducer removes deleted tasks from the map entirely.
+    // Simulate a state with one live task and one that was deleted (absent from map).
+    const liveTask = {
+      id: "task-live",
+      title: "Live task",
+      description: "",
+      status: "open" as const,
+      assignee: null,
+      createdBy: "aabbccdd",
+      createdAt: 1000,
+      updatedAt: 1000,
+      updatedBy: "aabbccdd",
+    };
+    mockReplayEvents.mockReturnValue(new Map([["task-live", liveTask]]));
+
+    const capturedPayloads: string[] = [];
+    const signer = {
+      nip44: {
+        encrypt: vi.fn().mockImplementation((_pubkey: string, plaintext: string) => {
+          capturedPayloads.push(plaintext);
+          return Promise.resolve("encrypted");
+        }),
+        decrypt: vi.fn(),
+      },
+      signEvent: vi.fn().mockResolvedValue({ id: "signed", kind: 30078 }),
+      getPublicKey: vi.fn().mockResolvedValue("aabbccdd"),
+    };
+    const client = { network: { publish: vi.fn().mockResolvedValue(undefined) } };
+
+    await publishTaskStateSync("group1", "inviteepubkey", signer as any, client as any, []);
+
+    expect(capturedPayloads).toHaveLength(1);
+    const payload = JSON.parse(capturedPayloads[0]);
+    expect(payload.tasks).toHaveLength(1);
+    expect(payload.tasks[0].id).toBe("task-live");
+    // Verify deleted-task-id is absent from the payload.
+    expect(payload.tasks.some((t: { id: string }) => t.id === "task-deleted")).toBe(false);
+  });
+
+  it("uses groupId as the d-tag (MLS idStr, not nostr group hex)", async () => {
+    const signer = {
+      nip44: {
+        encrypt: vi.fn().mockResolvedValue("encrypted"),
+        decrypt: vi.fn(),
+      },
+      signEvent: vi.fn().mockResolvedValue({ id: "signed", kind: 30078 }),
+      getPublicKey: vi.fn().mockResolvedValue("aabbccdd"),
+    };
+    const client = { network: { publish: vi.fn().mockResolvedValue(undefined) } };
+    const groupId = "deadbeef1234";
+    const inviteePubkey = "cafebabe5678";
+
+    await publishTaskStateSync(groupId, inviteePubkey, signer as any, client as any, []);
+
+    const signedArg = (signer.signEvent as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const dTagEntry = signedArg.tags.find((t: string[]) => t[0] === "d");
+    expect(dTagEntry).toBeDefined();
+    expect(dTagEntry[1]).toBe(`notestr:task-sync:${groupId}:${inviteePubkey}`);
+    expect(signedArg.kind).toBe(30078);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// fetchAndApplyTaskBootstrap — S3 unit tests
+// Covers: AC-2 (CRDT LWW), AC-4 (graceful degradation), AC-5 (idempotence
+// guard), AC-6 (empty payload safe), AC-7 (bootstrap/live commute),
+// AC-8 (multi-inviter convergence), AC-12 (manually-joined skip)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function makeTask(overrides: Partial<Task> = {}): Task {
+  return {
+    id: "task-1",
+    title: "Test task",
+    description: "",
+    status: "open",
+    assignee: null,
+    createdBy: "aabbccdd",
+    createdAt: 1000,
+    updatedAt: 1000,
+    updatedBy: "aabbccdd",
+    ...overrides,
+  };
+}
+
+function makeRelayEvent(
+  pubkey: string,
+  content: string,
+): { id: string; pubkey: string; content: string; kind: number; tags: string[][]; created_at: number; sig: string } {
+  return {
+    id: "relay-event-1",
+    pubkey,
+    content,
+    kind: 30078,
+    tags: [["d", "notestr:task-sync:group1:ownpubkey"]],
+    created_at: 1000,
+    sig: "",
+  };
+}
+
+function makeValidPayload(
+  groupId: string,
+  tasks: Task[],
+): TaskStateSyncPayload {
+  return {
+    version: 1,
+    type: "task.state_sync",
+    groupId,
+    tasks,
+    syncedAt: 1000,
+    inviterPubkey: "inviterpubkey",
+  };
+}
+
+describe("fetchAndApplyTaskBootstrap (S3 — AC-2/4/5/6/7/8/12)", () => {
+  const GROUP_ID = "group1";
+  const OWN_PUBKEY = "ownpubkey";
+  const INVITER_PUBKEY = "inviterpubkey";
+
+  // Test 1: client=null → returns [] immediately (AC-12 guard)
+  it("returns [] immediately when client is null", async () => {
+    const signer = { nip44: { decrypt: vi.fn() } };
+    const result = await fetchAndApplyTaskBootstrap(
+      GROUP_ID,
+      OWN_PUBKEY,
+      signer as any,
+      null,
+      [],
+      new Map(),
+    );
+    expect(result).toEqual([]);
+    expect(signer.nip44.decrypt).not.toHaveBeenCalled();
+  });
+
+  // Test 2: no signer.nip44 → returns []
+  it("returns [] and logs error when signer has no nip44", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const signer = { signEvent: vi.fn() }; // no nip44
+    const client = { network: { request: vi.fn() } };
+
+    const result = await fetchAndApplyTaskBootstrap(
+      GROUP_ID,
+      OWN_PUBKEY,
+      signer as any,
+      client as any,
+      [],
+      new Map(),
+    );
+
+    expect(result).toEqual([]);
+    expect(client.network.request).not.toHaveBeenCalled();
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[task-sync] signer does not support NIP-44"),
+    );
+    consoleSpy.mockRestore();
+  });
+
+  // Test 3: empty relay result → returns []  (AC-4, AC-6)
+  it("returns [] when relay returns no events", async () => {
+    const signer = { nip44: { decrypt: vi.fn() } };
+    const client = { network: { request: vi.fn().mockResolvedValue([]) } };
+
+    const result = await fetchAndApplyTaskBootstrap(
+      GROUP_ID,
+      OWN_PUBKEY,
+      signer as any,
+      client as any,
+      [],
+      new Map(),
+    );
+
+    expect(result).toEqual([]);
+    expect(signer.nip44.decrypt).not.toHaveBeenCalled();
+  });
+
+  // Test 4: decryption failure on event → skipped, returns []
+  it("skips events where decryption throws and returns []", async () => {
+    const signer = {
+      nip44: { decrypt: vi.fn().mockRejectedValue(new Error("decrypt failed")) },
+    };
+    const event = makeRelayEvent(INVITER_PUBKEY, "encrypted-garbage");
+    const client = { network: { request: vi.fn().mockResolvedValue([event]) } };
+
+    const result = await fetchAndApplyTaskBootstrap(
+      GROUP_ID,
+      OWN_PUBKEY,
+      signer as any,
+      client as any,
+      [],
+      new Map(),
+    );
+
+    expect(result).toEqual([]);
+  });
+
+  // Test 5: invalid payload (wrong version) → skipped
+  it("skips events with invalid payload (wrong version)", async () => {
+    const badPayload = { version: 2, type: "task.state_sync", groupId: GROUP_ID, tasks: [] };
+    const signer = {
+      nip44: { decrypt: vi.fn().mockResolvedValue(JSON.stringify(badPayload)) },
+    };
+    const event = makeRelayEvent(INVITER_PUBKEY, "encrypted");
+    const client = { network: { request: vi.fn().mockResolvedValue([event]) } };
+
+    const result = await fetchAndApplyTaskBootstrap(
+      GROUP_ID,
+      OWN_PUBKEY,
+      signer as any,
+      client as any,
+      [],
+      new Map(),
+    );
+
+    expect(result).toEqual([]);
+  });
+
+  // Test 6: payload.tasks = [] → returns [] (AC-6 — cannot wipe state)
+  it("returns [] for empty tasks array — cannot wipe existing state (AC-6)", async () => {
+    const existingTask = makeTask({ id: "existing-task", updatedBy: "aabbccdd", updatedAt: 999 });
+    const currentState = new Map([["existing-task", existingTask]]);
+
+    const payload = makeValidPayload(GROUP_ID, []); // empty tasks
+    const signer = {
+      nip44: { decrypt: vi.fn().mockResolvedValue(JSON.stringify(payload)) },
+    };
+    const event = makeRelayEvent(INVITER_PUBKEY, "encrypted");
+    const client = { network: { request: vi.fn().mockResolvedValue([event]) } };
+
+    const result = await fetchAndApplyTaskBootstrap(
+      GROUP_ID,
+      OWN_PUBKEY,
+      signer as any,
+      client as any,
+      [],
+      currentState,
+    );
+
+    expect(result).toEqual([]);
+  });
+
+  // Test 7: task not in store → returns task.created event (FWW)
+  it("returns task.created for task not in currentState (FWW)", async () => {
+    const newTask = makeTask({ id: "new-task", updatedAt: 500, updatedBy: "inviterpubkey" });
+    const payload = makeValidPayload(GROUP_ID, [newTask]);
+    const signer = {
+      nip44: { decrypt: vi.fn().mockResolvedValue(JSON.stringify(payload)) },
+    };
+    const event = makeRelayEvent(INVITER_PUBKEY, "encrypted");
+    const client = { network: { request: vi.fn().mockResolvedValue([event]) } };
+
+    const result = await fetchAndApplyTaskBootstrap(
+      GROUP_ID,
+      OWN_PUBKEY,
+      signer as any,
+      client as any,
+      [],
+      new Map(), // empty currentState
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({ type: "task.created", task: newTask });
+  });
+
+  // Test 8: LWW — payload.updatedAt > existing → returns task.created (AC-2)
+  it("accepts incoming task when updatedAt is newer than existing (LWW win)", async () => {
+    const existing = makeTask({ id: "t1", updatedAt: 100, updatedBy: "aabbccdd" });
+    const currentState = new Map([["t1", existing]]);
+    const incoming = makeTask({ id: "t1", updatedAt: 200, updatedBy: "aabbccdd" }); // newer
+
+    const payload = makeValidPayload(GROUP_ID, [incoming]);
+    const signer = {
+      nip44: { decrypt: vi.fn().mockResolvedValue(JSON.stringify(payload)) },
+    };
+    const event = makeRelayEvent(INVITER_PUBKEY, "encrypted");
+    const client = { network: { request: vi.fn().mockResolvedValue([event]) } };
+
+    const result = await fetchAndApplyTaskBootstrap(
+      GROUP_ID,
+      OWN_PUBKEY,
+      signer as any,
+      client as any,
+      [],
+      currentState,
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({ type: "task.created", task: incoming });
+  });
+
+  // Test 9: LWW — payload.updatedAt < existing → skips (LWW loss) (AC-2)
+  it("skips incoming task when updatedAt is older than existing (LWW loss)", async () => {
+    const existing = makeTask({ id: "t1", updatedAt: 200, updatedBy: "aabbccdd" });
+    const currentState = new Map([["t1", existing]]);
+    const incoming = makeTask({ id: "t1", updatedAt: 100, updatedBy: "aabbccdd" }); // older
+
+    const payload = makeValidPayload(GROUP_ID, [incoming]);
+    const signer = {
+      nip44: { decrypt: vi.fn().mockResolvedValue(JSON.stringify(payload)) },
+    };
+    const event = makeRelayEvent(INVITER_PUBKEY, "encrypted");
+    const client = { network: { request: vi.fn().mockResolvedValue([event]) } };
+
+    const result = await fetchAndApplyTaskBootstrap(
+      GROUP_ID,
+      OWN_PUBKEY,
+      signer as any,
+      client as any,
+      [],
+      currentState,
+    );
+
+    expect(result).toEqual([]);
+  });
+
+  // Test 10: equal updatedAt, lower updatedBy wins (AC-2 tie-break)
+  it("accepts task when equal updatedAt and incoming updatedBy < existing (tie-break win)", async () => {
+    const existing = makeTask({ id: "t1", updatedAt: 100, updatedBy: "bbb" });
+    const currentState = new Map([["t1", existing]]);
+    const incoming = makeTask({ id: "t1", updatedAt: 100, updatedBy: "aaa" }); // 'aaa' < 'bbb'
+
+    const payload = makeValidPayload(GROUP_ID, [incoming]);
+    const signer = {
+      nip44: { decrypt: vi.fn().mockResolvedValue(JSON.stringify(payload)) },
+    };
+    const event = makeRelayEvent(INVITER_PUBKEY, "encrypted");
+    const client = { network: { request: vi.fn().mockResolvedValue([event]) } };
+
+    const result = await fetchAndApplyTaskBootstrap(
+      GROUP_ID,
+      OWN_PUBKEY,
+      signer as any,
+      client as any,
+      [],
+      currentState,
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({ type: "task.created", task: incoming });
+  });
+
+  // Test 11: equal updatedAt, higher updatedBy → skips (tie-breaker loss)
+  it("skips task when equal updatedAt and incoming updatedBy > existing (tie-break loss)", async () => {
+    const existing = makeTask({ id: "t1", updatedAt: 100, updatedBy: "aaa" });
+    const currentState = new Map([["t1", existing]]);
+    const incoming = makeTask({ id: "t1", updatedAt: 100, updatedBy: "bbb" }); // 'bbb' > 'aaa'
+
+    const payload = makeValidPayload(GROUP_ID, [incoming]);
+    const signer = {
+      nip44: { decrypt: vi.fn().mockResolvedValue(JSON.stringify(payload)) },
+    };
+    const event = makeRelayEvent(INVITER_PUBKEY, "encrypted");
+    const client = { network: { request: vi.fn().mockResolvedValue([event]) } };
+
+    const result = await fetchAndApplyTaskBootstrap(
+      GROUP_ID,
+      OWN_PUBKEY,
+      signer as any,
+      client as any,
+      [],
+      currentState,
+    );
+
+    expect(result).toEqual([]);
+  });
+
+  // Test 12: relay throws → caught, returns [] (AC-4 graceful degradation)
+  it("returns [] when relay request throws (AC-4 graceful degradation)", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const signer = { nip44: { decrypt: vi.fn() } };
+    const client = {
+      network: { request: vi.fn().mockRejectedValue(new Error("network timeout")) },
+    };
+
+    const result = await fetchAndApplyTaskBootstrap(
+      GROUP_ID,
+      OWN_PUBKEY,
+      signer as any,
+      client as any,
+      [],
+      new Map(),
+    );
+
+    expect(result).toEqual([]);
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[task-sync] fetchAndApplyTaskBootstrap failed"),
+      expect.any(Error),
+    );
+    consoleSpy.mockRestore();
+  });
+
+  // Test 13: AC-7 — bootstrap/live events commute
+  // (a) live event arrived first (higher updatedAt in currentState) → bootstrap skips
+  it("AC-7a: bootstrap skips task when live event already set a higher updatedAt", async () => {
+    // Simulate: live event arrived and set T1.updatedAt = 101
+    const liveVersion = makeTask({ id: "T1", updatedAt: 101, updatedBy: "livepubkey" });
+    const currentState = new Map([["T1", liveVersion]]);
+
+    // Bootstrap payload has T1 with older updatedAt = 100
+    const bootstrapVersion = makeTask({ id: "T1", updatedAt: 100, updatedBy: "inviterpubkey" });
+    const payload = makeValidPayload(GROUP_ID, [bootstrapVersion]);
+    const signer = {
+      nip44: { decrypt: vi.fn().mockResolvedValue(JSON.stringify(payload)) },
+    };
+    const event = makeRelayEvent(INVITER_PUBKEY, "encrypted");
+    const client = { network: { request: vi.fn().mockResolvedValue([event]) } };
+
+    const result = await fetchAndApplyTaskBootstrap(
+      GROUP_ID,
+      OWN_PUBKEY,
+      signer as any,
+      client as any,
+      [],
+      currentState,
+    );
+
+    expect(result).toEqual([]); // bootstrap lost — existing (live) wins
+  });
+
+  // (b) bootstrap arrives first (empty currentState) → bootstrap accepts
+  it("AC-7b: bootstrap accepts task when currentState is empty (bootstrap arrives first)", async () => {
+    const bootstrapTask = makeTask({ id: "T1", updatedAt: 100, updatedBy: "inviterpubkey" });
+    const payload = makeValidPayload(GROUP_ID, [bootstrapTask]);
+    const signer = {
+      nip44: { decrypt: vi.fn().mockResolvedValue(JSON.stringify(payload)) },
+    };
+    const event = makeRelayEvent(INVITER_PUBKEY, "encrypted");
+    const client = { network: { request: vi.fn().mockResolvedValue([event]) } };
+
+    const result = await fetchAndApplyTaskBootstrap(
+      GROUP_ID,
+      OWN_PUBKEY,
+      signer as any,
+      client as any,
+      [],
+      new Map(), // empty — bootstrap arrives first
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({ type: "task.created", task: bootstrapTask });
+  });
+
+  // Test 14: AC-8 — multi-inviter convergence (two payloads commute)
+  // Both A-then-C and C-then-A must converge to 'aaa' winning the tie-break
+  it("AC-8: two payloads from different inviters converge regardless of order", async () => {
+    const taskFromA = makeTask({ id: "T1", updatedAt: 50, updatedBy: "aaa" });
+    const taskFromC = makeTask({ id: "T1", updatedAt: 50, updatedBy: "bbb" });
+
+    // Simulate applying A first: empty currentState, A wins (FWW)
+    // Then apply C with currentState containing A's version
+    const payloadA = makeValidPayload(GROUP_ID, [taskFromA]);
+    const payloadC = makeValidPayload(GROUP_ID, [taskFromC]);
+
+    // Order A → C
+    async function applyOrderAC() {
+      const stateAfterA = new Map([["T1", taskFromA]]);
+
+      const signerAC = {
+        nip44: {
+          decrypt: vi.fn()
+            .mockResolvedValueOnce(JSON.stringify(payloadA)) // first call: event from A
+            .mockResolvedValueOnce(JSON.stringify(payloadC)), // second call: event from C
+        },
+      };
+      const eventA = { ...makeRelayEvent("aaa", "enc-a"), id: "event-a" };
+      const eventC = { ...makeRelayEvent("bbb", "enc-c"), id: "event-c" };
+      const clientAC = { network: { request: vi.fn().mockResolvedValue([eventA, eventC]) } };
+
+      // Apply both events with empty currentState
+      const results = await fetchAndApplyTaskBootstrap(
+        GROUP_ID,
+        OWN_PUBKEY,
+        signerAC as any,
+        clientAC as any,
+        [],
+        new Map(),
+      );
+      // Both events for T1 are processed: first A wins (FWW, empty store).
+      // Then C is processed against the accumulated state-so-far...
+      // BUT fetchAndApplyTaskBootstrap processes both against the original
+      // currentState=new Map() — C also sees empty state and would insert too.
+      // The caller must apply events sequentially. The CRDT gate here processes
+      // against currentState at call time, not against intermediate results.
+      // So with empty currentState, BOTH A and C win the FWW gate.
+      // The last one written via appendEvent overwrites... but since the reducer
+      // uses LWW on applyEvent(task.created), the winner is determined by the
+      // reducer's own merge. This is the design: fetchAndApplyTaskBootstrap
+      // returns synthetic events; the reducer + appendEvent + replayEvents
+      // produces the final state. What we can verify here is the CRDT gate
+      // logic itself: when currentState already has T1 from A, C with same
+      // timestamp and higher updatedBy loses.
+      void results; // Acknowledge that with empty currentState both may be inserted
+
+      // Now simulate a second call (applying C against state that already has A)
+      const signerC = {
+        nip44: {
+          decrypt: vi.fn().mockResolvedValueOnce(JSON.stringify(payloadC)),
+        },
+      };
+      const clientC = { network: { request: vi.fn().mockResolvedValue([eventC]) } };
+
+      const resultsC = await fetchAndApplyTaskBootstrap(
+        GROUP_ID,
+        OWN_PUBKEY,
+        signerC as any,
+        clientC as any,
+        [],
+        stateAfterA, // C sees A's version already in state
+      );
+      return resultsC; // C should lose: same updatedAt, 'bbb' > 'aaa'
+    }
+
+    // Order C → A
+    async function applyOrderCA() {
+      const stateAfterC = new Map([["T1", taskFromC]]);
+
+      const signerA = {
+        nip44: {
+          decrypt: vi.fn().mockResolvedValueOnce(JSON.stringify(payloadA)),
+        },
+      };
+      const eventA = { ...makeRelayEvent("aaa", "enc-a"), id: "event-a" };
+      const clientA = { network: { request: vi.fn().mockResolvedValue([eventA]) } };
+
+      const resultsA = await fetchAndApplyTaskBootstrap(
+        GROUP_ID,
+        OWN_PUBKEY,
+        signerA as any,
+        clientA as any,
+        [],
+        stateAfterC, // A sees C's version already in state
+      );
+      return resultsA; // A should win: same updatedAt, 'aaa' < 'bbb'
+    }
+
+    const [resultC_afterA, resultA_afterC] = await Promise.all([
+      applyOrderAC(),
+      applyOrderCA(),
+    ]);
+
+    // In order A→C: applying C against state-with-A produces [] (C loses)
+    expect(resultC_afterA).toEqual([]);
+    // In order C→A: applying A against state-with-C produces [task from A] (A wins)
+    expect(resultA_afterC).toHaveLength(1);
+    expect(resultA_afterC[0]).toEqual({ type: "task.created", task: taskFromA });
+  });
+
+  // Test 15: uses correct d-tag filter (AC-9 architecture check)
+  it("queries relay with correct d-tag and kind filter", async () => {
+    const signer = { nip44: { decrypt: vi.fn() } };
+    const client = { network: { request: vi.fn().mockResolvedValue([]) } };
+    const groupId = "deadbeef";
+    const ownPubkey = "cafebabe";
+
+    await fetchAndApplyTaskBootstrap(
+      groupId,
+      ownPubkey,
+      signer as any,
+      client as any,
+      ["wss://relay.example.com"],
+      new Map(),
+    );
+
+    expect(client.network.request).toHaveBeenCalledWith(
+      ["wss://relay.example.com"],
+      [expect.objectContaining({
+        kinds: [30078],
+        "#d": [`notestr:task-sync:${groupId}:${ownPubkey}`],
+      })],
+    );
+  });
+
+  // Test 16: invalid JSON (non-object payload) → skipped
+  it("skips events where decrypted content is not a valid JSON object", async () => {
+    const signer = {
+      nip44: { decrypt: vi.fn().mockResolvedValue("not-json!!!") },
+    };
+    const event = makeRelayEvent(INVITER_PUBKEY, "encrypted");
+    const client = { network: { request: vi.fn().mockResolvedValue([event]) } };
+
+    const result = await fetchAndApplyTaskBootstrap(
+      GROUP_ID,
+      OWN_PUBKEY,
+      signer as any,
+      client as any,
+      [],
+      new Map(),
+    );
+
+    expect(result).toEqual([]);
+  });
+
+  // Test 17: groupId mismatch in payload → skipped
+  it("skips events where payload.groupId does not match the requested groupId", async () => {
+    const payload = makeValidPayload("different-group", [makeTask()]);
+    const signer = {
+      nip44: { decrypt: vi.fn().mockResolvedValue(JSON.stringify(payload)) },
+    };
+    const event = makeRelayEvent(INVITER_PUBKEY, "encrypted");
+    const client = { network: { request: vi.fn().mockResolvedValue([event]) } };
+
+    const result = await fetchAndApplyTaskBootstrap(
+      GROUP_ID, // different from payload.groupId
+      OWN_PUBKEY,
+      signer as any,
+      client as any,
+      [],
+      new Map(),
+    );
+
+    expect(result).toEqual([]);
+  });
+
+  // Test 18: payload without tasks array → skipped (P2 fix: malformed payload guard)
+  it("skips events where payload.tasks is not an array (malformed payload)", async () => {
+    const badPayload = { version: 1, type: "task.state_sync", groupId: GROUP_ID, tasks: "not-an-array" };
+    const signer = {
+      nip44: { decrypt: vi.fn().mockResolvedValue(JSON.stringify(badPayload)) },
+    };
+    const goodPayload = makeValidPayload(GROUP_ID, [makeTask({ id: "good-task" })]);
+    const signerBoth = {
+      nip44: {
+        decrypt: vi.fn()
+          .mockResolvedValueOnce(JSON.stringify(badPayload))
+          .mockResolvedValueOnce(JSON.stringify(goodPayload)),
+      },
+    };
+    const event1 = { ...makeRelayEvent(INVITER_PUBKEY, "enc-bad"), id: "event-bad" };
+    const event2 = { ...makeRelayEvent(INVITER_PUBKEY, "enc-good"), id: "event-good" };
+    const client = { network: { request: vi.fn().mockResolvedValue([event1, event2]) } };
+
+    // The bad event should be skipped; the good event should still be processed.
+    const result = await fetchAndApplyTaskBootstrap(
+      GROUP_ID,
+      OWN_PUBKEY,
+      signerBoth as any,
+      client as any,
+      [],
+      new Map(),
+    );
+
+    // Good event's task should still come through — bad event did not abort the whole fetch.
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ type: "task.created", task: expect.objectContaining({ id: "good-task" }) });
+
+    // Standalone: single bad event → returns []
+    const signerSingle = {
+      nip44: { decrypt: vi.fn().mockResolvedValue(JSON.stringify(badPayload)) },
+    };
+    const clientSingle = { network: { request: vi.fn().mockResolvedValue([event1]) } };
+    const result2 = await fetchAndApplyTaskBootstrap(
+      GROUP_ID, OWN_PUBKEY, signer as any, clientSingle as any, [], new Map(),
+    );
+    expect(result2).toEqual([]);
+  });
+
+  // Test 19: accumulated-state fix — two relay events with same task produce deterministic result
+  // regardless of delivery order (P1 fix from Codex review)
+  it("uses accumulated accepted state across relay events — same task from two events, LWW wins (not relay order)", async () => {
+    // Two relay events both contain T1: one with updatedBy='aaa', one with 'bbb'.
+    // updatedAt is equal, so 'aaa' should win (tie-break, lower string wins).
+    // Without the accumulator fix, BOTH would push task.created events since
+    // each sees currentState=empty, making final result relay-order-dependent.
+    const taskFromA = makeTask({ id: "T1", updatedAt: 50, updatedBy: "aaa" });
+    const taskFromB = makeTask({ id: "T1", updatedAt: 50, updatedBy: "bbb" });
+
+    const payloadA = makeValidPayload(GROUP_ID, [taskFromA]);
+    const payloadB = makeValidPayload(GROUP_ID, [taskFromB]);
+
+    // Order: event-A first, event-B second
+    const signerAB = {
+      nip44: {
+        decrypt: vi.fn()
+          .mockResolvedValueOnce(JSON.stringify(payloadA)) // event-A first
+          .mockResolvedValueOnce(JSON.stringify(payloadB)), // event-B second
+      },
+    };
+    const eventA = { ...makeRelayEvent("aaa", "enc-a"), id: "event-a" };
+    const eventB = { ...makeRelayEvent("bbb", "enc-b"), id: "event-b" };
+    const clientAB = { network: { request: vi.fn().mockResolvedValue([eventA, eventB]) } };
+
+    const resultAB = await fetchAndApplyTaskBootstrap(
+      GROUP_ID, OWN_PUBKEY, signerAB as any, clientAB as any, [], new Map(),
+    );
+
+    // Only one task.created should be emitted (A wins first via FWW, B loses tie-break)
+    expect(resultAB).toHaveLength(1);
+    expect(resultAB[0]).toEqual({ type: "task.created", task: taskFromA });
+
+    // Order: event-B first, event-A second — should converge to same result
+    const signerBA = {
+      nip44: {
+        decrypt: vi.fn()
+          .mockResolvedValueOnce(JSON.stringify(payloadB)) // event-B first
+          .mockResolvedValueOnce(JSON.stringify(payloadA)), // event-A second
+      },
+    };
+    const clientBA = { network: { request: vi.fn().mockResolvedValue([eventB, eventA]) } };
+
+    const resultBA = await fetchAndApplyTaskBootstrap(
+      GROUP_ID, OWN_PUBKEY, signerBA as any, clientBA as any, [], new Map(),
+    );
+
+    // B wins FWW (first seen), then A arrives: same updatedAt, 'aaa' < 'bbb' → A wins
+    expect(resultBA).toHaveLength(2); // B (FWW), then A (tie-break replaces B)
+    // Final state: last task.created for T1 is A (it replaced B)
+    const lastForT1 = resultBA.filter(e => e.type === "task.created" && (e as any).task.id === "T1").pop();
+    expect(lastForT1).toEqual({ type: "task.created", task: taskFromA });
   });
 });

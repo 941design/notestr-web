@@ -1,20 +1,18 @@
 /**
- * E2E test: MLS epoch boundary — tasks created before a member joins are not
- * visible to the new member.
+ * E2E tests: new-member task-state bootstrap via kind-30078 NIP-44 encrypted event.
  *
- * Scenario:
- * 1. User A creates a group and adds a task (kind-445, epoch 0)
- * 2. User A invites User B — the Add commit advances the group to epoch 1
- * 3. User B joins the group via device-sync
- * 4. User B fetches kind-445 history but CANNOT decrypt epoch-0 messages
- *    (MLS forward secrecy — joiner only holds keys for epochs ≥ their join epoch)
- * 5. User B sees an empty task board
+ * Feature: After a successful invite, the inviter (A) calls
+ * publishTaskStateSync(groupId, recipientPubkey, signer, client, relays) which
+ * publishes a kind-30078 NIP-44 encrypted event containing the current task state
+ * to B's Nostr pubkey.
  *
- * This is TP-30 under the post-snapshot-removal protocol (v2). The NIP-44
- * side-channel snapshot mechanism has been deliberately removed because it
- * caused CRDT divergence (fan-out of empty snapshots wiping task state).
- * Pre-join task visibility is an accepted trade-off documented in
- * docs/task-protocol.md § State Bootstrap.
+ * On first load after joining via a welcome message (isGroupJoinedFromWelcome),
+ * B's task store calls fetchAndApplyTaskBootstrap which fetches that event and
+ * merges it into the local CRDT — so B sees pre-join tasks within a few seconds
+ * of the board loading.
+ *
+ * TP-30: new member DOES see pre-join tasks (kind-30078 bootstrap path)
+ * TP-31: empty group — new member sees an empty board with no error (AC-3)
  */
 
 import { type BrowserContext, type Page } from '@playwright/test';
@@ -56,7 +54,7 @@ test.afterAll(async () => {
   await contextB?.close();
 });
 
-test.describe.serial('task-sync: pre-join tasks not visible (epoch boundary)', () => {
+test.describe.serial('task-sync: new member receives pre-join task bootstrap (TP-30)', () => {
   test.setTimeout(180_000);
 
   const GROUP_NAME = `TaskSync E2E ${Date.now()}`;
@@ -104,7 +102,7 @@ test.describe.serial('task-sync: pre-join tasks not visible (epoch boundary)', (
     // Wait for invite to complete — input clears on success
     await expect(pageA.getByPlaceholder('npub1...')).toHaveValue('', { timeout: 30000 });
 
-    // Brief settle so the invite has propagated before B reloads.
+    // Brief settle so the invite and kind-30078 publish have propagated before B reloads.
     await pageA.waitForTimeout(2000);
   });
 
@@ -118,7 +116,7 @@ test.describe.serial('task-sync: pre-join tasks not visible (epoch boundary)', (
     await expect(sidebarB.getByText(GROUP_NAME)).toBeVisible({ timeout: 60000 });
   });
 
-  test('User B sees an empty board — pre-join tasks are not visible (MLS epoch boundary)', async () => {
+  test('User B sees pre-join task via kind-30078 bootstrap within 5 seconds', async () => {
     test.skip(skipMobile, 'Multi-context MLS tests require desktop viewport');
     // Click on the group to select it
     const sidebarB = pageB.locator('aside');
@@ -127,8 +125,78 @@ test.describe.serial('task-sync: pre-join tasks not visible (epoch boundary)', (
     // Wait for the task board to load
     await expect(pageB.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 10000 });
 
-    // The pre-existing task must NOT appear: it was published under epoch 0,
-    // before B joined. MLS forward secrecy makes it permanently unrecoverable.
-    await expect(pageB.getByText(TASK_TITLE)).toHaveCount(0, { timeout: 15000 });
+    // AC-1: The pre-join task MUST appear within 5 seconds of the task board loading.
+    // The kind-30078 bootstrap payload was published by A after the invite succeeded;
+    // B's task store fetches and applies it on first load for a welcome-joined group.
+    await expect(pageB.getByText(TASK_TITLE)).toBeVisible({ timeout: 5000 });
+  });
+});
+
+test.describe.serial('task-sync: empty group — new member sees empty board (TP-31)', () => {
+  test.setTimeout(180_000);
+
+  const GROUP_NAME_EMPTY = `TaskSync Empty E2E ${Date.now()}`;
+
+  let contextA2: BrowserContext;
+  let contextB2: BrowserContext;
+  let pageA2: Page;
+  let pageB2: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    if (skipMobile) return;
+    contextA2 = await browser.newContext();
+    contextB2 = await browser.newContext();
+    pageA2 = await contextA2.newPage();
+    pageB2 = await contextB2.newPage();
+  });
+
+  test.afterAll(async () => {
+    await contextA2?.close();
+    await contextB2?.close();
+  });
+
+  test('User B2 authenticates first', async () => {
+    test.skip(skipMobile, 'Multi-context MLS tests require desktop viewport');
+    await authenticate(pageB2, E2E_BUNKER_B_URL);
+    await pageB2.waitForTimeout(3000);
+  });
+
+  test('User A2 authenticates', async () => {
+    test.skip(skipMobile, 'Multi-context MLS tests require desktop viewport');
+    await authenticate(pageA2, E2E_BUNKER_URL);
+  });
+
+  test('User A2 creates empty group (no tasks) and invites User B2', async () => {
+    test.skip(skipMobile, 'Multi-context MLS tests require desktop viewport');
+    // Create group with no tasks
+    await pageA2.getByPlaceholder('Group name').first().fill(GROUP_NAME_EMPTY);
+    await pageA2.getByRole('button', { name: 'Create', exact: true }).first().click();
+    const sidebarA2 = pageA2.locator('aside');
+    await expect(sidebarA2.getByText(GROUP_NAME_EMPTY)).toBeVisible({ timeout: 30000 });
+
+    // Invite B2 with no tasks in the group
+    await pageA2.getByPlaceholder('npub1...').fill(USER_B_NPUB);
+    await pageA2.getByRole('button', { name: 'Invite' }).click();
+    await expect(pageA2.getByPlaceholder('npub1...')).toHaveValue('', { timeout: 30000 });
+    await pageA2.waitForTimeout(2000);
+  });
+
+  test('User B2 joins and sees empty task board — no error (AC-3)', async () => {
+    test.skip(skipMobile, 'Multi-context MLS tests require desktop viewport');
+    await pageB2.reload();
+    await pageB2.locator('[data-testid="pubkey-chip"]').waitFor({ state: 'visible', timeout: 30000 });
+    const sidebarB2 = pageB2.locator('aside');
+    await expect(sidebarB2.getByText(GROUP_NAME_EMPTY)).toBeVisible({ timeout: 60000 });
+    await sidebarB2.getByText(GROUP_NAME_EMPTY).click();
+
+    // Wait for board to load
+    await expect(pageB2.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 10000 });
+
+    // AC-3: empty group — B starts with empty board and no error.
+    // The board columns render (no crash) and contain zero task cards.
+    // fetchAndApplyTaskBootstrap degrades gracefully when the relay returns
+    // an empty payload — no user-facing error is shown.
+    await expect(pageB2.locator('[data-column="open"]').first()).toBeVisible({ timeout: 5000 });
+    await expect(pageB2.locator('[data-testid="task-card"]')).toHaveCount(0, { timeout: 5000 });
   });
 });

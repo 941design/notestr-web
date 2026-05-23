@@ -44,6 +44,17 @@ export type TaskEvent =
       updatedBy: string;
     };
 
+export const TASK_STATE_SYNC_KIND = 30078;
+
+export interface TaskStateSyncPayload {
+  version: 1;
+  type: "task.state_sync";
+  groupId: string;
+  tasks: Task[];
+  syncedAt: number;       // Unix epoch seconds
+  inviterPubkey: string;  // hex pubkey
+}
+
 export function createTask(
   title: string,
   description: string,

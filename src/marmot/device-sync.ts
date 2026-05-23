@@ -37,8 +37,9 @@ import {
 } from "./device-store";
 import { loadForgottenSlots } from "./forgotten-slots";
 import { appendFailedWelcome, pruneOlderThan, type FailedWelcomeRecord } from "./failed-welcomes";
-import { TASK_EVENT_KIND, type TaskEvent } from "../store/task-events";
-import { appendEvent } from "../store/persistence";
+import { TASK_EVENT_KIND, TASK_STATE_SYNC_KIND, type Task, type TaskEvent, type TaskStateSyncPayload } from "../store/task-events";
+import { appendEvent, loadEvents } from "../store/persistence";
+import { replayEvents, type TaskState } from "../store/task-reducer";
 import {
   createPendingRetryQueue,
   type PendingRetryQueue,
@@ -1300,5 +1301,193 @@ export function useDeviceSync(
       stateChangeHandlersRef.current.clear();
     };
   }, [client, pubkey, relays, signer]);
+}
+
+/**
+ * Fetches kind-30078 task state sync events from the relay for the given
+ * group and own pubkey, decrypts them (NIP-44), validates the payload, and
+ * applies a CRDT LWW/FWW merge gate against the caller-supplied currentState.
+ *
+ * Returns an array of synthetic `task.created` TaskEvents for tasks that won
+ * the CRDT gate. These events should be persisted via `appendEvent` by the
+ * caller and then re-read to rebuild state. The function is non-fatal: any
+ * error (relay unavailable, decryption failure, JSON parse error) is caught
+ * and logged, and the function returns `[]` so the caller gracefully
+ * degrades to empty state.
+ *
+ * CRDT merge semantics (applied per task in each payload):
+ *   - Task NOT in currentState → insert (FWW: first-write-wins for new tasks)
+ *   - Task in currentState, payload.updatedAt > existing.updatedAt → accept (LWW)
+ *   - Task in currentState, payload.updatedAt === existing.updatedAt,
+ *     payload.task.updatedBy < existing.updatedBy → accept (deterministic tie-break)
+ *   - Otherwise: existing wins → skip
+ *
+ * @param groupId      - group.idStr (MLS hex ID, used as IDB key and d-tag component)
+ * @param ownPubkey    - hex pubkey of the new member (used to construct the d-tag)
+ * @param signer       - EventSigner with optional nip44 capability
+ * @param client       - MarmotClient; if null, returns [] immediately (AC-12)
+ * @param relays       - relay URLs to query
+ * @param currentState - current in-memory TaskState used for CRDT gate comparisons
+ */
+export async function fetchAndApplyTaskBootstrap(
+  groupId: string,
+  ownPubkey: string,
+  signer: EventSigner,
+  client: MarmotClient | null,
+  relays: string[],
+  currentState: TaskState,
+): Promise<TaskEvent[]> {
+  if (!client) return [];
+  if (!signer.nip44) {
+    console.error("[task-sync] signer does not support NIP-44; cannot fetch bootstrap");
+    return [];
+  }
+  try {
+    const dTag = `notestr:task-sync:${groupId}:${ownPubkey}`;
+    const events = await client.network.request(relays, [
+      { kinds: [TASK_STATE_SYNC_KIND], "#d": [dTag], limit: 10 },
+    ]);
+
+    const syntheticEvents: TaskEvent[] = [];
+    // Accumulates tasks accepted during this fetch so that the CRDT gate for
+    // later relay events is checked against already-accepted tasks in addition
+    // to the caller-supplied currentState. Without this accumulator a second
+    // relay event containing the same task id would always see an empty slot in
+    // currentState and push a second synthetic event, making the final state
+    // dependent on relay delivery order rather than LWW/tie-break semantics.
+    const accepted = new Map<string, Task>(currentState);
+
+    for (const event of events) {
+      let payload: TaskStateSyncPayload;
+      try {
+        const plaintext = await signer.nip44.decrypt(event.pubkey, event.content);
+        const parsed = JSON.parse(plaintext) as unknown;
+        if (
+          typeof parsed !== "object" ||
+          parsed === null ||
+          (parsed as TaskStateSyncPayload).version !== 1 ||
+          (parsed as TaskStateSyncPayload).type !== "task.state_sync" ||
+          (parsed as TaskStateSyncPayload).groupId !== groupId ||
+          !Array.isArray((parsed as TaskStateSyncPayload).tasks)
+        ) {
+          console.debug("[task-sync] skipping invalid payload");
+          continue;
+        }
+        payload = parsed as TaskStateSyncPayload;
+      } catch {
+        // Decryption failed or JSON parse failed — skip this event
+        continue;
+      }
+
+      // CRDT merge gate: apply FWW/LWW against the accumulated state (which
+      // includes both the caller-supplied currentState and tasks accepted from
+      // earlier relay events in this same fetch). This ensures deterministic
+      // LWW/tie-break semantics regardless of relay delivery order.
+      for (const task of payload.tasks) {
+        const existing = accepted.get(task.id);
+        if (!existing) {
+          // FWW: task not seen yet → insert
+          syntheticEvents.push({ type: "task.created", task });
+          accepted.set(task.id, task);
+        } else if (task.updatedAt > existing.updatedAt) {
+          // LWW: newer timestamp wins
+          syntheticEvents.push({ type: "task.created", task });
+          accepted.set(task.id, task);
+        } else if (
+          task.updatedAt === existing.updatedAt &&
+          task.updatedBy < existing.updatedBy
+        ) {
+          // Deterministic tie-breaker: lower updatedBy string wins
+          syntheticEvents.push({ type: "task.created", task });
+          accepted.set(task.id, task);
+        }
+        // Otherwise: existing wins, skip
+      }
+    }
+
+    console.debug(
+      `[task-sync] bootstrap: ${syntheticEvents.length} tasks from ${events.length} events`,
+    );
+    return syntheticEvents;
+  } catch (err) {
+    // Non-fatal: relay error, network error, etc.
+    console.error("[task-sync] fetchAndApplyTaskBootstrap failed (non-fatal):", err);
+    return [];
+  }
+}
+
+/**
+ * Publishes a kind-30078 task state sync event to the relay after a
+ * successful invite, so the new member can bootstrap task state on join.
+ *
+ * The payload is NIP-44 encrypted to the invitee's pubkey. All errors
+ * are caught internally and logged — this function is fire-and-forget
+ * and NEVER propagates. The invite flow always completes successfully
+ * regardless of whether this publish succeeds.
+ *
+ * @param groupId           - group.idStr (MLS hex ID used for IDB keys and d-tag)
+ * @param inviteePubkeyHex  - hex pubkey of the invited member
+ * @param signer            - EventSigner with optional nip44 capability
+ * @param client            - MarmotClient for network publish
+ * @param relays            - relay URLs to publish to
+ */
+export async function publishTaskStateSync(
+  groupId: string,
+  inviteePubkeyHex: string,
+  signer: EventSigner,
+  client: MarmotClient,
+  relays: string[],
+): Promise<void> {
+  try {
+    if (!signer.nip44) {
+      console.error("[task-sync] signer does not support NIP-44; skipping publish");
+      return;
+    }
+
+    // 1. Load and replay task state from IDB
+    const events = await loadEvents(groupId);
+    const taskState = replayEvents(events);
+
+    // 2. Build payload — deleted tasks are already removed from the map by the reducer
+    const ownPubkey = await signer.getPublicKey();
+    const tasks: Task[] = Array.from(taskState.values());
+    const payload: TaskStateSyncPayload = {
+      version: 1,
+      type: "task.state_sync",
+      groupId,
+      tasks,
+      syncedAt: Math.floor(Date.now() / 1000),
+      inviterPubkey: ownPubkey,
+    };
+
+    // 3. NIP-44 encrypt to invitee
+    const ciphertext = await signer.nip44.encrypt(
+      inviteePubkeyHex,
+      JSON.stringify(payload),
+    );
+
+    // 4. Build and sign kind-30078 event
+    const dTag = `notestr:task-sync:${groupId}:${inviteePubkeyHex}`;
+    const unsigned = {
+      kind: TASK_STATE_SYNC_KIND,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [["d", dTag]],
+      content: ciphertext,
+      pubkey: ownPubkey,
+    };
+    const signed = await signer.signEvent(unsigned);
+
+    // 5. Publish
+    await client.network.publish(relays, signed);
+    console.debug(
+      "[task-sync] published task state sync for",
+      inviteePubkeyHex,
+      "tasks:",
+      tasks.length,
+    );
+  } catch (err) {
+    // Non-fatal: log and continue. New member gracefully degrades to empty state.
+    console.error("[task-sync] publishTaskStateSync failed (non-fatal):", err);
+  }
 }
 

@@ -1,0 +1,41 @@
+{
+  "module_name": "device-sync",
+  "purpose": "Relay I/O, MLS ingest, task bootstrap publish/fetch. S2 adds publishTaskStateSync: reads IDB task state, encrypts a TaskStateSyncPayload with NIP-44, and publishes a kind-30078 event to relays after a successful invite.",
+  "public_api": [
+    {
+      "name": "publishTaskStateSync",
+      "signature": "async function publishTaskStateSync(groupId: string, inviteePubkeyHex: string, signer: EventSigner, client: MarmotClient, relays: string[]): Promise<void>",
+      "description": "Loads and replays task events for the group, builds a TaskStateSyncPayload, NIP-44 encrypts it to the invitee, signs a kind-30078 event, and publishes it. All errors are caught internally and logged — the function never rejects."
+    }
+  ],
+  "private_files": [
+    "src/marmot/device-sync.ts"
+  ],
+  "owned_data": [],
+  "dependencies_allowed": [
+    "src/store/persistence.ts",
+    "src/store/task-reducer.ts",
+    "src/store/task-events.ts",
+    "@internet-privacy/marmot-ts",
+    "applesauce-core"
+  ],
+  "dependencies_forbidden": [
+    "src/store/task-store.tsx",
+    "src/store/TaskStoreContext"
+  ],
+  "external_ports": [
+    "client.network.publish (relay write)",
+    "signer.nip44.encrypt (NIP-44 encryption)",
+    "signer.signEvent (event signing)",
+    "loadEvents (IDB read via persistence.ts)"
+  ],
+  "events_emitted": [
+    "kind-30078 (task state sync event) — published to relays"
+  ],
+  "events_consumed": [],
+  "test_targets": [
+    "publishTaskStateSync catches and logs errors without rethrowing",
+    "publishTaskStateSync skips publish when signer has no nip44",
+    "publishTaskStateSync omits deleted tasks (only live tasks included)"
+  ]
+}

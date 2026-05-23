@@ -1,0 +1,46 @@
+{
+  "module_name": "device-sync.ts",
+  "purpose": "Relay I/O for task bootstrap fetch — new export fetchAndApplyTaskBootstrap that queries relay for kind-30078 task state sync events, decrypts them, applies CRDT LWW/FWW merge gate, and returns synthetic TaskEvents for persistence",
+  "public_api": [
+    {
+      "name": "fetchAndApplyTaskBootstrap",
+      "signature": "async function fetchAndApplyTaskBootstrap(groupId: string, ownPubkey: string, signer: EventSigner, client: MarmotClient | null, relays: string[], currentState: TaskState): Promise<TaskEvent[]>",
+      "description": "Fetches kind-30078 task state sync events from relay, decrypts NIP-44 payloads, applies CRDT LWW/FWW merge gate against currentState, and returns synthetic task.created TaskEvents for winning tasks. Non-fatal: returns [] on any error."
+    }
+  ],
+  "private_files": [],
+  "owned_data": [],
+  "dependencies_allowed": [
+    "src/store/persistence.ts (appendEvent, loadEvents)",
+    "src/store/task-events.ts (TASK_STATE_SYNC_KIND, Task, TaskEvent, TaskStateSyncPayload)",
+    "src/store/task-reducer.ts (replayEvents)",
+    "@internet-privacy/marmot-ts (MarmotClient)",
+    "applesauce-core (EventSigner)"
+  ],
+  "dependencies_forbidden": [
+    "src/store/task-store.tsx",
+    "src/components/*"
+  ],
+  "external_ports": [
+    "client.network.request (relay fetch for kind-30078)",
+    "signer.nip44.decrypt (NIP-44 decryption)"
+  ],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "Empty relay result → returns []",
+    "Decryption failure → skipped, returns []",
+    "Invalid payload (wrong version) → skipped",
+    "payload.tasks = [] → returns [] (AC-6)",
+    "Task not in store → returns task.created event (FWW)",
+    "Task in store, payload.updatedAt > existing → returns task.created (LWW win)",
+    "Task in store, payload.updatedAt < existing → skips (LWW loss)",
+    "Task in store, equal updatedAt, lower updatedBy wins → returns task.created",
+    "Task in store, equal updatedAt, higher updatedBy → skips (tie-breaker loss)",
+    "client=null → returns [] immediately",
+    "no signer.nip44 → returns []",
+    "relay throws → caught, returns [] (AC-4)",
+    "Two payloads from different inviters commute (AC-8)",
+    "Idempotent: events.length > 0 guard prevents second bootstrap call (AC-5)"
+  ]
+}

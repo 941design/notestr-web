@@ -104,6 +104,7 @@ const REQUIRED_KINDS: ReadonlyArray<number> = [
   10051, // Relay list (client.tsx)
   22242, // NIP-42 AUTH (NDK-internal via EventSignerNdkAdapter)
   30443, // Addressable key package (marmot-ts key-package-manager)
+  30078, // Task state sync (new-member onboarding payload)
 ];
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,77 @@
+{
+  "story_id": "S2",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-24T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S2-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-13",
+      "question": "Does `publishTaskStateSync` in `src/marmot/device-sync.ts` catch all errors internally and never re-throw? Show the production function body — there MUST be a `try/catch` (or `.catch()`) that calls `console.error(...)` and returns without propagating. Run `grep -n 'publishTaskStateSync' src/marmot/device-sync.ts` to locate the function, then show lines from the function start through its closing brace. Confirm there is no `throw` statement outside the catch block."
+    },
+    {
+      "question_id": "VQ-S2-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-13",
+      "question": "Does `src/components/GroupManager.tsx:handleInvite` call `publishTaskStateSync` without `await` — i.e. as a fire-and-forget? Run `grep -n 'publishTaskStateSync' src/components/GroupManager.tsx`. The matching line MUST NOT start with `await` and MUST appear after the `await group.inviteByKeyPackageEvent(...)` call. A pattern like `void publishTaskStateSync(...)` or `publishTaskStateSync(...).catch(() => {})` is acceptable; `await publishTaskStateSync(...)` is a violation. Show the grep output and the surrounding 5 lines."
+    },
+    {
+      "question_id": "VQ-S2-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-13",
+      "question": "Does the kind-30078 event built inside `publishTaskStateSync` use the d-tag format `notestr:task-sync:{groupId}:{inviteePubkeyHex}` exactly? Run `grep -n 'notestr:task-sync\\|d.*tag\\|tags.*d' src/marmot/device-sync.ts` to locate the tag construction. Show the code that assembles the `tags` array — the `d` tag value MUST be the string template `` `notestr:task-sync:${groupId}:${inviteePubkeyHex}` `` (or equivalent string concatenation). Confirm `groupId` here is `group.idStr` (the MLS hex ID), not `getNostrGroupIdHex(...)`."
+    },
+    {
+      "question_id": "VQ-S2-004",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-13",
+      "question": "Does `publishTaskStateSync` filter tasks to non-deleted only before including them in `TaskStateSyncPayload.tasks`? Show the code that builds the `tasks` array — there MUST be a filter that excludes tasks where `task.deletedAt` is set (or equivalent deletion flag). Show the unit test that asserts the deleted-task exclusion: pass a task state with one live task and one deleted task; the published payload MUST contain only the live task. Confirm the test is not a pure mock-spy — it inspects the actual payload argument passed to the encrypt call."
+    },
+    {
+      "question_id": "VQ-S2-005",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does `publishTaskStateSync` guard against an absent `signer.nip44` before attempting encryption? Run `grep -n 'nip44' src/marmot/device-sync.ts` and locate the guard within `publishTaskStateSync`. The guard MUST appear before the first `signer.nip44.encrypt(...)` call. Acceptable forms: `if (!signer.nip44) { console.error(...); return; }`. Unacceptable: optional chaining `signer.nip44?.encrypt(...)` without an early return (silent skip without logging). Show the guard code."
+    },
+    {
+      "question_id": "VQ-S2-006",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does `publishTaskStateSync` read task state exclusively via `loadEvents(groupId)` + `replayEvents()` from `persistence.ts` and `task-reducer.ts` — and NOT import or call anything from `src/store/task-store.tsx` (the React context)? Run `grep -n 'task-store\\|TaskStoreContext\\|useTasks' src/marmot/device-sync.ts` — the output MUST be empty. The architecture rule states GroupManager.tsx does NOT import task-store; all task-reading in the publish helper lives in device-sync.ts."
+    },
+    {
+      "question_id": "VQ-S2-007",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `src/marmot/device-sync.ts` (the owning module for S2) be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? The `publishTaskStateSync` export is consumed by `GroupManager.tsx`; the seam contract specifies the function signature `(groupId: string, inviteePubkeyHex: string, signer: EventSigner, client: MarmotClient, relays: string[]): Promise<void>`. Confirm the exported function signature matches this contract exactly. Run `grep -n 'export.*publishTaskStateSync\\|export async function publishTaskStateSync' src/marmot/device-sync.ts` and show the signature line."
+    },
+    {
+      "question_id": "VQ-S2-008",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Is there a unit test for `publishTaskStateSync` that simulates a relay publish error and asserts: (a) the error is caught, (b) `console.error` is called with the error, (c) the function returns without throwing? Show the test file path and the test block. Confirm the test does not use a spy to intercept the internal try/catch — it must call the actual `publishTaskStateSync` function with a mock `client.network.publish` that rejects, and assert the returned promise resolves (not rejects)."
+    },
+    {
+      "question_id": "VQ-S2-009",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does `publishTaskStateSync` NIP-44 encrypt the payload to the invitee's pubkey (not the group key or the signer's own pubkey)? Show the `signer.nip44.encrypt(...)` call — the first argument MUST be `inviteePubkeyHex`. Run `grep -A2 'nip44.encrypt' src/marmot/device-sync.ts` within the `publishTaskStateSync` function body and confirm the recipient argument is the invitee pubkey, not a hardcoded value or the signer's own key."
+    },
+    {
+      "question_id": "VQ-S2-010",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "Do the two `vi.mock` entries added at the top of `device-sync.test.ts` (`../store/persistence` and `../store/task-reducer`) shadow the real implementations for ALL test blocks in the file — including the pre-existing `publish-task bridge` and `isSlotForgotten` blocks? Run `make test` and confirm the test count is 230 (225 baseline + 5 new). Verify none of the pre-existing tests regressed due to the new module-level mocks."
+    },
+    {
+      "question_id": "VQ-S2-011",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does `GroupManager.tsx` guard the `publishTaskStateSync` fire-and-forget call with `if (signer)` before calling it? Confirm the null-signer case does not result in a TypeError when `useMarmot()` returns `signer: null` (loading state). Run `grep -A5 'publishTaskStateSync' src/components/GroupManager.tsx` and verify the guard is present."
+    }
+  ]
+}

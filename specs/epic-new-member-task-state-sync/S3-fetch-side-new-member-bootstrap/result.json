@@ -1,0 +1,55 @@
+{
+  "story_id": "S3",
+  "status": "complete",
+  "remediation_rounds": 0,
+  "summary": "Implemented fetchAndApplyTaskBootstrap in device-sync.ts and wired it into task-store.tsx:load() behind a dual guard (events.length === 0 && isGroupJoinedFromWelcome). Applied Codex review fixes: accumulated-state CRDT gate across multiple relay events (relay-order-independence), and Array.isArray validation for payload.tasks to prevent a single malformed event from aborting the entire fetch.",
+  "files_created": [
+    "specs/epic-new-member-task-state-sync/S3-fetch-side-new-member-bootstrap/architecture.json",
+    "specs/epic-new-member-task-state-sync/S3-fetch-side-new-member-bootstrap/result.json"
+  ],
+  "files_modified": [
+    "src/marmot/device-sync.ts",
+    "src/store/task-store.tsx",
+    "src/marmot/device-sync.test.ts",
+    "specs/epic-new-member-task-state-sync/S3-fetch-side-new-member-bootstrap/verification.json"
+  ],
+  "tests": {
+    "baseline": 230,
+    "final": 250,
+    "added": 20,
+    "breakdown": {
+      "fetchAndApplyTaskBootstrap_unit": 17,
+      "accumulated_state_fix": 1,
+      "malformed_payload_guard": 1,
+      "relay_order_independence": 1
+    }
+  },
+  "mocks_introduced": [],
+  "implementation_notes": [
+    "fetchAndApplyTaskBootstrap queries relay for kind-30078 with d-tag notestr:task-sync:{groupId}:{ownPubkey}, decrypts NIP-44 payloads, validates, applies CRDT LWW/FWW gate, returns synthetic TaskEvent[]",
+    "task-store.tsx:load() now conditionally calls bootstrap when events.length === 0 AND isGroupJoinedFromWelcome(groupId) — AC-5 idempotence is automatic since subsequent loads have non-empty event logs",
+    "TaskState import added to device-sync.ts from task-reducer.ts",
+    "Codex P1 fix: CRDT gate uses an 'accepted' accumulator map seeded from currentState and updated after each accepted task, making multi-event same-task outcomes LWW-deterministic regardless of relay delivery order",
+    "Codex P2 fix: Array.isArray check for payload.tasks added inside inner try-catch so malformed payloads skip via continue rather than aborting the outer fetch",
+    "Codex P1 author-validation finding: NIP-44 encryption provides sender-to-recipient scoping; full MLS membership verification would require synchronous group state access not available in this function. Limitation documented."
+  ],
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The Codex review surfaced a real relay-order-dependence bug in the CRDT gate: with an empty currentState, two relay events containing the same task would both pass the FWW gate and emit duplicate synthetic events, making final state depend on which replayEvents call processed last. The fix (an accumulated accepted-map seeded from currentState and updated per-accepted-task) was straightforward but required re-reading the intent of the CRDT gate carefully to get the initialization right.",
+    "surprised_by": "Codex's P1 author-validation finding flags a real gap (no MLS-membership check on the relay event author) but is not practically fixable in this function without breaking the stateless helper contract — the group's MLS state is a React context dependency, not a plain parameter. This tradeoff was not surfaced in the spec.",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [
+      {
+        "agent": "codex:review",
+        "note": "P1: CRDT gate compared each relay event against original currentState only — relay-order-dependent when multiple snapshots exist for same task. Fixed with accumulated map."
+      },
+      {
+        "agent": "codex:review",
+        "note": "P2: payload.tasks not validated as Array before for-of, could abort entire fetch on malformed payload. Fixed with Array.isArray check inside inner try-catch."
+      }
+    ],
+    "lead_clarifications": []
+  }
+}

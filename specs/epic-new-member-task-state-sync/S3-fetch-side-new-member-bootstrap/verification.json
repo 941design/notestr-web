@@ -1,0 +1,92 @@
+{
+  "story_id": "S3",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-24T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S3-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-2",
+      "question": "Does `fetchAndApplyTaskBootstrap` in `src/marmot/device-sync.ts` apply CRDT LWW semantics for tasks that already exist in `currentState`? Show the merge gate code: for an incoming task where `payload.updatedAt > existing.updatedAt`, the task MUST be accepted (appendEvent called). For `payload.updatedAt < existing.updatedAt`, the task MUST be skipped. For equal `updatedAt`, the task MUST be accepted only if `payload.updatedBy < existing.updatedBy` (string comparison, lower wins). Show the unit test that covers all three LWW branches: winning update, losing update, and tie-break. Confirm the test uses real `TaskState` objects, not pure spy mocks."
+    },
+    {
+      "question_id": "VQ-S3-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-4",
+      "question": "Does `fetchAndApplyTaskBootstrap` handle the case where no kind-30078 event matching the d-tag exists on the relay (empty result from `client.network.request`)? Run `grep -n 'fetchAndApplyTaskBootstrap' src/marmot/device-sync.ts` to locate the function. Show the code path for an empty events array — it MUST return an empty `TaskEvent[]` without throwing, without calling `appendEvent`, and without calling `replayEvents`. Show the unit test covering this path and confirm it asserts the returned array is empty and no error is thrown."
+    },
+    {
+      "question_id": "VQ-S3-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-5",
+      "question": "Does the bootstrap-applied-twice scenario produce no duplicates? The synthetic `task.created` events written by `fetchAndApplyTaskBootstrap` are stored via `appendEvent(groupId, ...)` and will be re-read by `loadEvents` on the next load. On the second load, `events.length` is non-zero so `fetchAndApplyTaskBootstrap` is NOT called again (the guard in `task-store.tsx:load()` prevents it). Show the guard: `grep -n 'events.length' src/store/task-store.tsx` — there MUST be a check `if (events.length === 0 && ...)` that gates the bootstrap call. Confirm a unit test simulates a reload (non-empty event log) and asserts `fetchAndApplyTaskBootstrap` is NOT invoked."
+    },
+    {
+      "question_id": "VQ-S3-004",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-6",
+      "question": "Does an empty `tasks: []` payload from the bootstrap produce zero `appendEvent` calls — i.e. it cannot wipe existing tasks? Show the CRDT gate code path for an empty `tasks` array: the `for...of` loop iterates zero times, `appendEvent` is never called, and the function returns an empty array. Show the unit test: seed `currentState` with one existing task, call `fetchAndApplyTaskBootstrap` with a payload where `tasks: []`, assert the returned array is empty and `appendEvent` was not called. Confirm the test does not mock `appendEvent` in a way that would pass even if called."
+    },
+    {
+      "question_id": "VQ-S3-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-7",
+      "question": "Does a bootstrap payload task with `updatedAt = X` lose to a live `task.updated` event with `updatedAt = X + 1` regardless of application order? The CRDT gate compares against `currentState` at call time. Show the unit test for AC-7 ordering: (a) bootstrap payload contains task T1 with `updatedAt = 100`, `currentState` already has T1 with `updatedAt = 101` (live event arrived first) — bootstrap MUST skip T1; (b) bootstrap payload contains T1 with `updatedAt = 100`, `currentState` is empty (bootstrap arrives first) — bootstrap MUST accept T1; subsequent live event with `updatedAt = 101` replaces via normal CRDT. Show both test cases."
+    },
+    {
+      "question_id": "VQ-S3-006",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-8",
+      "question": "Does applying two independent bootstrap payloads (from two different inviters A and C, each with potentially overlapping task sets) produce the same deterministic result regardless of application order? Show the unit test for AC-8: two payloads with task T1 — one from A with `updatedAt = 50, updatedBy = 'aaa'` and one from C with `updatedAt = 50, updatedBy = 'bbb'`. Applying A-then-C and C-then-A MUST both converge to the same T1 (lower `updatedBy = 'aaa'` wins the tie-break). Show the test asserting both orders produce identical final task state."
+    },
+    {
+      "question_id": "VQ-S3-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-12",
+      "question": "Does `src/store/task-store.tsx:load()` call `fetchAndApplyTaskBootstrap` ONLY when `isGroupJoinedFromWelcome(groupId)` returns `true`? Show the guard: run `grep -n 'isGroupJoinedFromWelcome' src/store/task-store.tsx` — the result MUST appear inside the `load()` function within an `if` condition that also checks `events.length === 0`. Show the unit test for AC-12: when `isGroupJoinedFromWelcome` returns `false` and `events.length === 0`, `fetchAndApplyTaskBootstrap` MUST NOT be called. Confirm the test is not a pure spy — it must verify the absence of relay queries, not merely the absence of a mock call."
+    },
+    {
+      "question_id": "VQ-S3-008",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does `fetchAndApplyTaskBootstrap` guard against `signer.nip44` being absent before attempting decryption? Run `grep -n 'nip44' src/marmot/device-sync.ts` within the `fetchAndApplyTaskBootstrap` function body. The guard MUST appear before the first `signer.nip44.decrypt(...)` call. Acceptable form: `if (!signer.nip44) { console.error('[device-sync] nip44 unavailable ...'); return []; }`. Show the guard code and confirm the function returns an empty array (not throws) when `nip44` is absent."
+    },
+    {
+      "question_id": "VQ-S3-009",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does `fetchAndApplyTaskBootstrap` query the relay using the correct d-tag filter `notestr:task-sync:{groupId}:{ownPubkey}` and kind `30078`? Show the relay query call — specifically the filter object passed to `client.network.request(...)`. The `kinds` array MUST contain `30078`, the `#d` filter MUST contain the interpolated d-tag using `groupId` (i.e. `group.idStr`, the MLS hex ID). Run `grep -A5 'network.request' src/marmot/device-sync.ts` near `fetchAndApplyTaskBootstrap` and show the filter construction."
+    },
+    {
+      "question_id": "VQ-S3-010",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `src/marmot/device-sync.ts` (the owning module for S3) be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? The `fetchAndApplyTaskBootstrap` export is consumed by `task-store.tsx`; the seam contract specifies `(groupId: string, ownPubkey: string, signer: EventSigner, client: MarmotClient | null, relays: string[], currentState: TaskState): Promise<TaskEvent[]>`. Run `grep -n 'export.*fetchAndApplyTaskBootstrap\\|export async function fetchAndApplyTaskBootstrap' src/marmot/device-sync.ts` and confirm the exported signature matches. Any additional parameter or a different return type is a seam contract violation."
+    },
+    {
+      "question_id": "VQ-S3-011",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Is there a unit test covering graceful degradation when `fetchAndApplyTaskBootstrap` is called but the relay throws (network error)? The test MUST supply a `client.network.request` mock that rejects, call `fetchAndApplyTaskBootstrap`, and assert the returned promise resolves with an empty array — not rejects. Confirm `appendEvent` was not called. Show the test block path and name."
+    },
+    {
+      "question_id": "VQ-S3-012",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "question": "Does `fetchAndApplyTaskBootstrap` gate the CRDT merge against an *accumulated* accepted-task map (seeded from `currentState`) rather than only `currentState` at call time? If two relay events both contain the same task id and `currentState` is empty, processing both against the original `currentState` produces two `task.created` synthetic events — making the final replayed state relay-order-dependent. The fix: an `accepted` map is initialized from `currentState` and updated after each accepted task so later relay events see already-accepted tasks. Show in `device-sync.ts` that `accepted.set(task.id, task)` is called for every accepted task, and that the CRDT gate checks `accepted.get(task.id)` not `currentState.get(task.id)`. Show the unit test 'uses accumulated accepted state across relay events' that verifies relay-order independence."
+    },
+    {
+      "question_id": "VQ-S3-013",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "question": "Does the payload validation inside `fetchAndApplyTaskBootstrap` reject payloads where `tasks` is not an array, without aborting the entire bootstrap fetch? The check `!Array.isArray((parsed as TaskStateSyncPayload).tasks)` must appear inside the inner try-catch (alongside `version`, `type`, `groupId` checks) so that a malformed payload causes `continue` to the next relay event, not an outer-catch abort that drops all subsequent valid events. Show the unit test 'skips events where payload.tasks is not an array' which provides one bad event and one good event, and asserts the good event's task still appears in the result."
+    }
+  ]
+}

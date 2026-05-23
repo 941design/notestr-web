@@ -1,0 +1,307 @@
+{
+  "epic_name": "new-member-task-state-sync",
+  "created_at": "2026-05-23T00:00:00Z",
+  "total_stories": 5,
+  "story_order": [
+    "S1",
+    "S2",
+    "S3",
+    "S4",
+    "S5"
+  ],
+  "dependency_notes": "S1 is a pure type/constant addition with no runtime dependencies on other stories. S2 (publish) and S3 (fetch) both extend device-sync.ts but in non-overlapping function namespaces; they can be implemented in parallel after S1 lands. S4 (E2E) depends on S2 and S3 completing \u2014 it tests the full round-trip. S5 (docs) is independent of all other stories and can be written in parallel with or after any story.",
+  "mock_resolution_plan": "No temporary mocks are introduced. S2 uses the existing signer/client/relays interfaces from useMarmot(); S3 does the same. No mock needs to be resolved before epic completion.",
+  "seams": [
+    {
+      "data": "publishTaskStateSync function exported from device-sync.ts and called by GroupManager.tsx",
+      "source": {
+        "story": "S2",
+        "artifact": "src/marmot/device-sync.ts:publishTaskStateSync"
+      },
+      "destination": {
+        "story": "S2",
+        "artifact": "src/components/GroupManager.tsx:handleInvite"
+      },
+      "contract": {
+        "type_name": "PublishTaskStateSyncFn",
+        "fields": [
+          {
+            "name": "groupId",
+            "type": "string"
+          },
+          {
+            "name": "inviteePubkeyHex",
+            "type": "string"
+          },
+          {
+            "name": "signer",
+            "type": "EventSigner"
+          },
+          {
+            "name": "client",
+            "type": "MarmotClient"
+          },
+          {
+            "name": "relays",
+            "type": "string[]"
+          }
+        ],
+        "invariants": [
+          "Returns Promise<void>",
+          "Never rejects \u2014 failure is caught internally and logged via console.error",
+          "Caller is fire-and-forget; GroupManager.tsx MUST NOT await the return value in the UI handler path"
+        ]
+      }
+    },
+    {
+      "data": "fetchAndApplyTaskBootstrap function exported from device-sync.ts and called by task-store.tsx",
+      "source": {
+        "story": "S3",
+        "artifact": "src/marmot/device-sync.ts:fetchAndApplyTaskBootstrap"
+      },
+      "destination": {
+        "story": "S3",
+        "artifact": "src/store/task-store.tsx:load"
+      },
+      "contract": {
+        "type_name": "FetchAndApplyTaskBootstrapFn",
+        "fields": [
+          {
+            "name": "groupId",
+            "type": "string"
+          },
+          {
+            "name": "ownPubkey",
+            "type": "string"
+          },
+          {
+            "name": "signer",
+            "type": "EventSigner"
+          },
+          {
+            "name": "client",
+            "type": "MarmotClient | null"
+          },
+          {
+            "name": "relays",
+            "type": "string[]"
+          },
+          {
+            "name": "currentState",
+            "type": "TaskState"
+          }
+        ],
+        "invariants": [
+          "Returns Promise<TaskEvent[]> of synthetic task.created events that passed the CRDT gate",
+          "Never rejects \u2014 failure is caught internally; empty array returned on any error",
+          "An empty tasks[] payload in a fetched event produces zero returned TaskEvents",
+          "Only called when isGroupJoinedFromWelcome(groupId) returns true AND local event log is empty"
+        ]
+      }
+    },
+    {
+      "data": "TaskStateSyncPayload interface defined in task-events.ts and consumed by device-sync.ts",
+      "source": {
+        "story": "S1",
+        "artifact": "src/store/task-events.ts:TaskStateSyncPayload"
+      },
+      "destination": {
+        "story": "S2",
+        "artifact": "src/marmot/device-sync.ts:publishTaskStateSync"
+      },
+      "contract": {
+        "type_name": "TaskStateSyncPayload",
+        "fields": [
+          {
+            "name": "version",
+            "type": "1"
+          },
+          {
+            "name": "type",
+            "type": "\"task.state_sync\""
+          },
+          {
+            "name": "groupId",
+            "type": "string"
+          },
+          {
+            "name": "tasks",
+            "type": "Task[]"
+          },
+          {
+            "name": "syncedAt",
+            "type": "number"
+          },
+          {
+            "name": "inviterPubkey",
+            "type": "string"
+          }
+        ],
+        "invariants": [
+          "version is always the literal number 1",
+          "type is always the literal string \"task.state_sync\"",
+          "tasks contains only non-deleted tasks",
+          "syncedAt is a Unix epoch timestamp (seconds)"
+        ]
+      }
+    }
+  ],
+  "stories": [
+    {
+      "id": "S1",
+      "name": "foundations-types-and-nip46-perms",
+      "title": "Foundations: TaskStateSyncPayload type and NIP-46 sign_event:30078 permission",
+      "description": "Adds the TaskStateSyncPayload TypeScript interface to task-events.ts and re-adds sign_event:30078 to the NIP46_PERMS constant in nostr.ts. Updates the REQUIRED_KINDS array in nostr.test.ts so the single-source-of-truth unit test continues to enforce the perms string. These are the foundational changes that S2 and S3 depend on.",
+      "acceptance_criteria": [
+        "AC-9"
+      ],
+      "scope": {
+        "includes": [
+          "src/store/task-events.ts \u2014 add TaskStateSyncPayload interface (version, type, groupId, tasks, syncedAt, inviterPubkey)",
+          "src/lib/nostr.ts \u2014 add sign_event:30078 to NIP46_PERMS string constant",
+          "src/lib/nostr.test.ts \u2014 add 30078 to REQUIRED_KINDS array"
+        ],
+        "excludes": [
+          "Any runtime logic: no publish or fetch functions in this story",
+          "GroupManager.tsx, device-sync.ts, task-store.tsx"
+        ]
+      },
+      "complexity": "low",
+      "owning_module": "task-events.ts",
+      "creates_seam": true,
+      "consumes_seams": [],
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "lighter_path": false,
+      "status": "done"
+    },
+    {
+      "id": "S2",
+      "name": "publish-side-inviter-task-state-sync",
+      "title": "Publish side: inviter publishes task state sync after invite",
+      "description": "Implements publishTaskStateSync in device-sync.ts: reads the current task state from IndexedDB via loadEvents+replayEvents, filters to non-deleted tasks, builds a TaskStateSyncPayload v1, NIP-44 encrypts to the invitee's pubkey, and publishes kind-30078 with d-tag notestr:task-sync:{groupId}:{inviteePubkeyHex}. Wires the call into GroupManager.tsx:handleInvite as a fire-and-forget after inviteByKeyPackageEvent succeeds. Failure is non-fatal.",
+      "acceptance_criteria": [
+        "AC-13"
+      ],
+      "scope": {
+        "includes": [
+          "src/marmot/device-sync.ts \u2014 add publishTaskStateSync(groupId, inviteePubkeyHex, signer, client, relays): Promise<void>",
+          "src/components/GroupManager.tsx \u2014 call publishTaskStateSync fire-and-forget after inviteByKeyPackageEvent succeeds",
+          "Unit test for publishTaskStateSync: verify error is caught and not re-thrown; verify payload shape and d-tag"
+        ],
+        "excludes": [
+          "Fetch side (fetchAndApplyTaskBootstrap) \u2014 that is S3",
+          "E2E test \u2014 that is S4",
+          "AC-1 full-stack validation \u2014 that is S4"
+        ]
+      },
+      "complexity": "medium",
+      "owning_module": "device-sync.ts",
+      "creates_seam": true,
+      "consumes_seams": [
+        "TaskStateSyncPayload"
+      ],
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "lighter_path": false,
+      "status": "done",
+      "notes": "GroupManager.tsx MUST NOT await publishTaskStateSync in the UI handler \u2014 the call is fire-and-forget to avoid blocking the invite confirmation UX. Use void publishTaskStateSync(...) or .catch(() => {}) pattern to satisfy TypeScript without awaiting."
+    },
+    {
+      "id": "S3",
+      "name": "fetch-side-new-member-bootstrap",
+      "title": "Fetch side: new member bootstrap from relay on first load",
+      "description": "Implements fetchAndApplyTaskBootstrap in device-sync.ts: queries the relay for kind-30078 events matching the d-tag, NIP-44 decrypts each event, validates the payload, applies a CRDT merge gate (FWW/LWW) against the current in-memory state, and returns synthetic task.created TaskEvents for tasks that win the gate. Updates task-store.tsx:load() to call this function when the local event log is empty AND isGroupJoinedFromWelcome returns true, then appends the returned events and re-runs replayEvents.",
+      "acceptance_criteria": [
+        "AC-2",
+        "AC-4",
+        "AC-5",
+        "AC-6",
+        "AC-7",
+        "AC-8",
+        "AC-12"
+      ],
+      "scope": {
+        "includes": [
+          "src/marmot/device-sync.ts \u2014 add fetchAndApplyTaskBootstrap(groupId, ownPubkey, signer, client, relays, currentState): Promise<TaskEvent[]>",
+          "src/store/task-store.tsx \u2014 update load() to call fetchAndApplyTaskBootstrap when event log is empty and isGroupJoinedFromWelcome is true; append returned events; re-run replayEvents",
+          "Unit tests: graceful degradation (no event found), idempotence, CRDT gate cases (empty payload, LWW ordering, multi-inviter convergence), manually-joined group skips fetch"
+        ],
+        "excludes": [
+          "publishTaskStateSync \u2014 that is S2",
+          "E2E test \u2014 that is S4",
+          "UI indication of sync progress (optional per D5, not required for AC pass)"
+        ]
+      },
+      "complexity": "high",
+      "owning_module": "device-sync.ts",
+      "creates_seam": true,
+      "consumes_seams": [
+        "TaskStateSyncPayload",
+        "FetchAndApplyTaskBootstrapFn"
+      ],
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "lighter_path": false,
+      "status": "done",
+      "notes": "signer.nip44 is optional on EventSigner \u2014 guard with if (!signer.nip44) { console.error(...); return [] }. The CRDT gate must match the spec exactly: FWW for new tasks, LWW for existing tasks, deterministic tie-breaker by updatedBy pubkey string comparison. isGroupJoinedFromWelcome is accessed via the existing pattern in task-store.tsx (useMarmot chain)."
+    },
+    {
+      "id": "S4",
+      "name": "e2e-new-member-sees-pre-join-tasks",
+      "title": "E2E: new member sees pre-join tasks and empty-group is safe",
+      "description": "Updates e2e/tests/task-sync.spec.ts to replace the existing TP-30 assertion (which expected an empty board \u2014 the pre-feature behavior) with an assertion that Member B sees Member A's pre-join tasks after joining. Adds a second test case covering AC-3: A creates a group with no tasks, invites B, B joins, B sees an empty board with no error.",
+      "acceptance_criteria": [
+        "AC-1",
+        "AC-3"
+      ],
+      "scope": {
+        "includes": [
+          "e2e/tests/task-sync.spec.ts \u2014 update TP-30 to assert B sees A's pre-join tasks (not an empty board)",
+          "e2e/tests/task-sync.spec.ts \u2014 add AC-3 test: empty group, B joins, empty board, no error"
+        ],
+        "excludes": [
+          "Any changes to src/ files \u2014 this story is test-only",
+          "CLI interoperability test (AC-11, deferred/manual)",
+          "CRDT unit tests \u2014 those are in S3"
+        ]
+      },
+      "complexity": "medium",
+      "owning_module": "task-store.tsx",
+      "creates_seam": false,
+      "consumes_seams": [],
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "lighter_path": false,
+      "status": "done",
+      "notes": "TP-30 previously asserted the empty-board behavior as the CORRECT behavior before this feature shipped. The assertion must be inverted: after S2+S3 land, B MUST see the tasks A created before the invite. Ensure the E2E test waits for the bootstrap fetch to complete (up to 5 seconds per AC-1) before asserting task visibility."
+    },
+    {
+      "id": "S5",
+      "name": "protocol-documentation",
+      "title": "Protocol documentation: kind-30078 state sync event in task-protocol.md",
+      "description": "Updates docs/task-protocol.md to document the kind-30078 task state sync event introduced by this epic. Covers all five required topics per AC-10: event purpose and kind number, d-tag format, TaskStateSyncPayload schema (version 1, all fields), publish lifecycle (inviter timing, non-fatal failure), and fetch lifecycle (new member relay query, NIP-44 decryption, CRDT merge gate).",
+      "acceptance_criteria": [
+        "AC-10"
+      ],
+      "scope": {
+        "includes": [
+          "docs/task-protocol.md \u2014 add section documenting: kind-30078 event and purpose; d-tag format notestr:task-sync:{groupId}:{inviteePubkey}; TaskStateSyncPayload schema v1 with all fields; publish lifecycle; fetch lifecycle and CRDT merge gate"
+        ],
+        "excludes": [
+          "Any src/ file changes",
+          "CLI documentation (separate spec)",
+          "Future v2 payload additions (deletedIds field)"
+        ]
+      },
+      "complexity": "low",
+      "owning_module": "task-protocol.md",
+      "creates_seam": false,
+      "consumes_seams": [],
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "lighter_path": true,
+      "status": "done"
+    }
+  ]
+}

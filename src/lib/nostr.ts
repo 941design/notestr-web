@@ -23,7 +23,7 @@ const AUTH_METHOD_KEY = "notestr-auth-method";
  *   30443  – Addressable key package (marmot-ts key-package-manager publish/rotate)
  */
 export const NIP46_PERMS =
-  "sign_event:5,sign_event:13,sign_event:10051,sign_event:22242,sign_event:30443,nip44_encrypt,nip44_decrypt";
+  "sign_event:5,sign_event:13,sign_event:10051,sign_event:22242,sign_event:30443,sign_event:30078,nip44_encrypt,nip44_decrypt";
 
 export function getNip07Signer(): EventSigner | null {
   if (!window.nostr) return null;

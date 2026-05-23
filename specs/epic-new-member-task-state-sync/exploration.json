@@ -1,0 +1,100 @@
+{
+  "created_at": "2026-05-23T00:00:00Z",
+  "explorers": ["similar-features", "architecture", "testing-and-conventions"],
+  "similar_features": {
+    "nip44_api": {
+      "encrypt": "signer.nip44.encrypt(recipientPubkeyHex, plaintext) → Promise<string>",
+      "decrypt": "signer.nip44.decrypt(senderPubkeyHex, ciphertext) → Promise<string>",
+      "availability": "EventSigner from applesauce-core; nip44 property is optional but populated for both NIP-07 and NIP-46 signers. Available in useDeviceSync as the 'signer' parameter."
+    },
+    "kind_30078_prior": "No existing kind-30078 runtime code. Constant was removed in epic-task-snapshot-removal-crdt-convergence. sign_event:30078 absent from NIP46_PERMS at nostr.ts:25-26.",
+    "network_publish": {
+      "method": "client.network.publish(relays, signedNostrEvent)",
+      "signing": "signer.signEvent(unsignedEvent) to get a signed NostrEvent first",
+      "note": "Already used for kind-5 and kind-10051 in client.tsx:388-424. From device-sync.ts context, client.network is available."
+    },
+    "network_query": {
+      "one_shot": "client.network.request(relays, filters): Promise<NostrEvent[]> — used at device-sync.ts:604, 972, 1241",
+      "persistent": "client.network.subscription(relays, filters).subscribe({ next })"
+    },
+    "task_type": {
+      "file": "src/store/task-events.ts:5-15",
+      "shape": "{ id: string, title: string, description: string, status: TaskStatus, assignee: string|null, createdBy: string, createdAt: number, updatedAt: number, updatedBy: string }",
+      "deleted_tasks": "Deleted tasks are removed from TaskState map entirely — no tombstone field. Confirms D4.",
+      "task_created_event": "{ type: 'task.created', task: Task }"
+    },
+    "is_group_joined_from_welcome": {
+      "file": "src/marmot/device-store.ts:126-128",
+      "signature": "async function isGroupJoinedFromWelcome(groupId: string): Promise<boolean>",
+      "key": "group.idStr (MLS hex, same as IDB key)",
+      "set_by": "markGroupJoinedFromWelcome(group.idStr) called inside joinFromWelcomeInvite at device-sync.ts:418"
+    },
+    "group_manager_invite_context": {
+      "file": "src/components/GroupManager.tsx:158-196",
+      "in_scope_after_invite": ["hex (invitee pubkey hex)", "group (MarmotGroup, with group.idStr)", "client (MarmotClient, from useMarmot())", "relays (string[], from useMarmot())"],
+      "note": "GroupManager does NOT import task-store or persistence. New publishTaskStateSync helper in device-sync.ts is the right insertion point."
+    }
+  },
+  "architecture": {
+    "two_identifier_scheme": {
+      "group_id_str": "group.idStr — MLS group ID as lowercase hex bytes. Used for: IDB keys (appendEvent, loadEvents, isGroupJoinedFromWelcome), NOT for relay event filters.",
+      "nostr_group_id_hex": "getNostrGroupIdHex(group.state) — Nostr group ID used as #h tag on kind-445 relay events. Used for relay subscription filters.",
+      "implication": "The d-tag for kind-30078 should use group.idStr (the MLS group ID), since both inviter and invitee derive the same idStr after the MLS group is established."
+    },
+    "append_event": {
+      "file": "src/store/persistence.ts:22-29",
+      "signature": "appendEvent(groupId: string, event: TaskEvent): Promise<void>",
+      "groupId": "group.idStr",
+      "note": "device-sync.ts already imports appendEvent directly from persistence.ts and calls it at device-sync.ts:876 inside applicationMessage handler."
+    },
+    "task_store_load_path": {
+      "file": "src/store/task-store.tsx:85-104",
+      "pattern": "loadEvents(groupId) → replayEvents(events) → setState(restored) → setLoading(false)",
+      "hook_point": "After 'if events.length === 0 AND isGroupJoinedFromWelcome(groupId)', call fetchAndApplyTaskBootstrap before setLoading(false)"
+    },
+    "task_store_context": {
+      "exposed": "{ tasks: Task[], dispatch: (event: TaskEvent) => Promise<void>, loading: boolean }",
+      "hook": "useTaskStore()",
+      "note": "GroupManager does NOT use useTaskStore. task-store.tsx CAN call useMarmot() for signer/client/relays since it is mounted inside MarmotProvider."
+    },
+    "device_sync_imports": {
+      "already_imports_append_event": "device-sync.ts:41 imports appendEvent from ../store/persistence",
+      "signer_available": "useDeviceSync receives signer: EventSigner parameter; client.signer is same object",
+      "new_helpers_fit_here": "publishTaskStateSync and fetchAndApplyTaskBootstrap are natural additions to device-sync.ts"
+    },
+    "marmot_client_shape": {
+      "network": "NostrNetworkInterface: request, subscription, publish, getUserInboxRelays",
+      "signer": "EventSigner with nip44.encrypt/decrypt"
+    }
+  },
+  "testing_and_conventions": {
+    "nip46_perms_single_source": {
+      "file": "src/lib/nostr.ts:25-26",
+      "enforcement": "nostr.test.ts:136-158 — greps all non-test source files for sign_event:N and nip44_* tokens; any file other than nostr.ts fails the test",
+      "required_kinds_update": "nostr.test.ts:101-107 — REQUIRED_KINDS array must include 30078 when adding sign_event:30078"
+    },
+    "existing_bootstrap_tests": {
+      "task_sync_spec": "e2e/tests/task-sync.spec.ts — TP-30: currently asserts B sees EMPTY board after join. Must be updated to assert B sees pre-join tasks.",
+      "snapshot_history_spec": "e2e/tests/snapshot-history.spec.ts — TP-31/32: assert empty board. May need update or companion tests."
+    },
+    "e2e_framework": {
+      "unit": "Vitest 4.x, node environment",
+      "e2e": "Playwright 1.58, serial, workers=1, 180s timeout for multi-party tests",
+      "relay": "strfry ephemeral on port 7777, started by make e2e",
+      "run": "make e2e (NOT npx playwright test directly)"
+    },
+    "multi_party_pattern": {
+      "contexts": "browser.newContext() per actor; B auth before A",
+      "pinClientSlot": "pinClientSlot(page, bunkerUrl) mandatory for multi-context tests",
+      "quiesceFor": "quiesceFor(pages, opts) polls __notestrTestTasks() until stable",
+      "dispatchTaskEvent": "window.__notestrTestDispatchTaskEvent for headless task injection",
+      "settle": "settle(page, ms) for explicit wait between invite and join"
+    },
+    "ndk_subscriber": {
+      "file": "e2e/fixtures/ndk-subscriber.ts",
+      "usage": "openNdkSubscriber for relay-level assertions on raw events"
+    },
+    "nip44_mocking": "No existing NIP-44 unit-test utilities. For unit tests: vi.mock the signer with predictable encrypt/decrypt. For E2E: live bunker handles NIP-44."
+  },
+  "prior_learnings": []
+}

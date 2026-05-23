@@ -1,0 +1,10 @@
+{
+  "decision": "direct_edit",
+  "modules_touched": [
+    "src/store/task-events.ts",
+    "src/lib/nostr.ts",
+    "src/lib/nostr.test.ts"
+  ],
+  "seams_created": ["TaskStateSyncPayload"],
+  "notes": "Pure type and constant additions; no runtime behavior changed"
+}

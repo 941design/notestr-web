@@ -1,0 +1,26 @@
+{
+  "module_name": "e2e/tests/task-sync.spec.ts",
+  "purpose": "E2E verification that new members receive pre-join task state via kind-30078 bootstrap (TP-30) and that an empty group produces an empty board without error (TP-31/AC-3)",
+  "public_api": [],
+  "private_files": [
+    "e2e/tests/task-sync.spec.ts"
+  ],
+  "owned_data": [],
+  "dependencies_allowed": [
+    "@playwright/test",
+    "e2e/fixtures/auth-helper.ts",
+    "e2e/fixtures/auth-helper-b.ts",
+    "e2e/fixtures/cleanup.ts"
+  ],
+  "dependencies_forbidden": [],
+  "external_ports": [
+    "Nostr relay (ephemeral, port 7777)",
+    "Next.js dev server (port 3000)"
+  ],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "TP-30: new member sees pre-join task via kind-30078 bootstrap within 5 seconds (AC-1)",
+    "TP-31: empty group — new member sees empty board with no error (AC-3)"
+  ]
+}

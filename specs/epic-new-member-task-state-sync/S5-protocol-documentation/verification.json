@@ -1,0 +1,60 @@
+{
+  "story_id": "S5",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-24T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S5-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-10",
+      "question": "Does `docs/task-protocol.md` contain a section documenting the kind-30078 state sync event? Run `grep -n '30078\\|state.sync\\|task.sync\\|state sync' docs/task-protocol.md` — there MUST be at least one heading-level reference (a line starting with `#` or `##` that names kind-30078 or 'task state sync'). Show the matching lines and the section heading. Confirm the section explains the event's purpose: providing pre-join task visibility to new MLS group members."
+    },
+    {
+      "question_id": "VQ-S5-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-10",
+      "question": "Does `docs/task-protocol.md` document the d-tag format `notestr:task-sync:{groupId}:{inviteePubkey}` exactly? Run `grep -n 'notestr:task-sync' docs/task-protocol.md` — the output MUST contain a line with the literal template (using curly-brace placeholders or backtick notation). Show the grep output. Confirm the documentation clarifies that `{groupId}` is the MLS group `idStr` (lowercase hex) — NOT the Nostr group ID hex from `getNostrGroupIdHex()`."
+    },
+    {
+      "question_id": "VQ-S5-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-10",
+      "question": "Does `docs/task-protocol.md` document all six fields of the `TaskStateSyncPayload` schema (version 1)? Run `grep -n 'version\\|syncedAt\\|inviterPubkey\\|groupId\\|tasks\\|type.*task' docs/task-protocol.md` within the new section. All six field names — `version`, `type`, `groupId`, `tasks`, `syncedAt`, `inviterPubkey` — MUST appear in the documentation. Confirm `version` is documented as the literal number `1` and `type` as the literal string `\"task.state_sync\"`."
+    },
+    {
+      "question_id": "VQ-S5-004",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-10",
+      "question": "Does `docs/task-protocol.md` document the publish lifecycle: who publishes (the inviter), when (after `inviteByKeyPackageEvent` succeeds), and that failure is non-fatal? Run `grep -n 'inviter\\|non-fatal\\|fire.and.forget\\|console.error\\|publish.*lifecycle\\|publish.*timing' docs/task-protocol.md`. At least one of these terms MUST appear in the new section. Confirm the documentation states explicitly that publish failure does NOT surface an error to the user and does NOT block the invite flow."
+    },
+    {
+      "question_id": "VQ-S5-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-10",
+      "question": "Does `docs/task-protocol.md` document the fetch lifecycle including: (a) the relay query (kind-30078, d-tag filter), (b) NIP-44 decryption, and (c) the CRDT merge gate (FWW for new tasks, LWW for existing)? Run `grep -n 'FWW\\|LWW\\|nip.44\\|NIP.44\\|decrypt\\|CRDT\\|merge' docs/task-protocol.md`. At least one match for each concept (merge strategy and decryption) MUST appear. Show the grep output. Confirm the CRDT gate rules are documented: insert-if-new (FWW), accept-if-newer (LWW), tie-break by lower `updatedBy` string."
+    },
+    {
+      "question_id": "VQ-S5-006",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does S5's diff touch ONLY `docs/task-protocol.md`? Run `git diff --name-only` against S5's commit. Any modification to `src/` files or `e2e/` files is a scope violation. Also confirm the new section does not contain TODO, FIXME, or placeholder markers (`<TBD>`, `...`, `?`) that indicate incomplete documentation."
+    },
+    {
+      "question_id": "VQ-S5-007",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Is the new kind-30078 section placed logically within `docs/task-protocol.md` — either adjacent to other task-event kind documentation (kind-445) or in a dedicated 'State Bootstrap' or 'New Member Sync' section? Run `grep -n '^#' docs/task-protocol.md` to list all headings. Confirm the new section is reachable from the document's table of contents (if one exists) or follows heading-level conventions consistent with the rest of the file. Show the heading-list output."
+    },
+    {
+      "question_id": "VQ-S5-008",
+      "phase": "pre-impl",
+      "category": "BEST_PRACTICES",
+      "question": "Does the documentation for `TaskStateSyncPayload` note that `tasks` contains only non-deleted tasks (the publish-side filter)? Run `grep -n 'deleted\\|non-deleted\\|active.*tasks\\|tasks.*filter' docs/task-protocol.md`. This constraint is important for consumers implementing the fetch side — without it, a consumer might not know that the absence of a task in the payload means nothing (not that it was deleted). Show the grep output confirming the constraint is documented."
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "story_id": "S2",
+  "status": "complete",
+  "remediation_rounds": 0,
+  "summary": "Added `publishTaskStateSync` to `src/marmot/device-sync.ts` and wired it as a fire-and-forget call in `GroupManager.tsx:handleInvite` after `inviteByKeyPackageEvent` succeeds. Five unit tests added to `device-sync.test.ts` covering the error-swallow contract, nip44 guard, deleted-task exclusion, and d-tag format.",
+  "files_created": [],
+  "files_modified": [
+    "src/marmot/device-sync.ts",
+    "src/components/GroupManager.tsx",
+    "src/marmot/device-sync.test.ts",
+    "specs/epic-new-member-task-state-sync/S2-publish-side-inviter-task-state-sync/architecture.json",
+    "specs/epic-new-member-task-state-sync/S2-publish-side-inviter-task-state-sync/verification.json",
+    "specs/epic-new-member-task-state-sync/S2-publish-side-inviter-task-state-sync/result.json"
+  ],
+  "tests": {
+    "baseline": 225,
+    "final": 230,
+    "added": 5,
+    "type_breakdown": {
+      "unit": 5
+    }
+  },
+  "mocks_introduced": [
+    {
+      "mock": "vi.mock('../store/persistence')",
+      "reason": "loadEvents hits real IndexedDB which is unavailable in vitest node environment",
+      "file": "src/marmot/device-sync.test.ts"
+    },
+    {
+      "mock": "vi.mock('../store/task-reducer')",
+      "reason": "replayEvents needs to be controlled per-test to simulate task state with/without deleted tasks",
+      "file": "src/marmot/device-sync.test.ts"
+    }
+  ],
+  "implementation_notes": [
+    "The reducer's task.deleted handling removes tasks from the Map entirely, so Array.from(taskState.values()) already gives only non-deleted tasks — no explicit filter needed.",
+    "GroupManager.tsx guards the call with `if (signer)` because useMarmot() returns `signer: null` during the loading state, and a null signer would cause a TypeError before publishTaskStateSync's internal guard could run.",
+    "The two new vi.mock entries were placed at the top of device-sync.test.ts before imports; Vitest hoists them correctly and all pre-existing tests still pass."
+  ],
+  "retrospective": {
+    "skipped": true,
+    "reason": "clean_run"
+  }
+}

@@ -13,6 +13,7 @@ import {
 } from "@internet-privacy/marmot-ts";
 import { NpubQrModal } from "@/components/NpubQrModal";
 import { clearEvents } from "@/store/persistence";
+import { publishTaskStateSync } from "@/marmot/device-sync";
 import { abbreviateRelay, isValidRelayUrl, getGroupRelays } from "@/lib/relay-utils";
 import { DEFAULT_RELAYS } from "@/config/relays";
 import {
@@ -65,6 +66,7 @@ export function GroupManager({
     loading,
     error: marmotError,
     detachedGroupIds,
+    signer,
   } = useMarmot();
   const [newGroupName, setNewGroupName] = useState("");
   const [inviteNpub, setInviteNpub] = useState("");
@@ -184,6 +186,14 @@ export function GroupManager({
         .sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0))[0];
 
       await group.inviteByKeyPackageEvent(freshestKeyPackage);
+
+      // Fire-and-forget — non-fatal if publish fails.
+      // Error is already caught and logged inside publishTaskStateSync.
+      if (signer) {
+        publishTaskStateSync(group.idStr, hex, signer, client, relays).catch(() => {
+          // Error already logged inside publishTaskStateSync
+        });
+      }
 
       setInviteNpub("");
     } catch (err) {

@@ -18,8 +18,10 @@ import {
   beginDispatchPublishWindow,
   endDispatchPublishWindow,
   enqueueExpectedPublish,
+  fetchAndApplyTaskBootstrap,
   removeExpectedPublishByRumorId,
 } from "../marmot/device-sync";
+import { isGroupJoinedFromWelcome } from "../marmot/device-store";
 import { mlsTrace } from "../marmot/mls-trace";
 import { TASK_EVENT_KIND, type Task, type TaskEvent } from "./task-events";
 import { applyEvent, replayEvents, type TaskState } from "./task-reducer";
@@ -64,7 +66,7 @@ export const TaskStoreProvider: React.FC<TaskStoreProviderProps> = ({
   children,
 }) => {
   const group = useGroup(groupId);
-  const { pubkey } = useMarmot();
+  const { pubkey, client, signer, relays } = useMarmot();
   const [state, setState] = useState<TaskState>(new Map());
   const [loading, setLoading] = useState(true);
   const stateRef = useRef<TaskState>(state);
@@ -83,6 +85,44 @@ export const TaskStoreProvider: React.FC<TaskStoreProviderProps> = ({
         groupId,
       });
       const events = await loadEvents(groupId);
+
+      // Bootstrap for new members: if the event log is empty and this group
+      // was joined from a Welcome (not self-created), fetch the inviter's
+      // task state sync payload from the relay and persist it as synthetic
+      // task.created events. This is guarded by events.length === 0 so it
+      // only runs once — on subsequent loads the persisted events prevent
+      // re-entry (AC-5 idempotence). Manually-joined groups return false
+      // from isGroupJoinedFromWelcome and skip bootstrap entirely (AC-12).
+      if (events.length === 0 && (await isGroupJoinedFromWelcome(groupId))) {
+        if (client && signer && pubkey) {
+          const bootstrapEvents = await fetchAndApplyTaskBootstrap(
+            groupId,
+            pubkey,
+            signer,
+            client,
+            relays,
+            new Map(), // empty currentState — no tasks yet
+          );
+          for (const taskEvent of bootstrapEvents) {
+            await appendEvent(groupId, taskEvent);
+          }
+          // Re-read to get persisted bootstrap events
+          if (!cancelled) {
+            const bootstrapped = await loadEvents(groupId);
+            const restored = replayEvents(bootstrapped);
+            mlsTrace.record({
+              kind: "task-store-load-complete",
+              t: Date.now(),
+              groupId,
+              restoredCount: restored.size,
+            });
+            setState(restored);
+            setLoading(false);
+            return;
+          }
+        }
+      }
+
       if (!cancelled) {
         const restored = replayEvents(events);
         mlsTrace.record({
@@ -101,7 +141,7 @@ export const TaskStoreProvider: React.FC<TaskStoreProviderProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [groupId]);
+  }, [groupId, client, signer, pubkey, relays]);
 
   // Subscribe to incoming application messages from the MLS group
   useEffect(() => {

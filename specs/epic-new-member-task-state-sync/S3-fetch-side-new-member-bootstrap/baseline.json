@@ -1,0 +1,9 @@
+{
+  "test_snapshot": {
+    "test_files": 19,
+    "tests_passing": 225,
+    "tests_failing": 0,
+    "command": "make test (vitest run)"
+  },
+  "captured_at": "2026-05-23T22:11:00Z"
+}

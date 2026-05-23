@@ -1,0 +1,58 @@
+{
+  "story_id": "S1",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-24T00:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S1-001",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-9",
+      "question": "Does `src/lib/nostr.ts` contain the token `sign_event:30078` inside the `NIP46_PERMS` string constant, and does `src/lib/nostr.test.ts` contain `30078` inside the `REQUIRED_KINDS` array? Run `grep -n 'sign_event:30078' src/lib/nostr.ts` — it MUST match exactly one line that is part of the `NIP46_PERMS` assignment. Run `grep -n '30078' src/lib/nostr.test.ts` — it MUST match a line inside the `REQUIRED_KINDS` array block (lines 101–107 or wherever the array is defined post-edit). Show both grep outputs. Confirm that the single-source-of-truth unit test (`it('enumerates all known required kinds')`) passes — no kinds in `REQUIRED_KINDS` are absent from `NIP46_PERMS`."
+    },
+    {
+      "question_id": "VQ-S1-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-9",
+      "question": "Is `sign_event:30078` added only to `src/lib/nostr.ts` and nowhere else? Run `grep -rn 'sign_event:30078' src/` — the output MUST show exactly one match, in `src/lib/nostr.ts`. Any second match in a different file violates the single-source-of-truth invariant enforced by `nostr.test.ts:136-158`. Show the full grep output."
+    },
+    {
+      "question_id": "VQ-S1-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-9",
+      "question": "Does `src/store/task-events.ts` export a TypeScript interface named `TaskStateSyncPayload` with all six required fields: `version` (literal type `1`), `type` (literal type `\"task.state_sync\"`), `groupId` (string), `tasks` (Task[]), `syncedAt` (number), `inviterPubkey` (string)? Run `grep -n 'TaskStateSyncPayload\\|version.*1\\|task\\.state_sync\\|syncedAt\\|inviterPubkey' src/store/task-events.ts` and show the output. Confirm the interface is exported (the `export` keyword precedes `interface TaskStateSyncPayload`)."
+    },
+    {
+      "question_id": "VQ-S1-004",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does S1's diff touch only the three files named in scope: `src/store/task-events.ts`, `src/lib/nostr.ts`, and `src/lib/nostr.test.ts`? Run `git diff --name-only HEAD~1 HEAD` (or against the branch base) and confirm no other file appears. Any modification to `src/components/GroupManager.tsx`, `src/marmot/device-sync.ts`, or `src/store/task-store.tsx` is a scope violation for this story."
+    },
+    {
+      "question_id": "VQ-S1-005",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does `src/store/task-events.ts` import `Task` from its existing location (within `task-events.ts` itself or from a co-located type file) when declaring `tasks: Task[]` in `TaskStateSyncPayload`? The architecture rule is that `task-events.ts` owns Task domain types; it MUST NOT introduce a new cross-module import from `src/marmot/` or `src/components/` to satisfy this interface. Show the import block at the top of `task-events.ts` after the edit."
+    },
+    {
+      "question_id": "VQ-S1-006",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `src/store/task-events.ts` (the owning module for S1) be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? Concretely: `TaskStateSyncPayload` depends only on the `Task` type, which is defined in `task-events.ts` itself. If S1's edit introduced any import from `src/marmot/`, `src/components/`, or any runtime dependency beyond existing types already in `task-events.ts`, name the violation and the file it touches."
+    },
+    {
+      "question_id": "VQ-S1-007",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does the unit test at `src/lib/nostr.test.ts` in the `it('enumerates all known required kinds')` block pass after adding `30078` to `REQUIRED_KINDS`? The test filters `REQUIRED_KINDS` for kinds absent from `NIP46_PERMS` and expects an empty array. Show the test runner output (or `npx vitest run src/lib/nostr.test.ts` output) confirming this test passes with zero missing kinds."
+    },
+    {
+      "question_id": "VQ-S1-008",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Is `sign_event:30078` absent from the `NIP46_PERMS` string on the pre-S1 baseline (i.e. on `git stash` or before this story's commit), and present after? Run `git show HEAD~1:src/lib/nostr.ts | grep sign_event:30078` — it MUST return no output. Run `grep 'sign_event:30078' src/lib/nostr.ts` against the post-edit file — it MUST match. These two states MUST differ; a match on both would indicate a pre-existing token that was not actually added by this story."
+    }
+  ]
+}
