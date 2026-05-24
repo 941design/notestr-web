@@ -1,0 +1,29 @@
+{
+  "bug": "task-same-second-edit-dropped",
+  "allowed_scope": [
+    "src/store/task-store-utils.ts (new file — pure helper, no React deps)",
+    "src/store/task-store.tsx (import + re-export helper; wire into dispatch() pre-apply)",
+    "src/store/task-store.monotonic.test.ts (new test file)",
+    "docs/task-protocol.md (Task interface comments + new sender-side monotonic section)"
+  ],
+  "files_explicitly_excluded": [
+    "src/store/task-reducer.ts (reducer gate NOT weakened back to >=)",
+    "src/components/Board.tsx (producers NOT changed — approach B is one chokepoint)",
+    "src/store/task-events.ts (createTask NOT changed)"
+  ],
+  "fix_approach": "B — sender-side monotonic clock in dispatch()",
+  "fix_summary": "ensureMonotonicTimestamp() bumps event.updatedAt to existing.updatedAt+1 when event.updatedAt <= existing.updatedAt, for the four mutation types only. Called in dispatch() before both optimistic apply and rumor publish so receivers also see the bumped value.",
+  "named_non_goals": [
+    "sibling-device clientId (updatedByDevice) tie-break — concurrent same-pubkey multi-device edits; separate bug, separate axis",
+    "millisecond wire format — approach A was not chosen; seconds resolution retained on the wire",
+    "e2e test changes — approach B fixes the root cause at one chokepoint without touching producers or specs",
+    "reducer relaxation — the strict > gate remains; no >= reintroduction"
+  ],
+  "constraints": {
+    "reducer_gate_unchanged": true,
+    "property_tests_must_pass": true,
+    "composes_with_device_tiebreak": true,
+    "four_mutation_types_only": true,
+    "task_created_exempt": true
+  }
+}

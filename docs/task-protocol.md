@@ -36,8 +36,9 @@ interface Task {
   status: TaskStatus;
   assignee: string | null;
   createdBy: string;   // hex pubkey of creator
-  createdAt: number;   // unix seconds
-  updatedAt: number;   // unix seconds of last mutation
+  createdAt: number;   // internal CRDT ordering key (unix seconds); never rendered as a display date
+  updatedAt: number;   // internal CRDT ordering key (seconds); may advance ahead of wall-clock under rapid
+                       // same-actor edits due to the sender-side monotonic bump — never rendered as a display date
   updatedBy: string;   // hex pubkey of last mutator
 }
 
@@ -462,6 +463,37 @@ the reducer commutative and convergent under any delivery order.
 Every accepted mutation event writes `updatedBy: event.updatedBy` into the
 stored `Task` record so that future tie-breaking has access to the last winner's
 pubkey.
+
+### Sender-side monotonic timestamp (sequential same-actor edits)
+
+Producers stamp `updatedAt` with `Math.floor(Date.now() / 1000)` (one-second
+resolution). The strict-`>` LWW gate means a second edit by the **same actor**
+within the same wall-clock second would tie on both `updatedAt` and `updatedBy`
+and be silently rejected — real data loss.
+
+`dispatch()` in `task-store.tsx` applies `ensureMonotonicTimestamp()` (from
+`task-store-utils.ts`) **before** the optimistic local apply and before building
+the rumor for publish. The rule is:
+
+```
+if event.updatedAt <= existing.updatedAt:
+  event.updatedAt = existing.updatedAt + 1
+```
+
+This is the **ordering axis** fix — it ensures sequential same-actor edits
+always produce a strictly increasing `updatedAt`. The bumped value appears in
+the published rumor, so every receiver also accepts it via the LWW gate.
+
+`updatedAt` may therefore advance a few seconds ahead of wall-clock time under
+rapid same-actor edits. This is safe because `updatedAt` is an **internal CRDT
+ordering key only** — it is never rendered as a display date nor compared
+against external second-granularity values (e.g. kind-30078 `syncedAt`).
+
+This fix does not alter the **concurrent-tie axis** (two actors editing the
+same task simultaneously). The `updatedBy` tie-breaker in the reducer remains
+authoritative for concurrent inter-author edits, and the forthcoming
+`updatedByDevice` (MLS clientId) third level is reserved for same-pubkey
+multi-device concurrent edits — neither is affected by this change.
 
 ### Legacy Task records
 

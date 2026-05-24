@@ -26,6 +26,9 @@ import { mlsTrace } from "../marmot/mls-trace";
 import { TASK_EVENT_KIND, type Task, type TaskEvent } from "./task-events";
 import { applyEvent, replayEvents, type TaskState } from "./task-reducer";
 import { appendEvent, loadEvents } from "./persistence";
+import { ensureMonotonicTimestamp } from "./task-store-utils";
+
+export { ensureMonotonicTimestamp };
 
 function isTestRuntime(): boolean {
   return process.env.NEXT_PUBLIC_E2E === "1" || process.env.NODE_ENV === "test";
@@ -244,9 +247,25 @@ export const TaskStoreProvider: React.FC<TaskStoreProviderProps> = ({
   // Dispatch a task event: apply locally, persist, and send to group
   const dispatch = useCallback(
     async (taskEvent: TaskEvent) => {
+      // Guarantee strict monotonicity before optimistic apply and publish.
+      // Producers stamp Math.floor(Date.now()/1000); two edits within the same
+      // wall-clock second get the same updatedAt, causing the second to be
+      // silently dropped by the strict-`>` LWW gate. Bumping here fixes both
+      // the local optimistic apply and every receiver (which gets the bumped
+      // value in the published rumor). task.created is exempt (FWW).
+      const existing = taskEvent.type !== "task.created"
+        ? stateRef.current.get(taskEvent.taskId)
+        : undefined;
+      taskEvent = ensureMonotonicTimestamp(taskEvent, existing);
+
       // Apply optimistically
       const nextState = applyEvent(stateRef.current, taskEvent);
       setState(nextState);
+      // Advance the ref synchronously so a second dispatch within the same
+      // render frame reads the post-apply state. setState only schedules a
+      // render; without this, two sub-frame same-actor dispatches both read
+      // the stale updatedAt and both bump to T+1, dropping the second.
+      stateRef.current = nextState;
 
       // Persist to IndexedDB
       await appendEvent(groupId, taskEvent);

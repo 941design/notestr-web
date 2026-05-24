@@ -1,0 +1,141 @@
+{
+  "bug_name": "task-same-second-edit-dropped",
+  "bug_report_file": "bug-reports/task-same-second-edit-dropped-report.md",
+  "created_at": "2026-05-24T19:40:48Z",
+  "updated_at": "2026-05-24T20:26:00Z",
+  "phase": "ACCEPTED",
+  "complexity": "medium",
+  "verification_questions": [
+    {
+      "id": "VQ1",
+      "category": "TEST",
+      "question": "Is there a new deterministic unit test proving that two same-actor edits to the same task with equal (or non-increasing) timestamps converge to the LAST edit's value, and does that test fail against the pre-fix reducer/producer behavior?"
+    },
+    {
+      "id": "VQ2",
+      "category": "QUALITY",
+      "question": "Does the fix address the root cause (ordering key too coarse to sequence a single actor's rapid edits) rather than a symptom \u2014 i.e. it is NOT merely rewriting e2e spec timestamps or special-casing test code to dodge the gate?"
+    },
+    {
+      "id": "VQ3",
+      "category": "SPEC",
+      "question": "Do the existing CRDT convergence/idempotence/commutativity property tests (task-reducer.property.test.ts, multi-client.property.test.ts) still pass, and was the reducer NOT reverted to a `>=` gate (which would reintroduce inter-author divergence)?"
+    },
+    {
+      "id": "VQ4",
+      "category": "QUALITY",
+      "question": "Is the change minimal and scoped to the four mutation event types plus the necessary producer(s)/test/docs, with no unrelated refactors or scope creep?"
+    },
+    {
+      "id": "VQ5",
+      "category": "ARCHITECTURE",
+      "question": "Does the fix compose cleanly with the forthcoming `updatedByDevice` (MLS clientId) third tie-break level \u2014 i.e. it targets the sequential-ordering axis (finer/monotonic timestamp) and does not occupy or alter the concurrent inter-author/inter-device tie-break in a way that would block adding the device level later?"
+    },
+    {
+      "id": "VQ6",
+      "category": "TEST",
+      "question": "Does the full unit test suite (`make test`) pass with no regressions relative to the recorded baseline counts?"
+    },
+    {
+      "id": "VQ7",
+      "category": "SPEC",
+      "question": "Was docs/task-protocol.md updated to reflect the actual timestamp-resolution/ordering semantics chosen, consistent with the code (including the Task interface field comments and the reducer-semantics section)?"
+    },
+    {
+      "id": "VQ8",
+      "category": "QUALITY",
+      "question": "If the fix changes timestamp resolution or wire format, was it verified that task createdAt/updatedAt are never consumed as display dates nor compared against second-granularity values elsewhere (e.g. the kind-30078 bootstrap payload, created_at sort paths), so no consumer breaks?"
+    }
+  ],
+  "pre_existing_dirty_files": [
+    ".clauded.yaml",
+    ".claude/scheduled_tasks.lock",
+    ".claude/skills/e2e-triage/SKILL.md",
+    ".claude/skills/e2e-triage/learnings.md",
+    ".claude/skills/mls-leaf-debug/SKILL.md",
+    ".claude/verification-results.csv",
+    ".claude/verification-results.jsonl",
+    "bug-reports/e2e-assert-port-free-swallows-errors-report.md",
+    "bug-reports/self-forget-evicts-sibling-leaves-report.md",
+    "bug-reports/self-forget-sole-admin-no-propagation-report.md",
+    "e2e/.triage-phase-a.log",
+    "e2e/.triage/device.md",
+    "e2e/.triage/findings-merged.md",
+    "e2e/.triage/forget-device-self.log",
+    "e2e/.triage/multi-party.md",
+    "e2e/.triage/run.log",
+    "e2e/.triage/tasks.md",
+    "notestr-web-group-discovery-report.md",
+    "notestr-web-task-snapshot-divergence-prompt.md",
+    "package-lock.json",
+    "scripts/debug-prod.mjs",
+    "specs/epic-property-tests-l3-three-party/acceptance-criteria.md",
+    "stryker.device-sync.conf.json",
+    "stryker.ingest-queue.conf.json",
+    "stryker.task-reducer.conf.json",
+    "vitest.config.ts"
+  ],
+  "plugin_sha": "1b6099eb7e04f90fea0f4e2a195881ffffd53315",
+  "consumer_sha": "de6fedd4585893249d4eb2ebd9b81516669ff04e",
+  "models": {
+    "lead": "opus",
+    "examiner": "haiku",
+    "implementer": "sonnet"
+  },
+  "baseline": null,
+  "fix": {
+    "approach": "B - sender-side monotonic timestamp + synchronous stateRef advance",
+    "files_changed": [
+      "src/store/task-store-utils.ts",
+      "src/store/task-store.tsx",
+      "src/store/task-store.monotonic.test.ts",
+      "src/store/task-reducer.test.ts",
+      "docs/task-protocol.md"
+    ],
+    "final_test_counts": {
+      "files": 20,
+      "tests": 268
+    }
+  },
+  "review_rounds": [
+    {
+      "round": 1,
+      "trigger": "VQ1 reproduction fidelity (PARTIAL sev5 missing_test)",
+      "outcome": "remediated - added reducer-level reproduction tests"
+    },
+    {
+      "round": 2,
+      "trigger": "Reviewer REJECT - Codex adversarial HIGH: stale stateRef re-entrancy",
+      "decider": "RETRY",
+      "outcome": "remediated - synchronous stateRef advance + burst test"
+    }
+  ],
+  "remediation_round": 2,
+  "phase_history": [
+    {
+      "phase": "INITIALIZED",
+      "timestamp": "2026-05-24T19:40:48Z",
+      "trigger": "workflow_start"
+    },
+    {
+      "phase": "FIX_READY",
+      "timestamp": "2026-05-24T19:52:40Z",
+      "trigger": "fixer_done"
+    },
+    {
+      "phase": "REMEDIATING",
+      "timestamp": "2026-05-24T20:02:00Z",
+      "trigger": "vq1_repro_fidelity"
+    },
+    {
+      "phase": "REMEDIATING",
+      "timestamp": "2026-05-24T20:18:30Z",
+      "trigger": "decider_retry_stateref_reentrancy"
+    },
+    {
+      "phase": "ACCEPTED",
+      "timestamp": "2026-05-24T20:26:00Z",
+      "trigger": "reviewer_accepted"
+    }
+  ]
+}
