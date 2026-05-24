@@ -1215,11 +1215,12 @@ describe("fetchAndApplyTaskBootstrap (S3 — AC-2/4/5/6/7/8/12)", () => {
       GROUP_ID, OWN_PUBKEY, signerAB as any, clientAB as any, [], new Map(),
     );
 
-    // Only one task.created should be emitted (A wins first via FWW, B loses tie-break)
+    // A-then-B: A wins first (FWW), B arrives with same updatedAt, 'bbb' > 'aaa' → A still wins.
+    // Exactly one task.created should be emitted for the winning task.
     expect(resultAB).toHaveLength(1);
     expect(resultAB[0]).toEqual({ type: "task.created", task: taskFromA });
 
-    // Order: event-B first, event-A second — should converge to same result
+    // Order: event-B first, event-A second — must converge to the same result.
     const signerBA = {
       nip44: {
         decrypt: vi.fn()
@@ -1233,10 +1234,82 @@ describe("fetchAndApplyTaskBootstrap (S3 — AC-2/4/5/6/7/8/12)", () => {
       GROUP_ID, OWN_PUBKEY, signerBA as any, clientBA as any, [], new Map(),
     );
 
-    // B wins FWW (first seen), then A arrives: same updatedAt, 'aaa' < 'bbb' → A wins
-    expect(resultBA).toHaveLength(2); // B (FWW), then A (tie-break replaces B)
-    // Final state: last task.created for T1 is A (it replaced B)
-    const lastForT1 = resultBA.filter(e => e.type === "task.created" && (e as any).task.id === "T1").pop();
-    expect(lastForT1).toEqual({ type: "task.created", task: taskFromA });
+    // B wins FWW (first seen), then A arrives with same updatedAt, 'aaa' < 'bbb' → A replaces B.
+    // After the fix, events are generated AFTER the full loop so each task ID appears exactly
+    // once: the final winner. Both orders must converge to exactly one event for taskFromA.
+    expect(resultBA).toHaveLength(1);
+    expect(resultBA[0]).toEqual({ type: "task.created", task: taskFromA });
+  });
+
+  // Test 20: deferred event generation — two relay events with DIFFERENT tasks each
+  // produce exactly one task.created each (no interference between task IDs).
+  it("emits one task.created per unique task ID even when tasks appear across multiple relay events", async () => {
+    const taskX = makeTask({ id: "X", updatedAt: 10, updatedBy: "aaa" });
+    const taskY = makeTask({ id: "Y", updatedAt: 20, updatedBy: "bbb" });
+    const payloadWithX = makeValidPayload(GROUP_ID, [taskX]);
+    const payloadWithY = makeValidPayload(GROUP_ID, [taskY]);
+
+    const signer = {
+      nip44: {
+        decrypt: vi.fn()
+          .mockResolvedValueOnce(JSON.stringify(payloadWithX))
+          .mockResolvedValueOnce(JSON.stringify(payloadWithY)),
+      },
+    };
+    const client = {
+      network: { request: vi.fn().mockResolvedValue([makeRelayEvent(INVITER_PUBKEY, "enc-x"), makeRelayEvent(INVITER_PUBKEY, "enc-y")]) },
+    };
+
+    const result = await fetchAndApplyTaskBootstrap(
+      GROUP_ID, OWN_PUBKEY, signer as any, client as any, [], new Map(),
+    );
+
+    expect(result).toHaveLength(2);
+    const ids = result.map((e) => (e as any).task.id).sort();
+    expect(ids).toEqual(["X", "Y"]);
+  });
+
+  // Test 21: deferred event generation prevents FWW-in-replay from picking the
+  // wrong winner when the same task appears in multiple relay events.
+  // Without the fix (emitting task.created mid-loop), relay order loser-then-
+  // winner would produce [task.created(loser), task.created(winner)]; the reducer's
+  // FWW semantics would then persist the loser (first written). With the fix,
+  // events are generated after the full loop, so only task.created(winner) is
+  // emitted regardless of relay delivery order.
+  it("emits only the LWW winner when same task ID appears in multiple relay events (loser-first order)", async () => {
+    const taskWinner = makeTask({ id: "T1", updatedAt: 100, updatedBy: "aaa" });
+    const taskLoser  = makeTask({ id: "T1", updatedAt: 50,  updatedBy: "bbb" });
+
+    // Relay delivers loser-first, winner-second — the adversarial order.
+    const payloadLoser  = makeValidPayload(GROUP_ID, [taskLoser]);
+    const payloadWinner = makeValidPayload(GROUP_ID, [taskWinner]);
+
+    const signer = {
+      nip44: {
+        decrypt: vi.fn()
+          .mockResolvedValueOnce(JSON.stringify(payloadLoser))
+          .mockResolvedValueOnce(JSON.stringify(payloadWinner)),
+      },
+    };
+    const client = {
+      network: {
+        request: vi.fn().mockResolvedValue([
+          makeRelayEvent(INVITER_PUBKEY, "enc-loser"),
+          makeRelayEvent(INVITER_PUBKEY, "enc-winner"),
+        ]),
+      },
+    };
+
+    const events = await fetchAndApplyTaskBootstrap(
+      GROUP_ID, OWN_PUBKEY, signer as any, client as any, [], new Map(),
+    );
+
+    // Exactly one task.created — the winner — despite loser arriving first.
+    // Persisting this array and replaying it via the FWW reducer will correctly
+    // yield taskWinner because the loser never appears in the output at all.
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual({ type: "task.created", task: taskWinner });
+    // No event for the loser in the output.
+    expect(events.every((e) => (e as any).task.updatedAt === 100)).toBe(true);
   });
 });

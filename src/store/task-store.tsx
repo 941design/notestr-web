@@ -21,7 +21,7 @@ import {
   fetchAndApplyTaskBootstrap,
   removeExpectedPublishByRumorId,
 } from "../marmot/device-sync";
-import { isGroupJoinedFromWelcome } from "../marmot/device-store";
+import { isBootstrapCompleted, isGroupJoinedFromWelcome, markBootstrapCompleted } from "../marmot/device-store";
 import { mlsTrace } from "../marmot/mls-trace";
 import { TASK_EVENT_KIND, type Task, type TaskEvent } from "./task-events";
 import { applyEvent, replayEvents, type TaskState } from "./task-reducer";
@@ -86,40 +86,60 @@ export const TaskStoreProvider: React.FC<TaskStoreProviderProps> = ({
       });
       const events = await loadEvents(groupId);
 
-      // Bootstrap for new members: if the event log is empty and this group
-      // was joined from a Welcome (not self-created), fetch the inviter's
-      // task state sync payload from the relay and persist it as synthetic
-      // task.created events. This is guarded by events.length === 0 so it
-      // only runs once — on subsequent loads the persisted events prevent
-      // re-entry (AC-5 idempotence). Manually-joined groups return false
-      // from isGroupJoinedFromWelcome and skip bootstrap entirely (AC-12).
-      if (events.length === 0 && (await isGroupJoinedFromWelcome(groupId))) {
+      // Bootstrap for new members joined via Welcome: fetch the inviter's
+      // kind-30078 task-sync payload and CRDT-merge it into the local store.
+      //
+      // Guard: isGroupJoinedFromWelcome (AC-12 — skip for self-created groups)
+      //   AND !isBootstrapCompleted (idempotence — skip once a successful
+      //   bootstrap has already run for this group).
+      //
+      // Unlike the earlier events.length === 0 guard, this persisted flag
+      // survives relay-propagation races: if the first bootstrap attempt
+      // returns nothing (kind-30078 not yet propagated) and a live task event
+      // then arrives (making events.length > 0), subsequent loads still retry
+      // bootstrap until it succeeds.  The flag is set only on a non-empty
+      // bootstrap result, not on empty results or errors (AC-5).
+      //
+      // currentState is derived from whatever is already in the local log so
+      // the CRDT gate correctly rejects bootstrap tasks that are older than
+      // live events already present — safe to call even when events.length > 0.
+      if (
+        (await isGroupJoinedFromWelcome(groupId)) &&
+        !(await isBootstrapCompleted(groupId))
+      ) {
         if (client && signer && pubkey) {
+          const currentState = replayEvents(events);
           const bootstrapEvents = await fetchAndApplyTaskBootstrap(
             groupId,
             pubkey,
             signer,
             client,
             relays,
-            new Map(), // empty currentState — no tasks yet
+            currentState,
           );
-          for (const taskEvent of bootstrapEvents) {
-            await appendEvent(groupId, taskEvent);
+          if (bootstrapEvents.length > 0) {
+            for (const taskEvent of bootstrapEvents) {
+              await appendEvent(groupId, taskEvent);
+            }
+            // Persist the completion flag so future loads skip bootstrap.
+            await markBootstrapCompleted(groupId);
+            // Re-read to get persisted bootstrap events
+            if (!cancelled) {
+              const bootstrapped = await loadEvents(groupId);
+              const restored = replayEvents(bootstrapped);
+              mlsTrace.record({
+                kind: "task-store-load-complete",
+                t: Date.now(),
+                groupId,
+                restoredCount: restored.size,
+              });
+              setState(restored);
+              setLoading(false);
+              return;
+            }
           }
-          // Re-read to get persisted bootstrap events
-          if (!cancelled) {
-            const bootstrapped = await loadEvents(groupId);
-            const restored = replayEvents(bootstrapped);
-            mlsTrace.record({
-              kind: "task-store-load-complete",
-              t: Date.now(),
-              groupId,
-              restoredCount: restored.size,
-            });
-            setState(restored);
-            setLoading(false);
-            return;
-          }
+          // Bootstrap returned empty (relay lag or genuinely empty group):
+          // fall through to render whatever is in the local log.
         }
       }
 

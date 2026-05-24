@@ -1,4 +1,4 @@
-import { deviceNamesStore, invitedKeysStore, joinedGroupsStore } from "./storage";
+import { bootstrapCompletedStore, deviceNamesStore, invitedKeysStore, joinedGroupsStore } from "./storage";
 
 export interface DeviceMetadata {
   clientId: string;
@@ -129,4 +129,20 @@ export async function isGroupJoinedFromWelcome(groupId: string): Promise<boolean
 
 export async function forgetJoinedGroup(groupId: string): Promise<void> {
   await joinedGroupsStore.removeItem(groupId);
+}
+
+/**
+ * Records that the task-state bootstrap for this group completed successfully
+ * (i.e. fetchAndApplyTaskBootstrap returned at least one task). Once marked,
+ * the bootstrap is never re-attempted on subsequent loads, regardless of the
+ * local event-log length. This decouples the "bootstrap done" signal from
+ * events.length so a relay-propagation race cannot permanently suppress
+ * bootstrap when live task events arrive before kind-30078 does.
+ */
+export async function markBootstrapCompleted(groupId: string): Promise<void> {
+  await bootstrapCompletedStore.setItem(groupId, true);
+}
+
+export async function isBootstrapCompleted(groupId: string): Promise<boolean> {
+  return (await bootstrapCompletedStore.getItem(groupId)) === true;
 }

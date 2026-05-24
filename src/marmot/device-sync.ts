@@ -1348,14 +1348,22 @@ export async function fetchAndApplyTaskBootstrap(
       { kinds: [TASK_STATE_SYNC_KIND], "#d": [dTag], limit: 10 },
     ]);
 
-    const syntheticEvents: TaskEvent[] = [];
-    // Accumulates tasks accepted during this fetch so that the CRDT gate for
-    // later relay events is checked against already-accepted tasks in addition
-    // to the caller-supplied currentState. Without this accumulator a second
-    // relay event containing the same task id would always see an empty slot in
-    // currentState and push a second synthetic event, making the final state
-    // dependent on relay delivery order rather than LWW/tie-break semantics.
+    // `accepted` tracks the per-task winner across ALL relay events in this
+    // fetch, seeded from the caller-supplied currentState. Updating it on every
+    // win (rather than only comparing against the seed) ensures that a second
+    // relay event carrying the same task ID is evaluated against the already-
+    // accepted version rather than the original seed — relay-order independence.
     const accepted = new Map<string, Task>(currentState);
+
+    // `wonFromBootstrap` records the final winning Task for each ID that beat
+    // currentState. It is written inside the loop but events are generated
+    // ONLY after all relay events are processed, so each task ID produces
+    // exactly one synthetic task.created event regardless of how many relay
+    // events contained that ID. Without this deferred approach, processing
+    // order A→B then B→A could emit two task.created events for the same ID;
+    // the reducer's FWW semantics would then pick whichever was written first
+    // to IDB, re-introducing relay-order dependence.
+    const wonFromBootstrap = new Map<string, Task>();
 
     for (const event of events) {
       let payload: TaskStateSyncPayload;
@@ -1379,34 +1387,29 @@ export async function fetchAndApplyTaskBootstrap(
         continue;
       }
 
-      // CRDT merge gate: apply FWW/LWW against the accumulated state (which
-      // includes both the caller-supplied currentState and tasks accepted from
-      // earlier relay events in this same fetch). This ensures deterministic
-      // LWW/tie-break semantics regardless of relay delivery order.
+      // CRDT merge gate: FWW for tasks not yet seen, LWW (updatedAt) for
+      // existing, deterministic tie-break (lower updatedBy) on equal timestamps.
       for (const task of payload.tasks) {
         const existing = accepted.get(task.id);
-        if (!existing) {
-          // FWW: task not seen yet → insert
-          syntheticEvents.push({ type: "task.created", task });
+        const wins =
+          !existing ||
+          task.updatedAt > existing.updatedAt ||
+          (task.updatedAt === existing.updatedAt && task.updatedBy < existing.updatedBy);
+        if (wins) {
           accepted.set(task.id, task);
-        } else if (task.updatedAt > existing.updatedAt) {
-          // LWW: newer timestamp wins
-          syntheticEvents.push({ type: "task.created", task });
-          accepted.set(task.id, task);
-        } else if (
-          task.updatedAt === existing.updatedAt &&
-          task.updatedBy < existing.updatedBy
-        ) {
-          // Deterministic tie-breaker: lower updatedBy string wins
-          syntheticEvents.push({ type: "task.created", task });
-          accepted.set(task.id, task);
+          wonFromBootstrap.set(task.id, task);
         }
-        // Otherwise: existing wins, skip
       }
     }
 
+    // Emit exactly one task.created per winning task — deferred so the gate
+    // above can override earlier relay events before committing to an event.
+    const syntheticEvents: TaskEvent[] = Array.from(wonFromBootstrap.values()).map(
+      (task) => ({ type: "task.created" as const, task }),
+    );
+
     console.debug(
-      `[task-sync] bootstrap: ${syntheticEvents.length} tasks from ${events.length} events`,
+      `[task-sync] bootstrap: ${syntheticEvents.length} tasks from ${events.length} relay events`,
     );
     return syntheticEvents;
   } catch (err) {

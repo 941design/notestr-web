@@ -87,6 +87,7 @@ export async function clearIdentityStore(): Promise<void> {
 export const deviceNamesStore = createKVStore<import("./device-store").DeviceMetadata>("device-names");
 export const invitedKeysStore = createKVStore<true>("invited-keys");
 export const joinedGroupsStore = createKVStore<true>("joined-groups");
+export const bootstrapCompletedStore = createKVStore<true>("bootstrap-completed");
 
 /**
  * Returns a stable per-browser client ID for kind 30443 addressable key packages.
