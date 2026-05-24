@@ -12,6 +12,7 @@ import {
   keyPackageFilters,
 } from "@internet-privacy/marmot-ts";
 import { NpubQrModal } from "@/components/NpubQrModal";
+import { forgetBootstrapCompleted } from "@/marmot/device-store";
 import { clearEvents } from "@/store/persistence";
 import { publishTaskStateSync } from "@/marmot/device-sync";
 import { abbreviateRelay, isValidRelayUrl, getGroupRelays } from "@/lib/relay-utils";
@@ -217,6 +218,7 @@ export function GroupManager({
         await client.groups.leave(pendingLeaveGroupId);
       }
       await clearEvents(pendingLeaveGroupId);
+      await forgetBootstrapCompleted(pendingLeaveGroupId);
       setPendingLeaveGroupId(null);
       onGroupLeft?.();
     } catch (err) {

@@ -146,3 +146,13 @@ export async function markBootstrapCompleted(groupId: string): Promise<void> {
 export async function isBootstrapCompleted(groupId: string): Promise<boolean> {
   return (await bootstrapCompletedStore.getItem(groupId)) === true;
 }
+
+/**
+ * Clears the bootstrap-completed flag for a group. Call this whenever the
+ * local membership of the group is reset (leave, self-forget) so that a
+ * future re-invite to the same group.idStr triggers a fresh bootstrap fetch
+ * rather than silently skipping it.
+ */
+export async function forgetBootstrapCompleted(groupId: string): Promise<void> {
+  await bootstrapCompletedStore.removeItem(groupId);
+}

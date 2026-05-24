@@ -4,6 +4,7 @@ import fc from "fast-check";
 const deviceNamesData = new Map<string, unknown>();
 const invitedKeysData = new Map<string, unknown>();
 const joinedGroupsData = new Map<string, unknown>();
+const bootstrapCompletedData = new Map<string, unknown>();
 
 vi.mock("./storage", () => ({
   deviceNamesStore: {
@@ -51,17 +52,38 @@ vi.mock("./storage", () => ({
       return Array.from(joinedGroupsData.keys());
     },
   },
+  bootstrapCompletedStore: {
+    async getItem(key: string) {
+      return (bootstrapCompletedData.get(key) as any) ?? null;
+    },
+    async setItem(key: string, value: unknown) {
+      bootstrapCompletedData.set(key, value);
+      return value;
+    },
+    async removeItem(key: string) {
+      bootstrapCompletedData.delete(key);
+    },
+    async clear() {
+      bootstrapCompletedData.clear();
+    },
+    async keys() {
+      return Array.from(bootstrapCompletedData.keys());
+    },
+  },
 }));
 
 import {
   clearInvitedKeysForGroup,
   defaultDeviceName,
+  forgetBootstrapCompleted,
   forgetJoinedGroup,
   getDeviceMetadata,
   getDeviceName,
+  isBootstrapCompleted,
   isGroupJoinedFromWelcome,
   listDevices,
   loadInvitedKeys,
+  markBootstrapCompleted,
   markDeviceSeen,
   markGroupJoinedFromWelcome,
   persistInvitedKey,
@@ -564,5 +586,105 @@ describe("device-store", () => {
         expect(await isGroupJoinedFromWelcome(groupId)).toBe(true);
       }),
     );
+  });
+});
+
+// -------------------------------------------------------------------------
+// Bootstrap-completed flag (markBootstrapCompleted / isBootstrapCompleted /
+// forgetBootstrapCompleted)
+//
+// These three functions form the lifecycle of the per-group bootstrap flag.
+// Correctness invariants:
+//   (a) mark → is = true (round-trip)
+//   (b) forget is the inverse of mark (forget → is = false)
+//   (c) forget on an unmarked id is a no-op (no throw, is still false)
+//   (d) separate group IDs are independent (marking one does not affect another)
+//   (e) forgetBootstrapCompleted does not clear joinedGroupsStore (stores are isolated)
+//   (f) re-join scenario: mark → forget → mark → is = true (flag is reusable)
+// -------------------------------------------------------------------------
+describe("bootstrap-completed flag", () => {
+  afterEach(() => {
+    bootstrapCompletedData.clear();
+    joinedGroupsData.clear();
+  });
+
+  // (a) round-trip
+  it("markBootstrapCompleted then isBootstrapCompleted returns true; unmarked group returns false", async () => {
+    await fc.assert(
+      fc.asyncProperty(groupIdArb, async (groupId) => {
+        bootstrapCompletedData.clear();
+
+        expect(await isBootstrapCompleted(groupId)).toBe(false);
+        await markBootstrapCompleted(groupId);
+        expect(await isBootstrapCompleted(groupId)).toBe(true);
+      }),
+    );
+  });
+
+  // (b) forget is the inverse of mark
+  it("forgetBootstrapCompleted undoes markBootstrapCompleted; forgetting an unmarked id is a no-op", async () => {
+    await fc.assert(
+      fc.asyncProperty(groupIdArb, async (groupId) => {
+        bootstrapCompletedData.clear();
+
+        // Forgetting an unmarked id is a no-op (no throw).
+        await forgetBootstrapCompleted(groupId);
+        expect(await isBootstrapCompleted(groupId)).toBe(false);
+
+        // mark → forget → false.
+        await markBootstrapCompleted(groupId);
+        await forgetBootstrapCompleted(groupId);
+        expect(await isBootstrapCompleted(groupId)).toBe(false);
+      }),
+    );
+  });
+
+  // (d) store isolation between group IDs
+  it("marking one group does not affect another group's flag", async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        groupIdArb,
+        groupIdArb.filter((b) => b !== "group-a"),
+        async (groupA, groupB) => {
+          bootstrapCompletedData.clear();
+          const id1 = "group-a";
+          const id2 = groupA === id1 ? groupB : groupA;
+
+          await markBootstrapCompleted(id1);
+          expect(await isBootstrapCompleted(id1)).toBe(true);
+          expect(await isBootstrapCompleted(id2)).toBe(false);
+        },
+      ),
+    );
+  });
+
+  // (e) forgetBootstrapCompleted does not touch joinedGroupsStore
+  it("forgetBootstrapCompleted does not clear the joined-from-welcome flag for the same group", async () => {
+    const groupId = "test-group-isolation";
+    await markGroupJoinedFromWelcome(groupId);
+    await markBootstrapCompleted(groupId);
+
+    await forgetBootstrapCompleted(groupId);
+
+    // bootstrap flag cleared
+    expect(await isBootstrapCompleted(groupId)).toBe(false);
+    // joined-from-welcome flag untouched
+    expect(await isGroupJoinedFromWelcome(groupId)).toBe(true);
+  });
+
+  // (f) re-join scenario: flag is reusable after forget
+  it("re-join scenario: mark → forget → mark recovers completed state", async () => {
+    const groupId = "rejoin-group";
+
+    await markBootstrapCompleted(groupId);
+    expect(await isBootstrapCompleted(groupId)).toBe(true);
+
+    // Leave clears the flag.
+    await forgetBootstrapCompleted(groupId);
+    expect(await isBootstrapCompleted(groupId)).toBe(false);
+
+    // Re-join and bootstrap again — flag can be set again.
+    await markBootstrapCompleted(groupId);
+    expect(await isBootstrapCompleted(groupId)).toBe(true);
   });
 });

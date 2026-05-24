@@ -71,6 +71,7 @@ vi.mock("./storage", () => ({
   clearIdentityStore: vi.fn().mockResolvedValue(undefined),
   invitedKeysStore: { clear: vi.fn().mockResolvedValue(undefined) },
   joinedGroupsStore: { clear: vi.fn().mockResolvedValue(undefined) },
+  bootstrapCompletedStore: { clear: vi.fn().mockResolvedValue(undefined) },
 }));
 
 vi.mock("../lib/nostr", () => ({
@@ -85,6 +86,7 @@ import { isAdmin } from "@internet-privacy/marmot-ts";
 import { removeLeafByIndex } from "./per-leaf-remove";
 import { markSlotForgotten } from "./forgotten-slots";
 import {
+  bootstrapCompletedStore,
   clearIdentityStore,
   invitedKeysStore,
   joinedGroupsStore,
@@ -396,17 +398,19 @@ describe("forgetSelfDevice", () => {
   });
 
   /**
-   * IDB cleanup: clearIdentityStore, invitedKeysStore.clear, joinedGroupsStore.clear.
+   * IDB cleanup: clearIdentityStore, invitedKeysStore.clear, joinedGroupsStore.clear,
+   * bootstrapCompletedStore.clear.
    *
    * AC-CLEANUP-1, AC-CLEANUP-4
    */
-  it("clears identity store and invited/joined stores (AC-CLEANUP-1, AC-CLEANUP-4)", async () => {
+  it("clears identity store and invited/joined/bootstrapCompleted stores (AC-CLEANUP-1, AC-CLEANUP-4)", async () => {
     const client = makeSelfClient([], []);
     await forgetSelfDevice(client, makeSigner(), [], vi.fn());
 
     expect(clearIdentityStore).toHaveBeenCalledTimes(1);
     expect(invitedKeysStore.clear).toHaveBeenCalledTimes(1);
     expect(joinedGroupsStore.clear).toHaveBeenCalledTimes(1);
+    expect(bootstrapCompletedStore.clear).toHaveBeenCalledTimes(1);
   });
 
   /**

@@ -63,6 +63,7 @@ import {
 import { removeLeafByIndex } from "./per-leaf-remove";
 import { markSlotForgotten } from "./forgotten-slots";
 import {
+  bootstrapCompletedStore,
   clearIdentityStore,
   invitedKeysStore,
   joinedGroupsStore,
@@ -305,6 +306,7 @@ export async function forgetSelfDevice(
   // 3a. Clear the exported stores (invitedKeys, joinedGroups, identity).
   await invitedKeysStore.clear();
   await joinedGroupsStore.clear();
+  await bootstrapCompletedStore.clear();
   await clearIdentityStore();
 
   // 3b. Delete the three stores owned by MarmotClient's init() closure
