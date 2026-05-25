@@ -294,7 +294,10 @@ export function Board({ currentUserPubkey, isDetached = false }: BoardProps) {
           </div>
 
           {/* Tablet: 2-column grid with horizontal scroll; Desktop: 3-column grid */}
-          <div className="hidden md:grid md:flex-1 md:grid-cols-2 md:gap-4 lg:grid-cols-3">
+          <div
+            data-testid="board"
+            className="hidden md:grid md:flex-1 md:grid-cols-2 md:gap-4 lg:grid-cols-3"
+          >
             {COLUMNS.map(({ status, label }) => {
               const columnTasks = tasks.filter((t) => t.status === status);
               return (

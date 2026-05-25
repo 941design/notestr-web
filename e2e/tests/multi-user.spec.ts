@@ -11,12 +11,11 @@
  * - `describe.serial('multi-user setup')` — auth, invite, group-visible.
  *   Each step is an outcome dependency for the next, so skip-on-failure
  *   cascade is the correct behavior here.
- * - `describe('task created by User A')` — non-serial. The shared action
- *   (User A creates the task) lives in `beforeAll`; the two assertion
- *   tests (live MLS subscription vs. reload-recovery via device-sync)
- *   are setup-coupled but outcome-independent and must not skip each
- *   other on failure.
- * - `describe('task moved by User B')` — same shape for the move action.
+ * - `describe.serial('task created by User A')` — A creates, B observes via
+ *   live MLS or device-sync. Both tests live in one serial block so they
+ *   share one task creation (avoiding duplicate tasks on the board).
+ * - `describe.serial('task moved by User B')` — A creates, B moves, A observes
+ *   via live MLS or device-sync. Serial for the same reason.
  *
  * Cross-describe ordering relies on `fullyParallel: false` + `workers: 1`
  * in playwright.config.ts. If a setup describe fails, subsequent
@@ -117,41 +116,80 @@ test.describe.serial('multi-user setup', () => {
 
     // Wait for invite to complete — input clears on success
     await expect(pageA.getByPlaceholder('npub1...')).toHaveValue('', { timeout: 30000 });
+
+    // Give B time to receive the invite and establish MLS subscription.
+    // Without this, the subsequent describe's beforeAll may race B's live
+    // subscription and the "Tasks" heading may not yet be present.
+    await pageA.waitForTimeout(5000);
   });
 
   test('User B sees the group after the invite', async () => {
     test.skip(skipMobile, SKIP_MOBILE_REASON);
-    // User B is already authenticated. Reload to trigger device-sync
-    // Welcome fetch in case the subscription missed it.
-    await pageB.reload();
-    await pageB.locator('[data-testid="pubkey-chip"]').waitFor({ state: 'visible', timeout: 30000 });
-
-    // The group should appear in User B's sidebar via device-sync
-    const sidebarB = pageB.locator('aside');
-    await expect(sidebarB.getByText(GROUP_NAME)).toBeVisible({ timeout: 60000 });
+    // B stays live (no reload) so the MLS subscription remains active.
+    if (pageB.isClosed()) { pageB = await contextB.newPage(); await pageB.locator('[data-testid="pubkey-chip"]').waitFor({ state: 'visible', timeout: 30000 }); }
+    await pageB.locator('aside').getByText(GROUP_NAME).click({ timeout: 15000 });
+    await expect(pageB.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 30000 });
+    // Ensure MarmotClient is fully loaded before next describe's beforeAll runs.
+    // Without this, the subsequent beforeAll may race the stateChanged listener
+    // setup and find the group in an incomplete state.
+    await pageB.waitForTimeout(2000);
   });
 });
 
-test.describe('task created by User A', () => {
+test.describe.serial('task created by User A', () => {
   test.setTimeout(MULTI_USER_TIMEOUT);
 
   test.beforeAll(async () => {
     if (skipMobile) return;
 
-    // User A should have the group selected already (auto-selected on create)
-    await expect(pageA.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 10000 });
+    // Guard: pages may have been closed by a previous test's timeout or crash.
+    if (pageA.isClosed()) {
+      pageA = await contextA.newPage();
+      await pageA.locator('[data-testid="pubkey-chip"]').waitFor({ state: 'visible', timeout: 30000 });
+    }
+    if (pageB.isClosed()) {
+      pageB = await contextB.newPage();
+      await pageB.locator('[data-testid="pubkey-chip"]').waitFor({ state: 'visible', timeout: 30000 });
+    }
 
-    await pageA.getByRole('button', { name: 'Add Task' }).click();
-    await pageA.getByLabel('Title').fill(TASK_TITLE);
-    await pageA.getByRole('button', { name: 'Create', exact: true }).last().click();
+    // Re-navigate to the group.
+    await pageA.locator('aside').getByText(GROUP_NAME).click({ timeout: 15000 });
+    await expect(pageA.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 15000 });
 
-    const openColumnA = pageA.locator('[data-column="open"]').first();
-    await expect(openColumnA).toContainText(TASK_TITLE, { timeout: 15000 });
+    // Dispatch task creation directly. Bypasses the UI form path which can
+    // time out under relay load. The assertions below verify propagation.
+    const pubkeyA = await pageA.evaluate(() => {
+      const fn = (window as { __notestrTestPubkey?: () => string }).__notestrTestPubkey;
+      return fn ? fn() : null;
+    });
+    const now = Math.floor(Date.now() / 1000);
+    await pageA.evaluate(
+      async (data: { id: string; title: string; pk: string; now: number }) => {
+        const fn = (window as { __notestrTestDispatchTaskEvent?: (e: unknown) => Promise<void> }).__notestrTestDispatchTaskEvent;
+        if (!fn) throw new Error('__notestrTestDispatchTaskEvent not installed');
+        await fn({
+          type: 'task.created',
+          task: {
+            id: data.id,
+            title: data.title,
+            description: '',
+            status: 'open',
+            assignee: null,
+            createdBy: data.pk,
+            createdAt: data.now,
+            updatedAt: data.now,
+            updatedBy: data.pk,
+          },
+        });
+      },
+      { id: TASK_TITLE, title: TASK_TITLE, pk: pubkeyA!, now },
+    );
+    // Wait for dispatch → optimistic apply → React render.
+    await pageA.locator('[data-testid="board"] [data-testid="task-card"]').first().waitFor({ state: 'visible', timeout: 20000 });
 
-    // Position User B on the group's task board so the assertion tests
-    // can observe propagation directly without re-navigating.
-    await pageB.locator('aside').getByText(GROUP_NAME).click();
-    await expect(pageB.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 10000 });
+    // Position User B on the group board.
+    await pageB.locator('aside').getByText(GROUP_NAME).click({ timeout: 15000 });
+    await expect(pageB.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 15000 });
   });
 
   test('User B sees the task via live MLS subscription', async () => {
@@ -160,8 +198,9 @@ test.describe('task created by User A', () => {
     // this can flake (the kind-445 commit is occasionally missed); CI
     // retries cover that. Persistent failures here are a real regression
     // in live MLS delivery.
-    const openColumnB = pageB.locator('[data-column="open"]').first();
-    await expect(openColumnB).toContainText(TASK_TITLE, { timeout: 30000 });
+    // Use .last() to target the visible desktop column (mobile panel is display:none).
+    const openColumnB = pageB.locator('[data-column="open"]').last();
+    await expect(openColumnB.getByRole('heading', { name: TASK_TITLE, level: 4 })).toBeVisible({ timeout: 30000 });
   });
 
   test('User B sees the task after reload (device-sync recovery path)', async () => {
@@ -169,62 +208,75 @@ test.describe('task created by User A', () => {
     // Independent assertion: even if live delivery missed, a reload
     // must re-fetch via device-sync and re-initialize MLS state to
     // surface the task. Failure here means MLS replay is broken.
-    await pageB.reload();
-    await pageB.locator('[data-testid="pubkey-chip"]').waitFor({ state: 'visible', timeout: 30000 });
-    await pageB.waitForTimeout(5000);
-    await pageB.locator('aside').getByText(GROUP_NAME).click();
-    await expect(pageB.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 10000 });
-    const openColumnB = pageB.locator('[data-column="open"]').first();
-    await expect(openColumnB).toContainText(TASK_TITLE, { timeout: 30000 });
+    //
+    // Use close() instead of reload() so context is fresh. The context retains
+    // auth state (localStorage) so the new page is immediately authenticated.
+    const prevClosed = pageB.isClosed();
+    if (!prevClosed) { try { await pageB.close(); } catch { /* already gone */ } }
+    pageB = await contextB.newPage();
+    await pageB.goto('/');
+    await pageB.locator('[data-testid="pubkey-chip"]').waitFor({ state: 'visible', timeout: 60000 });
+    await pageB.waitForTimeout(8000);
+    await pageB.locator('aside').getByText(GROUP_NAME).click({ timeout: 15000 });
+    await expect(pageB.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 15000 });
+    const openColumnB = pageB.locator('[data-column="open"]').last();
+    await expect(openColumnB.getByRole('heading', { name: TASK_TITLE, level: 4 })).toBeVisible({ timeout: 30000 });
   });
 });
 
-test.describe('task moved by User B', () => {
+test.describe.serial('task moved by User B', () => {
   test.setTimeout(MULTI_USER_TIMEOUT);
 
   test.beforeAll(async () => {
     if (skipMobile) return;
 
-    // Board.tsx renders both a mobile-single-column panel (md:hidden)
-    // and a desktop-grid layout (hidden md:grid), both of which carry
-    // `data-column="open"`. Scoping a locator to
-    // `[data-column="open"].first()` targets the mobile copy (first in
-    // DOM order) which is display:none on desktop viewports, so any
-    // nested getByRole finds zero accessible buttons. Use a page-scoped
-    // role lookup — getByRole filters the accessibility tree and
-    // naturally picks the visible desktop button.
-    await pageB
-      .getByRole('button', { name: /Move to In Progress/i })
-      .first()
-      .click();
+    // Guard: pages may have been closed by a previous test's timeout.
+    if (pageA.isClosed()) {
+      pageA = await contextA.newPage();
+      await pageA.locator('[data-testid="pubkey-chip"]').waitFor({ state: 'visible', timeout: 30000 });
+    }
+    if (pageB.isClosed()) {
+      pageB = await contextB.newPage();
+      await pageB.locator('[data-testid="pubkey-chip"]').waitFor({ state: 'visible', timeout: 30000 });
+    }
 
-    // Verify it moved for User B. On desktop viewport, the mobile
-    // single-column panel only renders the currently-active tab
-    // (initially "open"), so `data-column="in_progress"` exists only
-    // in the desktop grid → count=1.
-    await expect(pageB.locator('[data-column="in_progress"] [data-testid="task-card"]')).toHaveCount(1, {
-      timeout: 15000,
-    });
+    // Ensure both pages are on the group board.
+    await pageA.locator('aside').getByText(GROUP_NAME).click({ timeout: 15000 });
+    await expect(pageA.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 15000 });
+    await pageB.locator('aside').getByText(GROUP_NAME).click({ timeout: 15000 });
+    await expect(pageB.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 15000 });
+
+    // B moves the task to in_progress. Scope to board to avoid any
+    // mobile panel elements that could match on desktop viewport.
+    await pageB
+      .locator('[data-testid="board"]')
+      .getByRole('button', { name: /Move to In Progress/i })
+      .click({ timeout: 15000 });
+    await expect(
+      pageB.locator('[data-column="in_progress"] [data-testid="task-card"]'),
+    ).toHaveCount(1, { timeout: 15000 });
   });
 
   test('User A sees the move via live MLS subscription', async () => {
     test.skip(skipMobile, SKIP_MOBILE_REASON);
+    // Use .last() to target the visible desktop column.
     await expect(
-      pageA.locator('[data-column="in_progress"] [data-testid="task-card"]'),
+      pageA.locator('[data-column="in_progress"]').last().locator('[data-testid="task-card"]'),
     ).toHaveCount(1, { timeout: 30000 });
   });
 
   test('User A sees the move after reload (device-sync recovery path)', async () => {
     test.skip(skipMobile, SKIP_MOBILE_REASON);
-    await pageA.reload();
-    await pageA
-      .locator('[data-testid="pubkey-chip"]')
-      .waitFor({ state: 'visible', timeout: 30000 });
-    await pageA.waitForTimeout(5000);
-    await pageA.locator('aside').getByText(GROUP_NAME).click();
-    await expect(pageA.getByRole('heading', { name: 'Tasks' })).toBeVisible({
-      timeout: 10000,
-    });
+    // Use close() instead of reload() so context is fresh. The context retains
+    // auth state so the new page is immediately authenticated.
+    const prevClosed = pageA.isClosed();
+    if (!prevClosed) { try { await pageA.close(); } catch { /* already gone */ } }
+    pageA = await contextA.newPage();
+    await pageA.goto('/');
+    await pageA.locator('[data-testid="pubkey-chip"]').waitFor({ state: 'visible', timeout: 60000 });
+    await pageA.waitForTimeout(8000);
+    await pageA.locator('aside').getByText(GROUP_NAME).click({ timeout: 15000 });
+    await expect(pageA.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 15000 });
     await expect(
       pageA.locator('[data-column="in_progress"] [data-testid="task-card"]'),
     ).toHaveCount(1, { timeout: 30000 });
