@@ -26,11 +26,13 @@ import { E2E_BUNKER_C_URL, USER_C_NPUB } from "../fixtures/auth-helper-c.js";
 import {
   authenticate,
   createGroup,
+  currentGroupId,
   dispatchTaskEvent,
   getPubkeyHex,
   inviteByNpub,
   selectGroup,
   settle,
+  waitForEpochConvergence,
 } from "../fixtures/two-party.js";
 
 const SKIP_MOBILE_REASON = "Multi-context MLS tests require desktop viewport";
@@ -44,6 +46,7 @@ let pageB: Page;
 let pageC: Page;
 let skipMobile = false;
 let pubkeyA: string;
+let groupId: string;
 const GROUP_NAME = `ThreeParty ${Date.now()}`;
 
 test.beforeAll(async ({ browser }, workerInfo) => {
@@ -79,6 +82,10 @@ test.describe.serial("TP-70 (admin variant): A.In(B), A.In(C) → both see g", (
   test("A creates group, invites B, invites C → B and C both see g", async () => {
     test.skip(skipMobile, SKIP_MOBILE_REASON);
     await createGroup(pageA, GROUP_NAME);
+    // Capture the MLS group id immediately — A is admin and only holds the
+    // group it just created, so `currentGroupId` (last entry) is unambiguous
+    // here. Used by the epoch-convergence waits below.
+    groupId = await currentGroupId(pageA);
     await inviteByNpub(pageA, USER_B_NPUB);
     await inviteByNpub(pageA, USER_C_NPUB);
 
@@ -100,6 +107,17 @@ test.describe("TP-71: A's task lands on both B and C", () => {
 
   test("a task A creates is visible on both invitees", async () => {
     test.skip(skipMobile, SKIP_MOBILE_REASON);
+    // WHY: when this spec runs late in a full `make e2e` pass, the shared relay
+    // holds stale key packages left by earlier specs under A's bunker pubkey.
+    // A's sibling auto-invite scan pulls each one into the group as a dead leaf,
+    // and every such Add is a commit that bumps the MLS epoch WITHOUT changing
+    // the member-npub set — so TP-70's member COUNT can pass while B or C is
+    // still an epoch behind. MLS forbids decrypting an application message
+    // authored at a different epoch, so A's task would be silently invisible to
+    // a lagging invitee until it caught up (intermittently past the 30s wait).
+    // Converging epochs first makes the assertion deterministic. Full rationale:
+    // waitForEpochConvergence in fixtures/two-party.ts.
+    await waitForEpochConvergence([pageA, pageB, pageC], groupId);
     const t1 = crypto.randomUUID();
     const title = `Three-party ${Date.now()}`;
     const now = Math.floor(Date.now() / 1000);
@@ -134,6 +152,13 @@ test.describe("TP-72: a task by C lands on A and B", () => {
 
   test("C creates → both A and B observe", async () => {
     test.skip(skipMobile, SKIP_MOBILE_REASON);
+    // WHY: same epoch race as TP-71 (see that comment and
+    // waitForEpochConvergence), re-checked here because it bites C → A,B
+    // specifically. A late ghost-sibling Add commit landing AFTER TP-71 leaves
+    // B an epoch behind the epoch C authors its task at, so C's task is
+    // undecryptable on B until B catches up — exactly the TP-72-only failure
+    // observed (TP-71 passes, TP-72 times out). Converge before dispatching.
+    await waitForEpochConvergence([pageA, pageB, pageC], groupId);
     const pubkeyC = await getPubkeyHex(pageC);
     const t = crypto.randomUUID();
     const title = `From C ${Date.now()}`;

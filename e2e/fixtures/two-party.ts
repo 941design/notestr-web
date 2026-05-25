@@ -489,6 +489,45 @@ export async function getGroupEpochHook(
   }, groupIdStr);
 }
 
+/**
+ * Wait until every page reports the SAME MLS epoch for `groupId`.
+ *
+ * Multi-party specs that run late in the suite inherit stale kind-30443 key
+ * packages left on the shared relay by earlier specs (each `authenticate()`
+ * publishes one; the multi-device specs publish several per identity). When the
+ * admin creates a group, its sibling auto-invite scan pulls each stale KP in as
+ * a dead leaf, and every Add is a commit that bumps the epoch WITHOUT changing
+ * the member-npub set. A peer still at its own join epoch cannot decrypt an
+ * application message authored at the admin's later epoch (MLS epoch isolation),
+ * so a task created by one member is silently invisible to a lagging peer until
+ * it catches up — an intermittent, suite-position-dependent failure of the
+ * "X creates → Y observes" assertions. Member COUNT does not catch this (ghost
+ * Adds don't change membership); epoch equality does. Poll until all agree.
+ *
+ * `groupId` is the marmot `idStr` (the MLS GroupId), which is identical across
+ * all devices in the group — capture it once (e.g. from the admin) and pass the
+ * same value for every page.
+ */
+export async function waitForEpochConvergence(
+  pages: Page[],
+  groupId: string,
+  timeoutMs = 30000,
+): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const epochs = await Promise.all(
+          pages.map((p) => getGroupEpochHook(p, groupId).catch(() => null)),
+        );
+        // Converged iff every page has the group loaded and reports one epoch.
+        if (epochs.some((e) => e === null)) return false;
+        return new Set(epochs).size === 1;
+      },
+      { timeout: timeoutMs, intervals: [250, 500, 1000] },
+    )
+    .toBe(true);
+}
+
 /** Read the sorted member pubkey array for the given group. Returns null if the group is not loaded. */
 export async function getGroupMembersHook(
   page: Page,
