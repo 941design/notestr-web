@@ -1,26 +1,21 @@
 /**
- * E2E tests: MLS epoch boundary — pre-join task mutations are not visible
- * to a newly invited member.
+ * E2E tests: new member task state bootstrap via kind-30078 NIP-44 encrypted event.
  *
- * Covers permutations TP-31 and TP-32 from
- * `docs/two-party-permutation-matrix.md` under the post-snapshot-removal
- * protocol (v2). The NIP-44 side-channel snapshot mechanism has been
- * deliberately removed because it caused CRDT divergence (fan-out of empty
- * snapshots wiping task state on all devices).
+ * After a successful invite, the inviter (A) calls publishTaskStateSync which
+ * publishes a kind-30078 NIP-44 encrypted event containing the current task state
+ * to B's Nostr pubkey. On B's first load after joining via a welcome message,
+ * the task store calls fetchAndApplyTaskBootstrap which fetches that event and
+ * merges it into the local CRDT — so B sees pre-join tasks within seconds of
+ * the board loading.
  *
- * Under the new protocol:
- * - All task events flow as kind-445 MLS application messages only.
- * - A new member joining at epoch N cannot decrypt application messages
- *   from epochs < N (MLS forward secrecy).
- * - Tasks created and mutated before the invite are in epoch 0; the joiner
- *   holds keys only from their join epoch onward.
- * - Result: the joiner's initial board is empty for pre-join tasks.
+ * Covers permutations TP-30, TP-31, TP-32 from `docs/two-party-permutation-matrix.md`.
  *
- * These tests verify that the epoch boundary behaves as documented rather
- * than accidentally leaking pre-join state through a side channel.
+ * The earlier epoch-boundary model (MLS forward secrecy blocks pre-join epochs)
+ * was superseded by the kind-30078 bootstrap: A publishes a snapshot of current
+ * task state encrypted to B's pubkey, so B has everything A had at the moment
+ * of invite, regardless of which MLS epoch the tasks were created in.
  *
- * Pre-join task visibility is an accepted trade-off documented in
- * docs/task-protocol.md § State Bootstrap.
+ * Verified by: docs/task-protocol.md § New Member Task State Sync (kind 30078).
  */
 
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
@@ -44,7 +39,7 @@ const TIMEOUT = 180_000;
 // ---------------------------------------------------------------------------
 // TP-31: A creates a task, mutates it, THEN invites B → B sees empty board.
 // ---------------------------------------------------------------------------
-test.describe.serial("TP-31: epoch boundary — pre-join mutations invisible", () => {
+test.describe.serial("TP-31: B sees all pre-join mutations via kind-30078 bootstrap", () => {
   test.setTimeout(TIMEOUT);
 
   let contextA: BrowserContext;
@@ -116,7 +111,7 @@ test.describe.serial("TP-31: epoch boundary — pre-join mutations invisible", (
     );
   });
 
-  test("A invites B → B sees empty board (pre-join epoch unreadable)", async () => {
+  test("A invites B → B sees all pre-join mutations via kind-30078 bootstrap", async () => {
     test.skip(skipMobile, SKIP_MOBILE_REASON);
     await inviteByNpub(pageA, USER_B_NPUB);
     await settle(pageA, 2000);
@@ -124,17 +119,19 @@ test.describe.serial("TP-31: epoch boundary — pre-join mutations invisible", (
     await reload(pageB);
     await selectGroup(pageB, GROUP_NAME);
 
-    // B cannot decrypt epoch-0 messages (MLS forward secrecy). The task board
-    // loads but is empty — pre-join task state is permanently unrecoverable.
+    // B sees pre-join task state via kind-30078 bootstrap. The task was created,
+    // moved to in_progress, and self-assigned — all before the invite.
     await expect(pageB.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 30000 });
-    await expect(pageB.getByText(TASK_TITLE)).toHaveCount(0, { timeout: 5000 });
+    // Use the In Progress column to avoid matching sidebar group name.
+    const inProgressColumn = pageB.locator('[data-column="in_progress"]').last();
+    await expect(inProgressColumn.getByRole('heading', { name: TASK_TITLE, level: 4 })).toBeVisible({ timeout: 5000 });
   });
 });
 
 // ---------------------------------------------------------------------------
 // TP-32: A creates+keeps and creates+deletes before inviting → B sees neither.
 // ---------------------------------------------------------------------------
-test.describe.serial("TP-32: epoch boundary — board empty for all pre-join tasks", () => {
+test.describe.serial("TP-32: B sees all pre-join tasks via kind-30078 bootstrap", () => {
   test.setTimeout(TIMEOUT);
 
   let contextA: BrowserContext;
@@ -210,7 +207,7 @@ test.describe.serial("TP-32: epoch boundary — board empty for all pre-join tas
     });
   });
 
-  test("A invites B → B sees neither task (both pre-join epoch)", async () => {
+  test("A invites B → B sees only the surviving task via kind-30078 bootstrap", async () => {
     test.skip(skipMobile, SKIP_MOBILE_REASON);
     await inviteByNpub(pageA, USER_B_NPUB);
     await settle(pageA, 2000);
@@ -218,11 +215,13 @@ test.describe.serial("TP-32: epoch boundary — board empty for all pre-join tas
     await reload(pageB);
     await selectGroup(pageB, GROUP_NAME);
 
-    // B cannot decrypt epoch-0 messages. The board loads but is empty for all
-    // pre-join tasks — including the "kept" one. CRDT delete semantics are moot
-    // because neither event is decryptable by B.
+    // B sees the task state via kind-30078 bootstrap. The deleted task (tDel) is gone;
+    // the kept task (tKeep) is present with status:open.
+    // Use a board-scoped heading locator to avoid matching the sidebar group name
+    // (which can contain the same text as a task card heading).
     await expect(pageB.getByRole('heading', { name: 'Tasks' })).toBeVisible({ timeout: 30000 });
-    await expect(pageB.getByText(KEEP_TITLE)).toHaveCount(0, { timeout: 5000 });
-    await expect(pageB.getByText(DELETED_TITLE)).toHaveCount(0, { timeout: 5000 });
+    const openColumn = pageB.locator('[data-column="open"]').last();
+    await expect(openColumn.getByRole('heading', { name: KEEP_TITLE, level: 4 })).toBeVisible({ timeout: 5000 });
+    await expect(openColumn.locator('[data-testid="task-card"]')).toHaveCount(1, { timeout: 5000 });
   });
 });

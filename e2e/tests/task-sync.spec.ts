@@ -128,7 +128,10 @@ test.describe.serial('task-sync: new member receives pre-join task bootstrap (TP
     // AC-1: The pre-join task MUST appear within 5 seconds of the task board loading.
     // The kind-30078 bootstrap payload was published by A after the invite succeeded;
     // B's task store fetches and applies it on first load for a welcome-joined group.
-    await expect(pageB.getByText(TASK_TITLE)).toBeVisible({ timeout: 5000 });
+    // Use .last() to target the desktop board column (the mobile single-column
+    // panel renders first in DOM order and is display:none on desktop viewports).
+    const openColumnB = pageB.locator('[data-column="open"]').last();
+    await expect(openColumnB.getByRole('heading', { name: TASK_TITLE, level: 4 })).toBeVisible({ timeout: 5000 });
   });
 });
 
@@ -196,7 +199,10 @@ test.describe.serial('task-sync: empty group — new member sees empty board (TP
     // The board columns render (no crash) and contain zero task cards.
     // fetchAndApplyTaskBootstrap degrades gracefully when the relay returns
     // an empty payload — no user-facing error is shown.
-    await expect(pageB2.locator('[data-column="open"]').first()).toBeVisible({ timeout: 5000 });
+    // NOTE: .last() targets the visible desktop [data-column="open"] element.
+    // .first() would resolve to the hidden mobile single-column panel (first
+    // in DOM order), causing toBeVisible to fail on desktop viewports.
+    await expect(pageB2.locator('[data-column="open"]').last()).toBeVisible({ timeout: 5000 });
     await expect(pageB2.locator('[data-testid="task-card"]')).toHaveCount(0, { timeout: 5000 });
   });
 });
