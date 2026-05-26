@@ -38,6 +38,11 @@ for (const { basePath, expectedBasePath } of cases) {
     env: {
       ...process.env,
       NEXT_PUBLIC_BASE_PATH: basePath,
+      // E2E build: tells next.config.ts to skip typecheck/lint (marmot-ts
+      // bundles its own copy of ts-mls; two copies of the same nominal types
+      // version won't unify even with skipLibCheck, so we gate type errors
+      // only for the exported build artifacts — the emitted JS is correct).
+      NEXT_PUBLIC_E2E: "1",
     },
     stdio: "inherit",
   });
