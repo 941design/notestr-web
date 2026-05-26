@@ -25,9 +25,11 @@
   "license": "MIT",
   "dependencies": {
     "@hpke/chacha20poly1305": "^1.7.1",
-    "@internet-privacy/marmot-ts": "github:941design/marmot-ts#addressable-key-packages",
+    "@internet-privacy/marmot-ts": "file:/tmp/marmot-ts/dist",
     "@nostr-dev-kit/ndk": "^3.0.3",
     "@tailwindcss/postcss": "^4.2.1",
+    "applesauce-accounts": "^6.0.0",
+    "applesauce-core": "^6.1.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "idb-keyval": "^6.2.2",
@@ -42,6 +44,7 @@
     "react-dom": "^19.2.4",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.1",
+    "ts-mls": "^2.0.0-rc.10",
     "tw-animate-css": "^1.4.0",
     "uuid": "^13.0.0"
   },
