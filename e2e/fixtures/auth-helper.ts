@@ -50,7 +50,7 @@ function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-interface EphemeralBunker {
+export interface EphemeralBunker {
   /** Must be called with the NIP-46 permit callback so the bunker can sign. */
   signerPrivkeyHex: string;
   /** The URL to paste into the sign-in form. */
@@ -172,12 +172,19 @@ export function stopAllEphemeralBunkers(): void {
  * Navigate to the app, select the "bunker:// URL" tab, paste the E2E_BUnderUrl,
  * click Connect, and wait for the pubkey chip to appear.
  *
+ * Returns the live ephemeral bunker's control handle (`.stop()`) so callers can
+ * keep it alive for the full test — including across a `page.reload()` that
+ * triggers `restoreNip46Session`, which re-issues the NIP-46 connect RPC and
+ * must receive the "ack" response from the same keypair.
+ *
  * Idempotent: if the NIP-46 session has already been restored from
  * IndexedDB/localStorage (as happens after `page.reload()`), the pubkey chip
- * will appear on its own and this helper just waits for it instead of trying
- * to click the sign-in tab — which no longer exists in the authenticated UI.
+ * will appear on its own and this helper just waits for it. Returns `null`
+ * because no bunker was used — no session restore is needed on reload.
  */
-export async function authenticateViaBunker(page: Page): Promise<void> {
+export async function authenticateViaBunker(
+  page: Page,
+): Promise<EphemeralBunker | null> {
   await page.goto('/');
 
   const pubkeyChip = page.locator('[data-testid="pubkey-chip"]');
@@ -195,7 +202,7 @@ export async function authenticateViaBunker(page: Page): Promise<void> {
   if (hasSavedSession) {
     await pubkeyChip.waitFor({ state: 'visible', timeout: 30000 });
     bunker.stop();
-    return;
+    return null;
   }
 
   await bunkerTab.click();
@@ -203,9 +210,6 @@ export async function authenticateViaBunker(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Connect' }).click();
 
   await pubkeyChip.waitFor({ state: 'visible', timeout: 30000 });
-  // Clean up the ephemeral bunker. The relay state is left as-is (the kind-30443
-  // KPs published by this session will accumulate naturally but the next session
-  // will use entirely different pubkeys, so cross-session contamination is
-  // impossible). We do NOT wipe the relay.
-  bunker.stop();
+  // Return the bunker handle so callers can keep it alive across page.reload().
+  return bunker;
 }

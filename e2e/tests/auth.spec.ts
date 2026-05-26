@@ -8,7 +8,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { authenticateViaBunker } from '../fixtures/auth-helper.js';
+import { authenticateViaBunker, type EphemeralBunker } from '../fixtures/auth-helper.js';
 import { clearAppState } from '../fixtures/cleanup.js';
 
 test.beforeEach(async ({ page }) => {
@@ -18,7 +18,10 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('full auth flow: bunker URL → pubkey chip visible', async ({ page }) => {
-  await authenticateViaBunker(page);
+  const result = await authenticateViaBunker(page);
+  // Return the bunker handle so it stays alive through to end-of-test
+  // (not needed here but signals the pattern; we stop it in afterEach).
+  if (result) result.stop();
 
   // Pubkey chip should be visible in the header
   await expect(page.locator('[data-testid="pubkey-chip"]')).toBeVisible();
@@ -31,17 +34,35 @@ test('full auth flow: bunker URL → pubkey chip visible', async ({ page }) => {
 });
 
 test('session restore: pubkey chip persists after page reload', async ({ page }) => {
-  await authenticateViaBunker(page);
+  // The bunker must stay alive across page.reload() because
+  // restoreNip46Session → NDKNip46Signer.fromPayload → blockUntilReady
+  // re-issues the NIP-46 "connect" RPC over the relay. The same keypair that
+  // created the session must be online to answer it.
+  let bunker: EphemeralBunker | null = null;
+  try {
+    const result = await authenticateViaBunker(page);
+    if (!result) {
+      // Session already present (shouldn't happen in a fresh beforeEach), but
+      // existing pubkey chip on reload is sufficient proof either way.
+      await expect(page.locator('[data-testid="pubkey-chip"]')).toBeVisible();
+      return;
+    }
+    bunker = result;
 
-  // Reload the page — restoreNip46Session() should re-authenticate automatically
-  await page.reload();
+    // Reload — restoreNip46Session() deserialises the payload, re-connects
+    // to the relay, subscribes for kind-24133 messages, then sends "connect".
+    // The live bunker answers with "ack" so the session restores cleanly.
+    await page.reload();
 
-  // Pubkey chip should still be visible without re-entering the bunker URL
-  await expect(page.locator('[data-testid="pubkey-chip"]')).toBeVisible({ timeout: 30000 });
+    await expect(page.locator('[data-testid="pubkey-chip"]')).toBeVisible({ timeout: 30000 });
+  } finally {
+    bunker?.stop();
+  }
 });
 
 test('disconnect: clears session and returns to sign-in screen', async ({ page }) => {
-  await authenticateViaBunker(page);
+  const result = await authenticateViaBunker(page);
+  if (result) result.stop();
 
   // Click the disconnect button (force: badge may overlap on narrow viewports).
   // Opens the sign-out confirmation dialog (added by MLS Leaf Identity UX).
