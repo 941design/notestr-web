@@ -1,0 +1,18 @@
+{
+  "story_id": "S3",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-25T17:11:38Z",
+  "questions": [
+    {"question_id": "VQ-S3-001", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-CG-1", "question": "Is CgCommand3P admin-only — does it dispatch group creation on pageA only, with check(m) true only when m.groupId === null && !m.memberA? Cite the run target and check body."},
+    {"question_id": "VQ-S3-002", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-IN-1", "question": "Does InCommand3P(invitee) take invitee: \"B\"|\"C\" only (inviter always A), with check(m) true only when m.memberA && !m.actorIsMember(invitee)? Cite the constructor type and check."},
+    {"question_id": "VQ-S3-003", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-IN-2", "question": "Is the already-a-member invite shape pruned by check() (so fast-check never generates it) rather than silently no-op'd at run time? Cite the check predicate that excludes it."},
+    {"question_id": "VQ-S3-004", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-LG-1", "question": "Does LgCommand3P(actor) accept actor: \"A\"|\"B\"|\"C\" and have each actor leave through their own pageX? Cite the run target selection."},
+    {"question_id": "VQ-S3-005", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-FD-1", "question": "Does FdCommand3P let actor A forget any leaf belonging to B or C in the shared group, with check(m) true only when m.memberA && (m.memberB || m.memberC) && m.groupId !== null (forget-by-non-admin rejected at model level)? Cite the check."},
+    {"question_id": "VQ-S3-006", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-RD-1", "question": "Is RdCommand3P(actor,name) per-actor for the actor's own device (renames on the actor's own page)? Cite the run."},
+    {"question_id": "VQ-S3-007", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-SW-1", "question": "Does SwCommand3P switch pageA between bunker A and bunker B ONLY (never generating A↔C or B↔C), and is the reason documented inline in a comment naming AC-3P-SW-1? Cite the switch logic and the comment."},
+    {"question_id": "VQ-S3-008", "phase": "pre-impl", "category": "ARCHITECTURE", "question": "Are the MIP-03 admin-only-commit constraints encoded as model preconditions in check() (InCommand3P inviter==A, Fd by A only) rather than runtime guards/fc.pre discards, keeping random-action density high (Design Decision #2)?"},
+    {"question_id": "VQ-S3-009", "phase": "pre-impl", "category": "QUALITY", "question": "Do the lifecycle commands correctly update ModelState3P membership/group bookkeeping (Cg sets memberA+groupId; In sets invitee membership; Lg clears the leaver's membership) consistent with the assertions in S4?"},
+    {"question_id": "VQ-S3-010", "phase": "pre-impl", "category": "TEST", "question": "Does the Lg command preserve the 2-party guard that prevents a sole-member leave (a member only leaves when another member remains) so the harness does not generate degenerate empty-group counterexamples?"},
+    {"question_id": "VQ-S3-011", "phase": "pre-impl", "category": "BEST_PRACTICES", "question": "Is the SwCommand3P identity-switch bookkeeping (capture priorGroupIds into m.lastSwitched before switching, reset memberA/groupId/epochSequenceA after) consistent with what assertS7_3P expects in S4?"}
+  ]
+}

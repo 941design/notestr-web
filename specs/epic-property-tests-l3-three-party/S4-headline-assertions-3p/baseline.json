@@ -1,0 +1,32 @@
+{
+  "story_id": "S4",
+  "captured_at": "2026-05-26T06:02:17Z",
+  "baseline_commit": "23823bbda6f82e83d0dfedbb018398ac493a52b3",
+  "status": "S1_SKELETON_PLUS_S2_TASK_COMMANDS_PLUS_S3_GROUP_COMMANDS_PRESENT",
+  "rationale": "S4 inserts five standalone headline-invariant assertion functions (assertC0_3P / assertS5_3P / assertS6_3P / assertS7_3P / assertS10_3P) plus two hook-presence probe helpers (strictHooksPresent / leafCountHookPresent) into e2e/tests/multi-user-3p.property.spec.ts, AFTER the S3 group-lifecycle command block (ends at SwCommand3P) and BEFORE the test-lifecycle section. The file already contains the S1 skeleton (ModelState3P, RealSystem3P, readGroupEpoch3P, beforeAll/afterAll, cachedPubkeyA/B/C, one placeholder test under one test.describe.serial), the S2 task commands (CtCommand3P … RlCommand3P), and the S3 group-lifecycle commands (CgCommand3P … SwCommand3P). No prior headline assertions exist for this target.",
+  "discovery_baseline": {
+    "command": "npx playwright test e2e/tests/multi-user-3p.property.spec.ts --list",
+    "exit_code": 0,
+    "tests_in_file_pre_s4": 3,
+    "test_definitions_pre_s4": 1,
+    "note": "One test definition fanned out across the three configured Playwright projects (chromium + Mobile Chrome + Mobile Safari)."
+  },
+  "regression_target": {
+    "tests_in_file_after_s4": 3,
+    "test_definitions_after_s4": 1,
+    "explanation": "S4 adds only assertion FUNCTIONS, not test definitions. They are invoked inside the single test body by S5 (post-quiesce). The S4 functions are intentionally unreferenced until S5 wires them in. Test count is therefore unchanged (still exactly one definition / 3 listed). e2e/ is not in tsconfig include and there is no root eslint gate, so unused-symbol lint does not apply."
+  },
+  "preconditions_verified": [
+    "e2e/tests/multi-user-3p.property.spec.ts exists with S1 skeleton + S2 task commands + S3 group-lifecycle commands",
+    "ModelState3P exposes groupId/memberA/memberB/memberC, pubkeyA/B/C, epochSequenceA/B/C, lastSwitched, actorIsMember(actor), pubkey(actor)",
+    "RealSystem3P exposes page(actor) and getTasks(actor)",
+    "two-party.ts already exports getGroupMembersHook (532-543), getGroupEpochHook (479-490), getPubkeyLeafCountHook (546-561) — signatures (page, groupId) for members/epoch and (page, groupId, pubkey) for leaf count; the S4 import list adds getGroupMembersHook + getPubkeyLeafCountHook (getGroupEpochHook was already imported by S2). No new two-party.ts exports created.",
+    "Production hooks __notestrTestGroupMembers / __notestrTestGroupEpoch / __notestrTestPubkeyLeafCount present in src/marmot/client.tsx (exploration.json verdict_strict_vs_degraded = STRICT_FORM_AVAILABLE) — strict assertions are the live path",
+    "Frozen files untouched at baseline: git diff --stat on e2e/fixtures/two-party.ts, e2e/tests/multi-user.property.spec.ts, e2e/tests/three-party.spec.ts returns empty"
+  ],
+  "pre_existing_type_error": {
+    "location": "e2e/tests/multi-user-3p.property.spec.ts CtCommand3P task.created payload (S2 frozen code, ~line 296 post-S4-insert)",
+    "error": "TS2741: Property 'updatedBy' is missing in type ... but required in type 'Task'",
+    "note": "Identical in shape to the 2-party file's CtCommand and present before S4. NOT introduced by S4 — the S4 additions (now well past line 1019) produce zero new tsc errors. Documented in S3 result.json issues_encountered."
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "story_id": "S6",
+  "status": "verified",
+  "implemented_by": "lead (lighter_path)",
+  "completed_at": "2026-05-26T00:00:00Z",
+  "files_modified": [
+    "docs/two-party-permutation-matrix.md"
+  ],
+  "files_created": [],
+  "implementation_summary": "Pure markdown doc edit (lighter_path). In docs/two-party-permutation-matrix.md § Property-test coverage, changed the TP-70..72 (3-party) row's Invariants-asserted cell from '(covered by 2-party C0 + induction)' to 'C0, S5, S6, S7, S10, A7..A12 (3-party at L3) [^tp70c]'. Added a new [^tp70c] footnote naming TP-70 (admin-issued chain)/TP-71/TP-72 as empirically asserted at L3 by e2e/tests/multi-user-3p.property.spec.ts, and naming TP-70c as labelled-only / blocked-by-MIP-03 admin-only-commits, linking the (fixme) annotation on the TP-70c row above and the deferred-coverage note. No other rows in the coverage table modified.",
+  "diff_scope": "git diff --stat: docs/two-party-permutation-matrix.md, 3 insertions(+), 1 deletion(-). Only the TP-70..72 row changed (1 deletion + 1 insertion) plus the 2-line footnote block (blank line + footnote). No other coverage rows touched.",
+  "acceptance_criteria_satisfied": [
+    "AC-3P-DOC-1",
+    "AC-3P-DOC-2",
+    "AC-3P-DOC-3"
+  ],
+  "notes": "Doc claim is backed by S4's implemented assertions (assertC0_3P/assertS5_3P/assertS6_3P/assertS7_3P/assertS10_3P) and S5's wired property run — not aspirational. A7..A12 are per-command postconditions asserted inside the S2 task commands. Table remains well-formed markdown (pipe structure intact). lighter_path: lead implemented via Edit; examiner still runs.",
+  "mocks": [],
+  "remediation_rounds": 0,
+  "verification": {
+    "verified_by": "verification-examiner",
+    "verified_at": "2026-05-26T00:00:00Z",
+    "verdict": "verified",
+    "questions": [
+      {
+        "question_id": "VQ-S6-001",
+        "ac_id": "AC-3P-DOC-1",
+        "result": "PASS",
+        "evidence": "git diff: row changed from '| TP-70..72 (3-party)   | (covered by 2-party C0 + induction)|' to '| TP-70..72 (3-party)   | C0, S5, S6, S7, S10, A7..A12 (3-party at L3) [^tp70c] |'. The new cell reads exactly 'C0, S5, S6, S7, S10, A7..A12 (3-party at L3)' as required (doc line 321)."
+      },
+      {
+        "question_id": "VQ-S6-002",
+        "ac_id": "AC-3P-DOC-2",
+        "result": "PASS",
+        "evidence": "New footnote at doc line 327: '[^tp70c]: ... TP-70c (the A.In(B) -> B.In(C) invitee-chains-invitee shape) remains **labelled-only** -- it is blocked by MIP-03 admin-only-commits and so is generated as a pruned model precondition, never run; see the (fixme) annotation on the TP-70c row above and the deferred-coverage note ...'. Names TP-70c as labelled-only / blocked-by-MIP-03 and links the (fixme) annotation (which exists at doc line 214 and the deferred-coverage note at line 300)."
+      },
+      {
+        "question_id": "VQ-S6-003",
+        "ac_id": "AC-3P-DOC-3",
+        "result": "PASS",
+        "evidence": "git diff --stat: 1 file changed, 3 insertions(+), 1 deletion(-). Diff hunk touches only the TP-70..72 row (1 del + 1 ins) plus the new 2-line footnote block (blank line + [^tp70c]). No other coverage-table rows (TP-01..04, TP-10..17, TP-20..24, TP-30..32, TP-40..42, TP-50..53, TP-60..62, TP-80..82, TP-90..91) appear in the diff."
+      },
+      {
+        "question_id": "VQ-S6-004",
+        "result": "PASS",
+        "evidence": "git diff scope for this story is confined to docs/two-party-permutation-matrix.md (the only file in result.files_modified). No src/ or test-code file is touched by S6's own change. Other dirty epic files (e2e/tests/multi-user-3p.property.spec.ts, spec dirs) are products of earlier stories S1-S5, not this story."
+      },
+      {
+        "question_id": "VQ-S6-005",
+        "result": "PASS",
+        "evidence": "Cross-check of e2e/tests/multi-user-3p.property.spec.ts: assertC0_3P (def line 1101), assertS5_3P (def line 1207), assertS6_3P (def line 1259), assertS7_3P (def line 1288), assertS10_3P (def line 1317) are all defined AND invoked in the property test body at lines 1520-1524 (post-quiesce, on settled state). The doc's 'C0, S5, S6, S7, S10' claim is backed by S4's implemented + S5's wired assertions, not aspirational."
+      },
+      {
+        "question_id": "VQ-S6-006",
+        "result": "PASS",
+        "evidence": "Pipe-count check across coverage table rows (doc lines 312-323): every row has exactly 3 pipes (2-column structure), consistent header/separator/data. Table remains well-formed markdown and renders."
+      }
+    ]
+  }
+}

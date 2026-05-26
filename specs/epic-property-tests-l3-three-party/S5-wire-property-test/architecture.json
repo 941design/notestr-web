@@ -1,0 +1,59 @@
+{
+  "module_name": "3P property-test wiring (multi-user-3p.property.spec.ts test body)",
+  "purpose": "Assemble the fast-check command-arbitraries array and the property run inside the single test body. Replaces the S1 placeholder body with: the commands[] array (exactly the arbitraries from spec § 'Single test, three-actor commands array'), fc.asyncProperty(fc.commands(commands, { maxCommands: 10 }), ...), fc.asyncModelRun(() => ({ model, real }), cmds), env-driven numRuns (default 15, FAST_CHECK_NUM_RUNS override) / seed (FAST_CHECK_SEED) / path (FAST_CHECK_PATH), identity-restore (A<->B switch cleanup), real.quiesce(), then all five S4 assertions. test.setTimeout(720_000) is already present from S1.",
+  "public_api": [],
+  "test_body_structure": {
+    "real": "new RealSystem3P(pageA, pageB, pageC) — constructed once outside the property loop, reused across iterations (the three browser contexts/pages are authenticated once in beforeAll).",
+    "arbitraries": [
+      "arbTitle = fc.string({ minLength: 1, maxLength: 30 })",
+      "arbDesc = fc.string({ maxLength: 50 })",
+      "arbStatus = fc.constantFrom<TaskStatus>('open','in_progress','done','cancelled')",
+      "arbActor = fc.constantFrom<ActorId>('A','B','C')"
+    ],
+    "commands_array": [
+      "fc.constant(new CgCommand3P())  — Cg, A-only group creation",
+      "fc.constantFrom<'B'|'C'>('B','C').map((invitee) => new InCommand3P(invitee))  — In, admin invite over B|C (inviter always A; no B.In(C)/TP-70c)",
+      "arbActor.map((actor) => new LgCommand3P(actor))  — Lg, per-actor leave",
+      "fc.constant(new FdCommand3P())  — Fd, A-only forget-device (no per-actor Fd; A-anchored per the command's own check)",
+      "fc.tuple(arbActor, arbTitle, arbDesc).map(([actor,title,desc]) => new CtCommand3P(actor,title,desc))  — Ct",
+      "fc.tuple(arbActor, arbTitle).map(([actor,title]) => new UtCommand3P(actor,title))  — Ut",
+      "fc.tuple(arbActor, arbStatus).map(([actor,status]) => new ScCommand3P(actor,status))  — Sc",
+      "arbActor.map((actor) => new AsCommand3P(actor))  — As",
+      "arbActor.map((actor) => new UnCommand3P(actor))  — Un",
+      "arbActor.map((actor) => new DtCommand3P(actor))  — Dt",
+      "arbActor.map((actor) => new RlCommand3P(actor))  — Rl",
+      "fc.constant(new SwCommand3P())  — Sw, A<->B identity switch only"
+    ],
+    "commands_excluded": "RdCommand3P is intentionally NOT in the array. The spec § 'Single test, three-actor commands array' lists Cg / In(B|C) / per-actor Lg,Fd,Ct,Ut,Sc,As,Un,Dt,Rl / Sw — Rd is not among them. The task brief's own '3-party commands array' list also omits Rd. AC-3P-RUN-1 requires 'exactly the arbitraries ... no additional commands', so Rd (a non-MLS UI rename) stays defined-but-unwired. (The 2-party reference file DOES include Rd, but the 3P spec deliberately scopes it out of the headline-invariant run.)",
+    "property": "fc.assert(fc.asyncProperty(fc.commands(commands, { maxCommands: 10 }), async (cmds) => { ... }), { numRuns, verbose: true, seed, path })",
+    "per_iteration_body": [
+      "const model = new ModelState3P(); model.pubkeyA/B/C = cachedPubkeyA/B/C  — fresh model seeded with the three distinct cached pubkeys (MLS leftover allowed to accumulate; per-command check() guards scope to the current model's single group)",
+      "await fc.asyncModelRun(() => ({ model, real }), cmds)  — runs the generated command chain, executing each command's check()/run() against (model, real)",
+      "identity restore: if (model.pubkeyA !== cachedPubkeyA) { await switchIdentity(real.pageA, E2E_BUNKER_URL); model.pubkeyA = cachedPubkeyA; model.memberA = false; model.groupId = null; model.epochSequenceA = []; }  — A SwCommand3P may have left pageA on bunker B; restore to bunker A so the final assertions and any re-run / afterAll teardown start clean",
+      "await real.quiesce()  — wait for all three pages to settle before asserting at rest",
+      "await assertC0_3P(model, real); assertS5_3P; assertS6_3P(model); assertS7_3P; assertS10_3P  — all five S4 headline assertions on the settled state"
+    ],
+    "run_config_resolution": {
+      "numRuns": "const numRuns = parseInt(process.env.FAST_CHECK_NUM_RUNS ?? '', 10) || 15;  — default 15; FAST_CHECK_NUM_RUNS overrides (parseInt of unset/blank => NaN, `|| 15` restores default). AC-X-RUNS-3P-1.",
+      "seed": "seed: parseInt(process.env.FAST_CHECK_SEED ?? '0') || undefined  — identical to the 2-party file. AC-3P-RUN-3.",
+      "path": "path: process.env.FAST_CHECK_PATH ?? undefined  — identical to the 2-party file. AC-3P-RUN-3.",
+      "verbose": "verbose: true  — so a failing run prints the full Actor.Verb(args) chain (AC-X-CI-3P-2 / AC-3P-RUN-5).",
+      "maxCommands": "fc.commands(commands, { maxCommands: 10 })  — AC-3P-RUN-2.",
+      "setTimeout": "test.setTimeout(720_000) already present in the describe.serial block (12 min). AC-3P-RUN-4."
+    }
+  },
+  "private_files": [],
+  "owned_data": [
+    "The fast-check command-arbitraries array (commands[]) and the fc.assert/fc.asyncProperty/fc.asyncModelRun wiring inside the single test body."
+  ],
+  "dependencies_allowed": [
+    "fast-check (fc.constant, fc.constantFrom, fc.tuple, fc.string, fc.commands, fc.asyncProperty, fc.asyncModelRun, fc.assert) — already imported",
+    "@playwright/test (test, expect) — already imported",
+    "switchIdentity, E2E_BUNKER_URL (from two-party.ts / auth-helper.js) — already imported, used by the identity-restore block",
+    "All 12 wired command classes + the 5 S4 assertion functions + ModelState3P/RealSystem3P/ActorId/TaskStatus — all in the same file"
+  ],
+  "boundaries": {
+    "does_not_modify": "S2 command bodies, S3 command bodies, S4 assertion bodies, the S1 skeleton/lifecycle, two-party.ts, the 2-party reference file, three-party.spec.ts. S5 only replaces the test body between `const real = ...` and the closing `});` of the test.",
+    "no_production_change": "No file under src/ touched (AC-X-NO-PROD-CHANGE-3P-1)."
+  }
+}

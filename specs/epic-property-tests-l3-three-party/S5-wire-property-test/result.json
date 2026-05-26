@@ -1,0 +1,126 @@
+{
+  "story_id": "S5",
+  "status": "verified",
+  "completed_at": "2026-05-26T06:09:18Z",
+  "files_created": [
+    "specs/epic-property-tests-l3-three-party/S5-wire-property-test/architecture.json",
+    "specs/epic-property-tests-l3-three-party/S5-wire-property-test/baseline.json",
+    "specs/epic-property-tests-l3-three-party/S5-wire-property-test/result.json"
+  ],
+  "files_modified": [
+    "e2e/tests/multi-user-3p.property.spec.ts"
+  ],
+  "summary": "Replaced the S1 placeholder test body with the real fast-check property run: the command-arbitraries array (exactly the 12 arbitraries from spec § 'Single test, three-actor commands array'), fc.assert(fc.asyncProperty(fc.commands(commands, { maxCommands: 10 }), ...)), fc.asyncModelRun(() => ({ model, real }), cmds), env-driven numRuns (default 15 / FAST_CHECK_NUM_RUNS) / seed (FAST_CHECK_SEED) / path (FAST_CHECK_PATH), identity-restore (A<->B switch cleanup), real.quiesce(), then all five S4 headline assertions. No imports added (switchIdentity + E2E_BUNKER_URL were already imported by S1/S3). Net change is confined to the test body.",
+  "commands_array": {
+    "count": 12,
+    "entries": [
+      "fc.constant(new CgCommand3P())",
+      "fc.constantFrom<'B'|'C'>('B','C').map((invitee) => new InCommand3P(invitee))",
+      "arbActor.map((actor) => new LgCommand3P(actor))",
+      "fc.constant(new FdCommand3P())",
+      "fc.tuple(arbActor, arbTitle, arbDesc).map(([actor,title,desc]) => new CtCommand3P(actor,title,desc))",
+      "fc.tuple(arbActor, arbTitle).map(([actor,title]) => new UtCommand3P(actor,title))",
+      "fc.tuple(arbActor, arbStatus).map(([actor,status]) => new ScCommand3P(actor,status))",
+      "arbActor.map((actor) => new AsCommand3P(actor))",
+      "arbActor.map((actor) => new UnCommand3P(actor))",
+      "arbActor.map((actor) => new DtCommand3P(actor))",
+      "arbActor.map((actor) => new RlCommand3P(actor))",
+      "fc.constant(new SwCommand3P())"
+    ],
+    "rd_excluded": "RdCommand3P is intentionally NOT generated. The spec § 'Single test, three-actor commands array' and the S5 task brief's own commands list both omit Rd. AC-3P-RUN-1 requires exactly the listed arbitraries with no additions, so Rd (a non-MLS UI rename, defined in the file from S3) stays unwired. This is a deliberate divergence from the 2-party reference (which does include Rd)."
+  },
+  "run_config": {
+    "numRuns": "parseInt(process.env.FAST_CHECK_NUM_RUNS ?? '', 10) || 15  (default 15, env-overridable)",
+    "maxCommands": 10,
+    "setTimeout_ms": 720000,
+    "seed": "parseInt(process.env.FAST_CHECK_SEED ?? '0') || undefined",
+    "path": "process.env.FAST_CHECK_PATH ?? undefined",
+    "verbose": true
+  },
+  "discovery_verification": {
+    "command": "npx playwright test e2e/tests/multi-user-3p.property.spec.ts --list",
+    "exit_code": 0,
+    "test_definitions": 1,
+    "listings": 3,
+    "listing_note": "One test definition, fanned across chromium + Mobile Chrome + Mobile Safari (3 listings) — unchanged from the S1/S2/S3/S4 baseline. Zero regression in test count.",
+    "describe_serial_title": "[C0,S5,S6,S7,S10,A7-A12,A14] 3-party multi-user property",
+    "test_title": "[C0,S5,S6,S7,S10] settled-state equality holds across A/B/C",
+    "naming_note": "Both the describe.serial and the test title start with the bracketed invariant IDs (AC-X-NAMING-3P-1)."
+  },
+  "type_check": {
+    "command": "npx tsc --noEmit -p tsconfig.json",
+    "new_errors_from_s5": 0,
+    "s5_body_errors": "none — the wiring at lines 1427+ produces zero tsc errors.",
+    "pre_existing_error": "One pre-existing TS2741 at line 296 (S2's CtCommand3P task.created payload missing 'updatedBy'), IDENTICAL to the 2-party reference file's error at multi-user.property.spec.ts:495. Documented in S3/S4 baselines. Not introduced by S5; not in S5 scope to fix (lives in S2's frozen command body; the 2-party reference ships with the same shape). esbuild/swc (Playwright's transpile) strips types without checking, so execution is unaffected."
+  },
+  "fault_injection_probe": {
+    "ac": ["AC-3P-RUN-5", "AC-X-CI-3P-2", "VQ-S5-005", "VQ-S5-008"],
+    "disposition": "DEFERRED to S7 manual AC-VAL-3P-1, with a structural-guarantee argument recorded here.",
+    "what_was_done": "Did NOT run the full fc.assert suite (would consume the S7 12-minute / 720s wall-clock envelope, which this story is explicitly forbidden from spending). Did NOT inject any fault into the committed file — none is present. Instead, verified the structural guarantee that a counterexample naming a C.* command is intrinsic to the DSL.",
+    "structural_guarantee": "arbActor = fc.constantFrom<ActorId>('A','B','C') feeds every per-actor command (Lg/Ct/Ut/Sc/As/Un/Dt/Rl), and each of those commands' toString() returns `${this.actor}.Verb(args)`. Concretely: C.Ct(title), C.Ut(title), C.Sc(open), C.As(pubkeyA), C.Un(task), C.Dt(task), C.Rl(), C.Lg(group) are all reachable shrink outputs. Therefore any 3-party-only divergence whose minimal reproduction involves C will render at least one `C.*` token in fast-check's verbose counterexample chain. The only A-anchored commands (A.Cg, A.In(B|C), A.Fd, A.Sw(B)) are A-only by the admin/MIP-03 model and never mask a C action. The naming format Actor.Verb(args) (AC-X-NAMING-3P-1) is thus enforced by construction, not by a one-off probe.",
+    "s7_followup": "S7's manual AC-VAL-3P-1 will perform the live demonstration: comment out C's relay subscription (or break a C-side assertion), run make e2e against the 3P file, observe a counterexample chain that includes a C.* command plus a B-or-A-dispatched task event C cannot see post-quiesce, then revert. That is the empirical confirmation; S5 provides the structural one."
+  },
+  "acceptance_criteria_satisfied": [
+    {"id": "AC-3P-RUN-1", "how": "commands[] contains exactly the 12 arbitraries from spec § 'Single test, three-actor commands array': CgCommand3P; InCommand3P over B|C; per-actor Lg/Ct/Ut/Sc/As/Un/Dt/Rl; A-only Fd; SwCommand3P. No additional commands (Rd deliberately omitted to match the spec's array)."},
+    {"id": "AC-3P-RUN-2", "how": "fc.assert runs with numRuns (default 15) and fc.commands(commands, { maxCommands: 10 }). Literals: `maxCommands: 10` in the fc.commands call; `numRuns` resolved to 15 by default."},
+    {"id": "AC-3P-RUN-3", "how": "seed: parseInt(process.env.FAST_CHECK_SEED ?? '0') || undefined and path: process.env.FAST_CHECK_PATH ?? undefined — byte-identical to the 2-party file's seed/path wiring."},
+    {"id": "AC-3P-RUN-4", "how": "test.setTimeout(720_000) present at the top of the describe.serial block (12 minutes). (Pre-existing from S1; preserved.)"},
+    {"id": "AC-3P-RUN-5", "how": "Deferred to S7 manual AC-VAL-3P-1; structural guarantee recorded above. No fault injection left in the committed file. The Actor.Verb(args) DSL with C in arbActor structurally guarantees a C.* token appears in any C-relevant counterexample."},
+    {"id": "AC-X-NAMING-3P-1", "how": "Both titles start with bracketed invariant IDs — describe.serial: '[C0,S5,S6,S7,S10,A7-A12,A14] ...'; test: '[C0,S5,S6,S7,S10] settled-state equality holds across A/B/C'. Verified via --list."},
+    {"id": "AC-X-RUNS-3P-1", "how": "const numRuns = parseInt(process.env.FAST_CHECK_NUM_RUNS ?? '', 10) || 15; — default 15, FAST_CHECK_NUM_RUNS env override honoured (NaN from unset/blank falls through to 15)."},
+    {"id": "AC-X-CI-3P-2", "how": "verbose: true ensures fast-check prints the full shrunk Actor.Verb(args) chain on failure. With C a first-class actor in arbActor and every per-actor toString() rendering ${actor}.Verb, a minimal 3-party counterexample names all relevant actors including C. Live demonstration deferred to S7 (AC-VAL-3P-1)."}
+  ],
+  "verification_questions_addressed": [
+    {"id": "VQ-S5-001", "answer": "Yes — commands[] is exactly: fc.constant(new CgCommand3P()); fc.constantFrom<'B'|'C'>('B','C').map(i => new InCommand3P(i)); arbActor.map(a => new LgCommand3P(a)); fc.constant(new FdCommand3P()); fc.tuple(arbActor,arbTitle,arbDesc).map(...CtCommand3P); fc.tuple(arbActor,arbTitle).map(...UtCommand3P); fc.tuple(arbActor,arbStatus).map(...ScCommand3P); arbActor.map(...AsCommand3P); arbActor.map(...UnCommand3P); arbActor.map(...DtCommand3P); arbActor.map(...RlCommand3P); fc.constant(new SwCommand3P()). No Rd, no extra commands."},
+    {"id": "VQ-S5-002", "answer": "Yes — `fc.commands(commands, { maxCommands: 10 })` and numRuns resolves to 15 by default; both literals are in the test body."},
+    {"id": "VQ-S5-003", "answer": "Yes — seed: parseInt(process.env.FAST_CHECK_SEED ?? '0') || undefined; path: process.env.FAST_CHECK_PATH ?? undefined. Identical to multi-user.property.spec.ts."},
+    {"id": "VQ-S5-004", "answer": "Yes — test.setTimeout(720_000) is the first statement in the describe.serial block."},
+    {"id": "VQ-S5-005", "answer": "Counterexample C.* inclusion is DEFERRED to S7 manual AC-VAL-3P-1 (running fc.assert here would consume the forbidden 720s envelope). No fault injection left in the file. Structural guarantee documented: arbActor includes 'C' and per-actor toString() returns ${actor}.Verb, so a C-relevant shrink necessarily prints a C.* token. See fault_injection_probe above."},
+    {"id": "VQ-S5-006", "answer": "Yes — describe.serial title '[C0,S5,S6,S7,S10,A7-A12,A14] 3-party multi-user property' and test title '[C0,S5,S6,S7,S10] settled-state equality holds across A/B/C' both begin with bracketed invariant IDs."},
+    {"id": "VQ-S5-007", "answer": "Yes — numRuns = parseInt(process.env.FAST_CHECK_NUM_RUNS ?? '', 10) || 15. Default 15; FAST_CHECK_NUM_RUNS override honoured."},
+    {"id": "VQ-S5-008", "answer": "Yes — verbose: true plus the Actor.Verb(args) toString() DSL guarantee fast-check shrinks to a minimal counterexample naming all relevant actors. Same shrinking discipline as the 2-party file (which also sets verbose: true and uses the same toString() convention). Live demonstration deferred to S7."},
+    {"id": "VQ-S5-009", "answer": "Yes — the per-iteration body is `const model = new ModelState3P(); model.pubkeyA/B/C = cachedPubkeyA/B/C; await fc.asyncModelRun(() => ({ model, real }), cmds);` followed by the identity-restore block, then `await real.quiesce();`, then the five assertions — mirroring the 2-party structure (a fresh model per iteration; the 3P file uses static per-identity bunkers so it does NOT re-authenticate per iteration the way the 2-party spawnSpecBunker file does — the model reset alone suffices since command check() guards scope to the current model's group)."},
+    {"id": "VQ-S5-010", "answer": "Yes — after quiesce the body calls assertC0_3P(model, real), assertS5_3P(model, real), assertS6_3P(model), assertS7_3P(model, real), assertS10_3P(model, real) — all five."},
+    {"id": "VQ-S5-011", "answer": "Yes — the admin-invite arbitrary is fc.constantFrom<'B'|'C'>('B','C').map(i => new InCommand3P(i)); the inviter is hard-wired to A inside InCommand3P. There is no B.In(C) / TP-70c generation path. Consistent with the S3 InCommand3P model precondition (inviter always A)."},
+    {"id": "VQ-S5-012", "answer": "Yes — `if (model.pubkeyA !== cachedPubkeyA) { await switchIdentity(real.pageA, E2E_BUNKER_URL); model.pubkeyA = cachedPubkeyA; model.memberA = false; model.groupId = null; model.epochSequenceA = []; }` restores identity A and resets the drifted fields, preventing cross-iteration identity leakage — matching the 2-party pattern."}
+  ],
+  "frozen_files_unchanged": {
+    "command": "git diff --stat for the listed paths",
+    "paths": [
+      "e2e/fixtures/two-party.ts",
+      "e2e/tests/multi-user.property.spec.ts",
+      "e2e/tests/three-party.spec.ts",
+      "src/marmot/*, src/store/*, src/components/*"
+    ],
+    "result": "unchanged (only e2e/tests/multi-user-3p.property.spec.ts is modified, plus this epic's specs/ dir). Satisfies AC-X-NO-PROD-CHANGE-3P-1 and AC-X-NO-2P-CHANGE-1 and AC-X-NO-EXAMPLE-DELETION-3P-1."
+  },
+  "issues_encountered": [
+    "Pre-existing TS2741 (updatedBy missing in Task) at line 296 in S2's CtCommand3P body — identical to the 2-party reference (line 495) and already documented in S3/S4 baselines. Left untouched (out of S5 scope; matches the verified 2-party shape; harmless under esbuild transpile). This is a latent type-correctness gap in BOTH the 2-party and 3-party CtCommand task.created payloads — a candidate boy-scout fix for a future story that owns those command bodies, but not S5.",
+    "The 3P file does NOT do per-iteration re-authentication (unlike the 2-party file, which re-auths each iteration against its spawnSpecBunker keypairs to shed accumulated pending-invitations). The 3P file authenticates the three static bunkers once in beforeAll and reuses them; the fresh ModelState3P per iteration plus per-command check() group-scoping is the isolation mechanism. KeyPackage / pending-invitation accumulation across the 15 runs is a known wall-clock risk flagged in S1's result.json and is S7's to validate (S7 may switch to spawnSpecBunker x3 if accumulation causes selectGroup timeouts)."
+  ],
+  "manual_verification_required": false,
+  "verified_by_story_planner": false,
+  "verification": {
+    "verified_by": "verification-examiner",
+    "verified_at": "2026-05-26T06:40:00Z",
+    "verdict": "PASS",
+    "method": "Read implementation (e2e/tests/multi-user-3p.property.spec.ts), spec.md § 'Single test, three-actor commands array' + acceptance-criteria.md, 2-party reference, git status/diff, and `npx playwright test --list`.",
+    "results": [
+      {"vq": "VQ-S5-001", "ac": "AC-3P-RUN-1", "result": "PASS", "evidence": "multi-user-3p.property.spec.ts:1449-1478 — commands[] has exactly 12 entries: Cg, In(B|C), Lg(actor), Fd, Ct(actor), Ut(actor), Sc(actor), As(actor), Un(actor), Dt(actor), Rl(actor), Sw. Command-type set matches the spec array (spec.md:226-234) exactly: no additions (Rd correctly excluded), no omissions. Note: spec.md:231 writes Fd as `arbActor.map(a => new FdCommand3P(a))` but the normative AC-3P-FD-1 (acceptance-criteria.md:34) defines Fd as admin-only with check `m.memberA && (m.memberB||m.memberC)` and NO actor parameter; impl correctly follows the AC via `fc.constant(new FdCommand3P())`. The spec snippet is internally inconsistent with its own AC; impl honors the AC."},
+      {"vq": "VQ-S5-002", "ac": "AC-3P-RUN-2", "result": "PASS", "evidence": "multi-user-3p.property.spec.ts:1488 `fc.commands(commands, { maxCommands: 10 })`; numRuns resolves to 15 by default (line 1483) and is passed at line 1531."},
+      {"vq": "VQ-S5-003", "ac": "AC-3P-RUN-3", "result": "PASS", "evidence": "multi-user-3p.property.spec.ts:1537-1538 `seed: parseInt(process.env.FAST_CHECK_SEED ?? \"0\") || undefined` and `path: process.env.FAST_CHECK_PATH ?? undefined` — byte-identical to 2-party multi-user.property.spec.ts:1159-1160."},
+      {"vq": "VQ-S5-004", "ac": "AC-3P-RUN-4", "result": "PASS", "evidence": "multi-user-3p.property.spec.ts:1425 `test.setTimeout(720_000)` — first statement in the describe.serial block."},
+      {"vq": "VQ-S5-005", "ac": "AC-3P-RUN-5", "result": "PASS", "evidence": "No fault injection present in the committed file (grep for fault/inject/comment-out markers found only documentation comments). Disposition recorded in result.json fault_injection_probe: deferred to S7 manual AC-VAL-3P-1 with a structural-guarantee argument (arbActor includes 'C' + per-actor toString() returns `${actor}.Verb(args)`). The empirical one-shot is S7's; S5 ships the structural guarantee. Acceptable for a wiring story explicitly forbidden from spending the 720s envelope."},
+      {"vq": "VQ-S5-006", "ac": "AC-X-NAMING-3P-1", "result": "PASS", "evidence": "multi-user-3p.property.spec.ts:1424 describe.serial '[C0,S5,S6,S7,S10,A7-A12,A14] 3-party multi-user property' and line 1427 test '[C0,S5,S6,S7,S10] settled-state equality holds across A/B/C' — both start with bracketed invariant IDs. Confirmed via --list."},
+      {"vq": "VQ-S5-007", "ac": "AC-X-RUNS-3P-1", "result": "PASS", "evidence": "multi-user-3p.property.spec.ts:1483 `const numRuns = parseInt(process.env.FAST_CHECK_NUM_RUNS ?? \"\", 10) || 15;` — default 15, NaN from unset/blank falls through to 15 via `|| 15`."},
+      {"vq": "VQ-S5-008", "ac": "AC-X-CI-3P-2", "result": "PASS", "evidence": "multi-user-3p.property.spec.ts:1534 `verbose: true` (same as 2-party multi-user.property.spec.ts:1157); arbActor includes 'C' (line 1441) and every per-actor toString() renders `${actor}.Verb(args)` (e.g. lines 330-332, 426-428, 616-618). A C-relevant shrunk counterexample necessarily prints a C.* token. Live demonstration deferred to S7."},
+      {"vq": "VQ-S5-009", "ac": "ARCHITECTURE", "result": "PASS", "evidence": "multi-user-3p.property.spec.ts:1495-1517 — fresh `new ModelState3P()` per iteration seeded with cachedPubkeyA/B/C, `await fc.asyncModelRun(() => ({ model, real }), cmds)`, identity-restore block (A↔B), then `await real.quiesce()` before assertions. Mirrors 2-party structure (3P uses static per-identity bunkers so no per-iteration re-auth; model reset + per-command check() group-scoping is the isolation mechanism)."},
+      {"vq": "VQ-S5-010", "ac": "QUALITY", "result": "PASS", "evidence": "multi-user-3p.property.spec.ts:1520-1524 — all five assertions called post-quiesce: assertC0_3P, assertS5_3P, assertS6_3P, assertS7_3P, assertS10_3P."},
+      {"vq": "VQ-S5-011", "ac": "TEST", "result": "PASS", "evidence": "multi-user-3p.property.spec.ts:1455-1457 `fc.constantFrom<'B'|'C'>('B','C').map(invitee => new InCommand3P(invitee))`; InCommand3P constructor takes only the invitee (line 712) and toString() hard-wires inviter A (`A.In(${invitee})`, line 761). No B.In(C) / TP-70c generation path."},
+      {"vq": "VQ-S5-012", "ac": "BEST_PRACTICES", "result": "PASS", "evidence": "multi-user-3p.property.spec.ts:1507-1513 — `if (model.pubkeyA !== cachedPubkeyA) { await switchIdentity(real.pageA, E2E_BUNKER_URL); model.pubkeyA = cachedPubkeyA; model.memberA = false; model.groupId = null; model.epochSequenceA = []; }` resets the drifted fields, preventing cross-iteration identity leakage; matches the 2-party pattern (3P additionally clears epochSequenceA, a stricter superset)."}
+    ],
+    "rd_vs_rl_finding": "CONFIRMED — the architect's exclusion of RdCommand3P from the commands array is CORRECT. The spec's commands array (spec.md:232) lists the per-actor task commands as a comment placeholder: `// ... CtCommand3P, UtCommand3P, ScCommand3P, AsCommand3P, UnCommand3P, DtCommand3P, RlCommand3P` — it names RlCommand3P (reload, A11 persistence), NOT RdCommand3P (rename device). The S2 port list (spec.md:276) likewise lists 'RlCommand' not 'RdCommand'. Rd appears in the spec only in the broader command-vocabulary line (spec.md:31) and the S3 port list (spec.md:277), which port Rd into the file as a class — but Rd is intentionally NOT wired into the property-run array. AC-3P-RUN-1 requires exactly the listed arbitraries with no additions; since the spec array lists Rl and not Rd, including Rd would VIOLATE AC-3P-RUN-1. The exclusion is correct.",
+    "rd_unused_observation": "MINOR CLEANLINESS (not a failure): RdCommand3P is defined (lines 918-950, from S3 per AC-3P-RD-1) but deliberately unwired into the commands array — a defined-but-unused class. This is the correct consequence of the AC-3P-RUN-1 exclusion (the class still satisfies its own S3 AC-3P-RD-1 and remains available if a future story wires it). No action required for S5.",
+    "fd_shape_observation": "MINOR SPEC INCONSISTENCY (not a failure): spec.md:231 writes the Fd arbitrary as `arbActor.map(a => new FdCommand3P(a))` (per-actor), which contradicts the normative AC-3P-FD-1 (acceptance-criteria.md:34) defining FdCommand3P as admin-only with an actor-free A-only check. The implementation correctly follows AC-3P-FD-1 (`fc.constant(new FdCommand3P())`, A-only). The command-TYPE set is exact; only the spec-snippet's Fd shape diverges, and the impl resolves the conflict in favor of the AC. Recommend the spec author reconcile spec.md:231 with AC-3P-FD-1 in a future doc edit."
+  }
+}

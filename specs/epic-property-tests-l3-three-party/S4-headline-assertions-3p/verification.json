@@ -1,0 +1,21 @@
+{
+  "story_id": "S4",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-25T17:11:38Z",
+  "questions": [
+    {"question_id": "VQ-S4-001", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-C0-1", "question": "Does assertC0_3P run only when m.groupId !== null && m.memberA && m.memberB && m.memberC, and otherwise return silently? Cite the guard."},
+    {"question_id": "VQ-S4-002", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-C0-2", "question": "When triggered, does assertC0_3P assert task-id sets pairwise equal across A/B/C and, per shared task id, status/assignee/title equal across all three? Cite the assertions."},
+    {"question_id": "VQ-S4-003", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-C0-3", "question": "When triggered, does assertC0_3P assert member sets pairwise equal across all three actor views via getGroupMembersHook (__notestrTestGroupMembers)? Cite the assertion."},
+    {"question_id": "VQ-S4-004", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-C0-4", "question": "When triggered, does assertC0_3P assert epoch(A) == epoch(B) == epoch(C) via getGroupEpochHook (__notestrTestGroupEpoch)? Cite the assertion."},
+    {"question_id": "VQ-S4-005", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-C0-5", "question": "When triggered, does assertC0_3P assert leafCount(g,p) matches across all three actors for every p in the union of members (via getPubkeyLeafCountHook)? Cite the loop and assertion."},
+    {"question_id": "VQ-S4-006", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-S5-1", "question": "Does assertS5_3P run the biconditional (p ∈ members) ⇔ (leafCount >= 1) for each of m.pubkeyA/B/C scoped to m.groupId, without cross-group false negatives? Cite the scoping."},
+    {"question_id": "VQ-S4-007", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-S6-1", "question": "Does assertS6_3P walk each of epochSequenceA/B/C and assert non-decreasing (cross-actor epochs NOT compared)? Cite the per-actor walk."},
+    {"question_id": "VQ-S4-008", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-S7-1", "question": "Does assertS7_3P trigger when m.lastSwitched !== null, read tasks on the post-switch context, and assert none belong to the prior identity's groups? Cite the guard and assertion."},
+    {"question_id": "VQ-S4-009", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-S10-1", "question": "Does assertS10_3P read [data-testid=\"device-row\"] count on each actor's page and assert equality with getPubkeyLeafCountHook(page, m.groupId, ownPubkey)? Cite the per-actor assertion."},
+    {"question_id": "VQ-S4-010", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-DEG-1", "question": "If the l3-completion test hooks were absent, would the assertions degrade as specified (C0 task-subset only, S5 positive-only scoped to groupId, S6 proxy non-decreasing, S10 >= 0)? Since STRICT FORM is available, confirm the strict path is live and the degraded branch is present-but-dormant."},
+    {"question_id": "VQ-S4-011", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-DEG-2", "question": "Is there a code comment at the top of each degraded assertion naming AC-3P-DEG-2 and pointing at epic-property-tests-l3-completion's test-hook story? Cite the comments."},
+    {"question_id": "VQ-S4-012", "phase": "pre-impl", "category": "ARCHITECTURE", "question": "Do all five assertions iterate over the actor set [\"A\",\"B\",\"C\"] (e.g. Promise.all over actors) rather than hard-coding pairwise A/B logic, and consume the hook readers from two-party.ts read-only (no two-party.ts edits)?"},
+    {"question_id": "VQ-S4-013", "phase": "pre-impl", "category": "QUALITY", "question": "Are the assertions free of false-positive risk from cross-group state (every membership/leaf/epoch read is scoped to m.groupId, the single shared group)?"},
+    {"question_id": "VQ-S4-014", "phase": "pre-impl", "category": "TEST", "question": "Are the assertions invoked only after real.quiesce() (settled state), matching the 2-party file's quiescence discipline so convergence is asserted at rest, not mid-flight?"}
+  ]
+}

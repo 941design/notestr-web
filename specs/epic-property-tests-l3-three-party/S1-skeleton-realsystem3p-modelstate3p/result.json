@@ -1,0 +1,127 @@
+{
+  "story_id": "S1",
+  "status": "verified",
+  "verified_at": "2026-05-25T19:30:00Z",
+  "completed_at": "2026-05-25T18:05:00Z",
+  "files_created": [
+    "e2e/tests/multi-user-3p.property.spec.ts",
+    "specs/epic-property-tests-l3-three-party/S1-skeleton-realsystem3p-modelstate3p/architecture.json",
+    "specs/epic-property-tests-l3-three-party/S1-skeleton-realsystem3p-modelstate3p/baseline.json",
+    "specs/epic-property-tests-l3-three-party/S1-skeleton-realsystem3p-modelstate3p/result.json"
+  ],
+  "files_modified": [
+    "specs/epic-property-tests-l3-three-party/S1-skeleton-realsystem3p-modelstate3p/verification.json"
+  ],
+  "tests_added": {
+    "property": 1
+  },
+  "test_counts": {
+    "baseline": 399,
+    "final": 402
+  },
+  "test_counts_note": "Counts are `npx playwright test --list` totals across all projects (verified). 399 -> 402 and file count 32 -> 33: exactly ONE new test definition, fanned out across the three configured projects (chromium + Mobile Chrome + Mobile Safari) so the listing grows by 3. The two mobile projects are test.skip-ed at runtime (SKIP_MOBILE_REASON) but still listed. No existing test removed or renamed — total only grows, zero regressions. L1/L2 `make test` is unaffected (file lives under e2e/tests/, AC-X-CI-3P-1).",
+  "mocks": [],
+  "remediation_rounds": 0,
+  "implementation_summary": "Created the S1 skeleton for the 3-party property spec at e2e/tests/multi-user-3p.property.spec.ts. Contains exactly ONE test ('[C0,S5,S6,S7,S10] settled-state equality holds across A/B/C') under ONE test.describe.serial ('[C0,S5,S6,S7,S10,A7-A12,A14] 3-party multi-user property'). beforeAll opens three BrowserContext + three Page (A/B/C), authenticates each against its bunker, and caches cachedPubkeyA/B/C at module scope; afterAll closes all three contexts. ModelState3P models a single shared group (groupId/groupName), three distinct per-actor pubkeys (pubkeyA/B/C), per-actor membership flags (memberA/B/C), a group-scoped tasks Map, per-actor epochSequenceA/B/C arrays, lastSwitched, plus helpers pubkey()/actorIsMember()/recordEpoch()/reset(). RealSystem3P holds pageA/B/C with page() accessor and implements the stable readers getTasks/getTask/quiesce that S2-S5 rely on. Commands and headline assertions are intentionally deferred to S2-S5; the placeholder test body asserts the skeleton wiring (three distinct cached pubkeys, model.pubkey()/real.page() accessors). All five S1 ACs satisfied: file exists (FILE-1); one test under one serial describe verified via `playwright test --list` (FILE-2); title contains [C0,S5,S6,S7,S10] (FILE-3); three contexts/pages created+torn down with per-bunker auth (FILE-4); cachedPubkeyA/B/C read once post-auth at module scope (FILE-5).",
+  "bunker_setup_decision": {
+    "choice": "STATIC per-identity constants — E2E_BUNKER_URL (auth-helper.ts), E2E_BUNKER_B_URL (auth-helper-b.ts), E2E_BUNKER_C_URL (auth-helper-c.ts).",
+    "rationale": "Honors the spec default (Design Decision #8 + AC-3P-FILE-4 name the static constants as the literal requirement; architecture.md constraint #2 sets static-constants as the default and spawnSpecBunker x3 as an explicit S7 amendment, not an S1 default). Actor C is authenticated via two-party.ts authenticate(pageC, E2E_BUNKER_C_URL) — NOT the bare authenticateAsBunkerC — so C gets clearAppState + slot-pin + __notestrTestPubkey hook-wait parity with A and B (architecture.md constraint #3).",
+    "risk_flagged_for_S7": "KeyPackage accumulation on the SHARED A/B/C bunker identities. The 2-party and multi-user-md PROPERTY specs deliberately use spawnSpecBunker per-spec fresh bunkers precisely to avoid KP buildup across the ~15-iteration command loop. The S1 skeleton runs no command loop and never invites, so it adds at most one NIP-33-replaceable KP per identity (identical load to the already-green three-party.spec.ts, which uses these same static constants). The accumulation only materializes once S5 wires the full command loop. If S7 wall-clock validation shows KP-accumulation flakiness, the known mitigation is spawnSpecBunker x3, which would be an EXPLICIT amendment to AC-3P-FILE-4 rather than a silent deviation.",
+    "alternative_considered": "spawnSpecBunker('mu-3p-A'/'-B'/'-C') x3 (the 2-party property convention). Deferred to S7 per the architecture's stated posture; not adopted in S1 to avoid silently deviating from a frozen AC."
+  },
+  "reviews": {
+    "ollama": {
+      "ran": true,
+      "verdict": "approve",
+      "findings": 0,
+      "note": "Covered the new spec file (re-run after `git add -N` made the untracked file visible to the working-tree diff). Output came back as the local model's schema-parse fallback (trailing comma); decoded verdict approve, findings []."
+    },
+    "codex": {
+      "ran": true,
+      "verdict": "1 finding (P2)",
+      "findings": 1,
+      "p2_finding": "Avoid publishing property-test key packages to shared A/B/C bunkers (multi-user-3p.property.spec.ts:260-277) — shared-bunker auth accumulates stale KPs and can make later specs flakier; recommends per-spec bunkers.",
+      "disposition": "NOT actioned in S1 (deliberate). This is the exact KP-accumulation tension the exploration + architecture pre-named; the spec default (AC-3P-FILE-4 static constants) is honored in S1 and the risk is flagged for S7 wall-clock validation. Recorded as post-impl verification question VQ-S1-011 so the verifier sees the judgment call. Codex itself noted 'the skeleton itself never exercises invites'."
+    },
+    "unactioned_findings_recorded_as_post_impl_questions": 2
+  },
+  "verification": {
+    "examined_at": "2026-05-25T19:30:00Z",
+    "examiner": "verification-examiner",
+    "all_pass": true,
+    "questions": [
+      {
+        "id": "VQ-S1-001",
+        "result": "PASS",
+        "evidence": "File confirmed at e2e/tests/multi-user-3p.property.spec.ts — read successfully, 330 lines."
+      },
+      {
+        "id": "VQ-S1-002",
+        "result": "PASS",
+        "evidence": "Exactly one test.describe.serial (line 297: '[C0,S5,S6,S7,S10,A7-A12,A14] 3-party multi-user property') containing exactly one test (line 300: '[C0,S5,S6,S7,S10] settled-state equality holds across A/B/C'). No extra tests or describes."
+      },
+      {
+        "id": "VQ-S1-003",
+        "result": "PASS",
+        "evidence": "Line 300 title string: '[C0,S5,S6,S7,S10] settled-state equality holds across A/B/C' — contains all five bracketed invariant IDs [C0,S5,S6,S7,S10]."
+      },
+      {
+        "id": "VQ-S1-004",
+        "result": "PASS",
+        "evidence": "beforeAll (lines 245-285): contextA/B/C = browser.newContext(); pageA/B/C = context.newPage(); authenticate(pageB, E2E_BUNKER_B_URL), authenticate(pageC, E2E_BUNKER_C_URL), authenticate(pageA, E2E_BUNKER_URL). afterAll (lines 287-291): contextA?.close(), contextB?.close(), contextC?.close(). All six resources created and torn down."
+      },
+      {
+        "id": "VQ-S1-005",
+        "result": "PASS",
+        "evidence": "Module-scope declarations (lines 241-243): let cachedPubkeyA/B/C: string. Read sites (lines 282-284): cachedPubkeyA = await getPubkeyHex(pageA) (etc.) — called once after authenticate() has already polled __notestrTestPubkey into existence."
+      },
+      {
+        "id": "VQ-S1-006",
+        "result": "PASS",
+        "evidence": "RealSystem3P constructor (lines 181-185): pageA/pageB/pageC as constructor args (public readonly). page(actor) accessor (lines 188-192): actor === 'A' → pageA, etc. Mirrors 2-party RealSystem shape. No import of or mutation to the 2-party file."
+      },
+      {
+        "id": "VQ-S1-007",
+        "result": "PASS",
+        "evidence": "ModelState3P (lines 91-166): groupId/groupName (single shared group, null by default), pubkeyA/B/C (distinct per-actor), memberA/B/C (booleans), tasks Map (group-scoped), epochSequenceA/B/C (number[]), lastSwitched, reset(). Comment on lines 83-85 explicitly states NO multi-device same-pubkey state — contrast with multi-user-md."
+      },
+      {
+        "id": "VQ-S1-008",
+        "result": "PASS",
+        "evidence": "Line 276: await authenticate(pageC, E2E_BUNKER_C_URL) — uses two-party.ts authenticate(), which calls clearAppState, pinClientSlot, and polls __notestrTestPubkey. NOT the bare authenticateAsBunkerC from auth-helper-c.ts (which skips those steps, confirmed via grep: only exports authenticateAsBunkerC at line 40). architecture.md constraint 3 honored."
+      },
+      {
+        "id": "VQ-S1-009",
+        "result": "PASS",
+        "evidence": "result.json bunker_setup_decision field (lines 25-30): choice = 'STATIC per-identity constants'; rationale names AC-3P-FILE-4 + design-decision §8; risk_flagged_for_S7 explicitly names KP-accumulation on shared A/B/C identities and defers spawnSpecBunker x3 to S7 as an explicit amendment — not a silent deviation."
+      },
+      {
+        "id": "VQ-S1-010",
+        "result": "PASS",
+        "evidence": "playwright --list output: 'Total: 3 tests in 1 file' — exactly one test definition fanned to chromium + Mobile Chrome + Mobile Safari projects (mobile skipped at runtime via SKIP_MOBILE_REASON). Skeleton body (lines 301-327) has no fc.commands, only wiring assertions, runs cleanly as a placeholder."
+      },
+      {
+        "id": "VQ-S1-011",
+        "result": "PASS",
+        "evidence": "Static constants match AC-3P-FILE-4 (architecture.json constraints_allowed: E2E_BUNKER_URL/BUNKER_B_URL/BUNKER_C_URL). KP-accumulation risk is surfaced: (a) inline comment block lines 260-269 in spec file names the deferral to S7 and explicitly notes spawnSpecBunker x3 would be an 'EXPLICIT amendment to AC-3P-FILE-4'; (b) result.json bunker_setup_decision.risk_flagged_for_S7 names the accumulation trigger and mitigation; (c) codex P2 finding is recorded with disposition 'NOT actioned in S1 (deliberate)'. Deferral is correctly surfaced, not silently deviated."
+      },
+      {
+        "id": "VQ-S1-012",
+        "result": "PASS",
+        "evidence": "window.__notestrTestTasks at line 197: identical pattern to multi-user.property.spec.ts:152 (confirmed via grep). multi-user-md.property.spec.ts uses a different getTasks (no window.__notestrTestTasks in md file, confirmed via grep). The .d.ts ambient declaration is in src/types/notestr-test-hooks.d.ts — e2e/ is outside root tsconfig include, so isolated tsc would report the same errors as the frozen two-party.ts, but this is a known transpilation artefact, not a real type error. The pattern is not novel."
+      }
+    ],
+    "deferred_findings": [],
+    "verification_note": "All 12 questions pass. S1 skeleton is clean. Epic may proceed to S2."
+  },
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The mandatory review's working-tree scope only diffs TRACKED changes, so the first Ollama pass reviewed only BACKLOG.json/package-lock.json and silently missed the entire new untracked spec file — a clean 'approve' that had not actually seen the implementation. I had to `git add -N` the new file to force it into the diff and re-run. Any agent creating a brand-new file and then running these reviews must stage it (intent-to-add) first, or the review is a false pass.",
+    "surprised_by": "The result schema pins story_id to ^[0-9]{2}$ (two digits) but this epic's stories.json uses S1..S7; I matched the epic's own ground truth ('S1') since that is what the lead cross-references, accepting the schema-pattern mismatch.",
+    "scope": "meta",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  }
+}

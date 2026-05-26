@@ -1,0 +1,168 @@
+{
+  "story_id": "S3",
+  "status": "verified",
+  "completed_at": "2026-05-25T23:35:00Z",
+  "verified_at": "2026-05-25T23:55:00Z",
+  "verified_by": "verification-examiner",
+  "files_created": [
+    "specs/epic-property-tests-l3-three-party/S3-group-lifecycle-commands/architecture.json",
+    "specs/epic-property-tests-l3-three-party/S3-group-lifecycle-commands/baseline.json",
+    "specs/epic-property-tests-l3-three-party/S3-group-lifecycle-commands/result.json"
+  ],
+  "files_modified": [
+    "e2e/tests/multi-user-3p.property.spec.ts"
+  ],
+  "commands_implemented": 6,
+  "command_classes": [
+    "CgCommand3P",
+    "InCommand3P",
+    "LgCommand3P",
+    "FdCommand3P",
+    "RdCommand3P",
+    "SwCommand3P"
+  ],
+  "helpers_added": [
+    "none — readGroupEpoch3P was already added by S2 and is reused as-is"
+  ],
+  "imports_added": [
+    "USER_B_NPUB (from auth-helper-b.js)",
+    "USER_C_NPUB (from auth-helper-c.js)",
+    "createGroup, currentGroupId, forgetLeafByIndex, inviteByNpub, leafIndexesFor, selectGroup, switchIdentity (from two-party.js — all pre-existing exports, no new exports added)"
+  ],
+  "tests_added": {
+    "property": 0,
+    "note": "S3 adds command classes only; they are wired into the fc.commands array in S5. Test definition count is unchanged (still 1)."
+  },
+  "test_counts": {
+    "tests_in_file_before": 3,
+    "tests_in_file_after": 3,
+    "test_definitions": 1,
+    "verification_command": "npx playwright test e2e/tests/multi-user-3p.property.spec.ts --list",
+    "note": "Confirmed exactly 1 test definition (fanned out across chromium + Mobile Chrome + Mobile Safari = 3 listings). Unchanged from S1/S2 baseline — zero regression."
+  },
+  "acceptance_criteria_satisfied": [
+    {"id": "AC-3P-CG-1", "how": "CgCommand3P dispatches createGroup exclusively on r.pageA (admin origin). check returns true only when !m.memberA && m.groupId === null (plus m.pubkeyA !== null defensively). No CgCommand3P('B'|'C') exists — group origination is restricted to A as a model precondition (design-decision #2)."},
+    {"id": "AC-3P-IN-1", "how": "InCommand3P(invitee: 'B'|'C') — the constructor takes only the invitee; the inviter is always A (inviteByNpub on r.pageA). check returns true only when m.memberA && m.groupId !== null && !m.actorIsMember(invitee)."},
+    {"id": "AC-3P-IN-2", "how": "The !m.actorIsMember(this.invitee) clause in InCommand3P.check excludes the already-a-member invite shape, so fast-check never generates a redundant re-invite. It is pruned by check(), not silently no-op'd at run time (VQ-S3-003)."},
+    {"id": "AC-3P-LG-1", "how": "LgCommand3P(actor: 'A'|'B'|'C') leaves via the actor's OWN page — the group-leave-btn/confirm clicks target r.page(this.actor). check requires the actor is a member with another member remaining (sole-member-leave guard); m.groupId persists for the remaining members."},
+    {"id": "AC-3P-FD-1", "how": "FdCommand3P forgets a B-or-C leaf on r.pageA (admin). check = m.memberA && (m.memberB || m.memberC) && m.groupId !== null. K==1 → invitee non-member; K>1 → leaf count polled to K-1."},
+    {"id": "AC-3P-RD-1", "how": "RdCommand3P(actor, name) renames a device row on the actor's OWN page (r.page(actor)). UI-local; check = m.actorIsMember(actor) && m.groupId !== null."},
+    {"id": "AC-3P-SW-1", "how": "SwCommand3P switches r.pageA between E2E_BUNKER_URL (A) and E2E_BUNKER_B_URL (B) ONLY, alternating by comparing m.pubkeyA to cachedPubkeyA. An inline comment names AC-3P-SW-1 and states A↔C and B↔C switches are NOT generated (no Sw variant for C). check = m.groupId !== null. Admin-only/MIP-03 constraints are model preconditions, not runtime checks."}
+  ],
+  "verification_questions_addressed": [
+    {"id": "VQ-S3-001", "answer": "CgCommand3P.check = !m.memberA && m.groupId === null && m.pubkeyA !== null. run() calls createGroup(r.pageA, name) and currentGroupId(r.pageA) — dispatch is on pageA only. There is no CgCommand3P for B or C."},
+    {"id": "VQ-S3-002", "answer": "InCommand3P constructor signature is (invitee: 'B'|'C'); the inviter is hard-wired to A (inviteByNpub on r.pageA). check = m.memberA && m.groupId !== null && !m.actorIsMember(this.invitee)."},
+    {"id": "VQ-S3-003", "answer": "The already-a-member shape is excluded by the !m.actorIsMember(this.invitee) clause in check(), so the harness prunes it before generation. The run() body has no no-op fallthrough for a member-invitee — it always performs a real invite+join."},
+    {"id": "VQ-S3-004", "answer": "LgCommand3P(actor: ActorId); run() resolves page = r.page(this.actor) and performs the group-leave-btn + group-leave-confirm clicks on that page — each actor leaves through its own page, never a hard-coded pageA."},
+    {"id": "VQ-S3-005", "answer": "FdCommand3P.check = m.memberA && (m.memberB || m.memberC) && m.groupId !== null. run() forgets on r.pageA only; non-admin forget is not representable (there is no per-actor Fd command) — encoded as a model precondition."},
+    {"id": "VQ-S3-006", "answer": "RdCommand3P(actor, name); run() targets the first device-row textbox on r.page(this.actor) — the actor's own device. The rename is UI-local with no MLS/membership side effect."},
+    {"id": "VQ-S3-007", "answer": "SwCommand3P.run determines the target via onIdentityA = (m.pubkeyA === cachedPubkeyA); target is E2E_BUNKER_B_URL when on A, else E2E_BUNKER_URL — bunker A and bunker B only. The leading doc comment names AC-3P-SW-1 and states A↔C and B↔C are NOT generated and that there is no Sw variant for C."},
+    {"id": "VQ-S3-008", "answer": "MIP-03 admin-only constraints are model preconditions, not fc.pre() discards or runtime guards: there is simply no command that lets B/C invite (InCommand3P inviter is always A) and no per-actor Fd (forget runs only on A). Impossible admin actions are never generated, keeping random-action density high (design-decision #2)."},
+    {"id": "VQ-S3-009", "answer": "Cg sets m.groupId/m.groupName/m.memberA=true and clears m.tasks; In sets m.memberB or m.memberC; Lg clears only the leaver's membership flag (m.groupId persists for remaining members); Fd clears an invitee's flag iff its last leaf is forgotten. Consistent with the S4 headline assertions."},
+    {"id": "VQ-S3-010", "answer": "LgCommand3P.check requires at least one OTHER actor to still be a member (others.some(actorIsMember)), mirroring the 2-party Lg remaining-member guard. The harness therefore never shrinks into a sole-member-leave (covered separately by forget-device-self.spec.ts) or a degenerate empty group."},
+    {"id": "VQ-S3-011", "answer": "SwCommand3P captures priorGroupIds into m.lastSwitched BEFORE switchIdentity, excluding the shared group when the post-switch identity is also a member (false-positive guard for assertS7). After the switch it updates m.pubkeyA from getPubkeyHex, clears m.memberA, and resets m.epochSequenceA — matching the 2-party SwCommand bookkeeping and what assertS7_3P expects in S4."}
+  ],
+  "verification_block_note": "This verification block was re-authored on 2026-05-26 by the verification-examiner. The prior verification_results block carried the same verified_at timestamp but its evidence was misaligned (question IDs cited the wrong commands, e.g. VQ-S3-003 described Lg, VQ-S3-009/010/011 described unrelated facts). It was replaced with the honest, independently-read results below, keyed to the actual verification.json question text. All 11 still PASS; status stays 'verified'.",
+  "verification": {
+    "performed_by": "verification-examiner",
+    "performed_at": "2026-05-26T00:00:00Z",
+    "method": "Direct read of e2e/tests/multi-user-3p.property.spec.ts (Group-lifecycle section, lines 619-1017) against verification.json; frozen-file check via git diff --stat; test-definition count via playwright --list.",
+    "results": [
+      {
+        "question_id": "VQ-S3-001",
+        "verdict": "PASS",
+        "evidence": "CgCommand3P.check() (multi-user-3p.property.spec.ts:659-661) returns '!m.memberA && m.groupId === null && m.pubkeyA !== null'. run() dispatches on pageA only: createGroup(r.pageA, name) at :667 and currentGroupId(r.pageA) at :668. No CgCommand3P('B'|'C') exists — origination is A-only as a model precondition."
+      },
+      {
+        "question_id": "VQ-S3-002",
+        "verdict": "PASS",
+        "evidence": "InCommand3P constructor type is `(private readonly invitee: \"B\" | \"C\")` (multi-user-3p.property.spec.ts:710). check() (:712-718) = 'm.memberA && m.groupId !== null && !m.actorIsMember(this.invitee)'. Inviter is always A: inviteByNpub(r.pageA, inviteeNpub) at :730."
+      },
+      {
+        "question_id": "VQ-S3-003",
+        "verdict": "PASS",
+        "evidence": "The '!m.actorIsMember(this.invitee)' clause in InCommand3P.check() (multi-user-3p.property.spec.ts:716) excludes the already-a-member shape so fast-check never generates a redundant re-invite. run() (:720-756) has no member-invitee no-op branch — it always performs a real invite+join. Pruned by check(), not no-op'd at run."
+      },
+      {
+        "question_id": "VQ-S3-004",
+        "verdict": "PASS",
+        "evidence": "LgCommand3P constructor is `(private readonly actor: ActorId)` (multi-user-3p.property.spec.ts:777). run() resolves `const page = r.page(this.actor)` (:792) and performs group-leave-btn + group-leave-confirm clicks on THAT page (:795-799) — each actor leaves via its own page, never hard-coded pageA."
+      },
+      {
+        "question_id": "VQ-S3-005",
+        "verdict": "PASS",
+        "evidence": "FdCommand3P.check() (multi-user-3p.property.spec.ts:836-842) = 'm.memberA && (m.memberB || m.memberC) && m.groupId !== null'. run() forgets on pageA only (leafIndexesFor(r.pageA,...) :857; forgetLeafByIndex(r.pageA,...) :876). There is no per-actor Fd command, so non-admin forget is unrepresentable (model precondition)."
+      },
+      {
+        "question_id": "VQ-S3-006",
+        "verdict": "PASS",
+        "evidence": "RdCommand3P constructor is `(actor: ActorId, name: string)` (multi-user-3p.property.spec.ts:917-920). run() targets the actor's OWN page: `const page = r.page(this.actor)` (:928), device-row textbox fill+blur on that page (:930-939). UI-local; no MLS/membership mutation."
+      },
+      {
+        "question_id": "VQ-S3-007",
+        "verdict": "PASS",
+        "evidence": "SwCommand3P.run() toggles target between E2E_BUNKER_B_URL and E2E_BUNKER_URL ONLY (multi-user-3p.property.spec.ts:980-981) based on m.pubkeyA === cachedPubkeyA — bunker A and bunker B exclusively. The doc comment at :951-960 names AC-3P-SW-1 and states 'A↔C and B↔C switches are NOT generated — there is no Sw variant for C.' check() (:972-974) = m.groupId !== null."
+      },
+      {
+        "question_id": "VQ-S3-008",
+        "verdict": "PASS",
+        "evidence": "MIP-03 admin-only constraints are model preconditions, not fc.pre()/runtime guards: section comment (multi-user-3p.property.spec.ts:627-637) states the impossibility is encoded by never generating such commands 'rather than by an fc.pre() discard at run time. This keeps random-action density high.' Confirmed structurally — InCommand3P inviter hard-wired to A (:730), FdCommand3P runs only on pageA (:876), no CgCommand3P for B/C, and the only 'fc.pre' token in the whole file is inside that comment (:636) — there are zero fc.pre() calls."
+      },
+      {
+        "question_id": "VQ-S3-009",
+        "verdict": "PASS",
+        "evidence": "Cg sets m.groupId/m.groupName, m.memberA=true and clears m.tasks (multi-user-3p.property.spec.ts:670-675); In sets m.memberB or m.memberC (:743-744); Lg clears only the leaver's flag and never nulls m.groupId (:803-805, comment :801-802). Bookkeeping matches the S4 headline-assertion expectations (single shared groupId surviving leaves)."
+      },
+      {
+        "question_id": "VQ-S3-010",
+        "verdict": "PASS",
+        "evidence": "LgCommand3P.check() (multi-user-3p.property.spec.ts:779-786) requires `others.some((a) => m.actorIsMember(a))` after filtering out the leaver — at least one OTHER member must remain. Mirrors the 2-party Lg remaining-member guard (multi-user.property.spec.ts:306-332), so the harness never shrinks into a sole-member-leave / degenerate empty group."
+      },
+      {
+        "question_id": "VQ-S3-011",
+        "verdict": "PASS",
+        "evidence": "SwCommand3P captures priorGroupIds into m.lastSwitched BEFORE switchIdentity (multi-user-3p.property.spec.ts:988-996, switch at :1000), excluding the shared group when the post-switch identity is also a member (false-positive guard :990-994). After the switch it updates m.pubkeyA (:1003-1006), clears m.memberA (:1010) and resets m.epochSequenceA (:1011) — matching the 2-party SwCommand bookkeeping (multi-user.property.spec.ts:824-850) that assertS7_3P consumes in S4."
+      }
+    ],
+    "extra_checks": [
+      {
+        "check": "All toString() return the matrix DSL `${Actor}.Verb(args)` form",
+        "verdict": "PASS",
+        "evidence": "Cg 'A.Cg(group)' (:690), In `A.In(${this.invitee})` (:759), Lg `${this.actor}.Lg(group)` (:819), Fd 'A.Fd(B-or-C-leaf)' (:900), Rd `${this.actor}.Rd(device, ${this.name.slice(0,12)})` (:946), Sw 'A.Sw(B)' (:1015). Per-actor commands interpolate ${this.actor}; admin-fixed commands name A literally."
+      },
+      {
+        "check": "Frozen files unchanged (two-party.ts, multi-user.property.spec.ts, three-party.spec.ts, src/**)",
+        "verdict": "PASS",
+        "evidence": "git diff --stat on those four paths returns empty; git status --short on the three frozen e2e files returns empty. None are modified."
+      },
+      {
+        "check": "Exactly 1 test definition in multi-user-3p.property.spec.ts",
+        "verdict": "PASS",
+        "evidence": "npx playwright test --list reports 'Total: 3 tests in 1 file' — one test definition (line 1096) fanned across chromium + Mobile Chrome + Mobile Safari. Unchanged from S1/S2."
+      }
+    ],
+    "summary": {
+      "total": 11,
+      "passed": 11,
+      "failed": 0,
+      "verdict": "All 11 VQ-S3-* questions PASS on an independent read of the actual source. The six group-lifecycle commands are correctly admin-modelled (Cg/In/Fd fixed to A; Lg/Rd per-actor; Sw A<->B only), gate via check() preconditions with zero fc.pre()/runtime guards, maintain single-shared-group membership bookkeeping (groupId persists across leaves), emit the matrix-DSL toString form, and leave all frozen files untouched. Test-definition count is still exactly 1."
+    }
+  },
+  "verification_summary": {
+    "total": 11,
+    "passed": 11,
+    "failed": 0,
+    "verdict": "All 11 verification questions PASS against the actual source of e2e/tests/multi-user-3p.property.spec.ts. The six S3 group-lifecycle command classes (Cg/In/Lg/Fd/Rd/Sw) are correctly admin-modelled (Cg/In/Fd fixed to A; Lg/Rd per-actor; Sw A↔B only), gate via check() preconditions rather than runtime guards, maintain single-shared-group membership bookkeeping (groupId persists across leaves), emit the matrix-DSL toString form, and leave both frozen files (multi-user.property.spec.ts, two-party.ts) untouched."
+  },
+  "issues_encountered": [
+    "Single-group divergence from the 2-party template: the 2-party Lg/Sw null the leaver's per-actor groupId, but the 3P model has one shared m.groupId that must survive for the remaining members. LgCommand3P therefore clears only the leaver's membership flag and never nulls m.groupId; SwCommand3P clears m.memberA but leaves m.groupId intact (the group is still real for the other identity). Documented inline.",
+    "SwCommand3P references the module-scope cachedPubkeyA and the E2E_BUNKER_URL/E2E_BUNKER_B_URL constants. cachedPubkeyA is declared later in the file (test-lifecycle section) but resolves correctly because the reference is inside a method body evaluated at run time, not at class-definition time. The bunker constants are imported at the top.",
+    "Standalone `tsc` (run outside the project's tsconfig) reports a pre-existing Task-type error at line 294 inside the S2 CtCommand3P task.created payload and window.__notestr* 'does not exist' errors — both are artifacts of not loading src/types/notestr-test-hooks.d.ts and the project's TaskEvent types. Including the hooks .d.ts clears the window errors; the line-294 Task error is in S2's frozen code, identical to the 2-party file's shape, and is not introduced by S3. No NEW type errors come from the S3 additions.",
+    "S3 added no new helpers and no new two-party.ts exports — all six commands consume pre-existing exports, honoring the additive-only fixture boundary rule (architecture.md §Boundary rule 4)."
+  ],
+  "deferred_to_later_stories": [
+    "S4: headline assertions (assertC0_3P / assertS5_3P / assertS6_3P / assertS7_3P / assertS10_3P), including the A14 wire-level kind-445 checks for Lg/Fd-last-leaf which are asserted at quiescence rather than per command.",
+    "S5: wire all S2 + S3 commands into the fc.commands array + fc.assert (this is where the S3 classes become live arbitraries, including the per-iteration reset and the post-chain identity restoration).",
+    "S7: wall-clock validation against the live relay — the real invite/join/forget MLS flows in S3 are the heaviest commands and are the most likely source of any KP-accumulation flakiness flagged in S1's result."
+  ]
+}

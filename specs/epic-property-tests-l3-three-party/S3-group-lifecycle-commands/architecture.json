@@ -1,0 +1,88 @@
+{
+  "module_name": "3P group-lifecycle commands (multi-user-3p.property.spec.ts)",
+  "purpose": "Port the 2-party group-lifecycle commands (Cg/In/Lg/Fd/Rd/Sw in multi-user.property.spec.ts) to the three-party axis. Six fast-check AsyncCommand classes that mutate ModelState3P membership/group bookkeeping for the single shared group, adapted to the admin-only, single-group, three-distinct-pubkey model (S1 design-decisions #2, #6). Defined in S3; wired into the fc.commands array in S5.",
+  "public_api": [
+    {
+      "name": "CgCommand3P",
+      "signature": "new CgCommand3P()",
+      "description": "A-only group creation (admin origin). check: !m.memberA && m.groupId === null && m.pubkeyA !== null. run: createGroup(pageA), set m.groupId/m.groupName, m.memberA=true, clear m.tasks. Postcondition (A7): __notestrTestGroups().length > 0 on pageA. toString: 'A.Cg(group)'."
+    },
+    {
+      "name": "InCommand3P",
+      "signature": "new InCommand3P(invitee: \"B\"|\"C\")",
+      "description": "A invites B or C (inviter always A). check: m.memberA && m.groupId !== null && !m.actorIsMember(invitee) — the already-a-member shape is PRUNED by check, never silently no-op'd (VQ-S3-003). run: inviteByNpub(pageA, USER_B/C_NPUB), reload invitee + selectGroup, set m.memberB/m.memberC. Postcondition (A8): invitee's __notestrTestGroups().length > 0. toString: `A.In(${invitee})`."
+    },
+    {
+      "name": "LgCommand3P",
+      "signature": "new LgCommand3P(actor: \"A\"|\"B\"|\"C\")",
+      "description": "Actor leaves via its OWN page (r.page(actor)). check: m.actorIsMember(actor) && m.groupId !== null && at least one OTHER member remains (sole-member-leave guard, VQ-S3-010). run: click group-leave-btn + group-leave-confirm on the actor's page, clear the leaver's membership flag (m.groupId persists for remaining members), record a remaining member's epoch. toString: `${actor}.Lg(group)`."
+    },
+    {
+      "name": "FdCommand3P",
+      "signature": "new FdCommand3P()",
+      "description": "A (admin) forgets a B-or-C leaf. check: m.memberA && (m.memberB || m.memberC) && m.groupId !== null. run: resolve the first invitee member with a leaf on A's tree (B preferred, C fallback), forgetLeafByIndex on pageA (try/catch skip on MLS commit error), then K==1 → invitee non-member, K>1 → poll leaf count to K-1. toString: 'A.Fd(B-or-C-leaf)'."
+    },
+    {
+      "name": "RdCommand3P",
+      "signature": "new RdCommand3P(actor: \"A\"|\"B\"|\"C\", name: string)",
+      "description": "Actor renames one of its OWN device rows on its own page. check: m.actorIsMember(actor) && m.groupId !== null. run: fill the first device-row textbox with a derived unique name and blur. UI-local: no MLS/task/membership effect; records the actor's epoch only. toString: `${actor}.Rd(device, name)`."
+    },
+    {
+      "name": "SwCommand3P",
+      "signature": "new SwCommand3P()",
+      "description": "Switches pageA between bunker A and bunker B ONLY (AC-3P-SW-1; A↔C and B↔C are NOT generated — no Sw variant for C). check: m.groupId !== null (there must be a group to switch away from). run: target = (m.pubkeyA === cachedPubkeyA) ? E2E_BUNKER_B_URL : E2E_BUNKER_URL; capture priorGroupIds (exclude the shared group when the post-switch identity is also a member) into m.lastSwitched BEFORE switchIdentity(pageA, target); update m.pubkeyA, clear m.memberA, reset m.epochSequenceA. toString: 'A.Sw(B)'."
+    }
+  ],
+  "private_files": [],
+  "owned_data": [
+    "CgCommand3P / InCommand3P / LgCommand3P / FdCommand3P / RdCommand3P / SwCommand3P (6 fc.AsyncCommand classes)"
+  ],
+  "dependencies_allowed": [
+    "@playwright/test (expect, Page)",
+    "fast-check (fc.AsyncCommand)",
+    "e2e/fixtures/two-party.ts (read-only: createGroup, currentGroupId, inviteByNpub, selectGroup, forgetLeafByIndex, leafIndexesFor, switchIdentity, getPubkeyHex, settle — all pre-existing exports)",
+    "e2e/fixtures/auth-helper.ts (E2E_BUNKER_URL), auth-helper-b.ts (E2E_BUNKER_B_URL, USER_B_NPUB), auth-helper-c.ts (USER_C_NPUB)",
+    "ModelState3P / RealSystem3P / ActorId / readGroupEpoch3P (S1+S2 symbols in the same file)",
+    "module-scope cachedPubkeyA (set in beforeAll; read lazily inside SwCommand3P.run)"
+  ],
+  "dependencies_forbidden": [
+    "src/** (no production-code edits, AC-X-NO-PROD-CHANGE-3P-1)",
+    "e2e/tests/multi-user.property.spec.ts (frozen, AC-X-NO-2P-CHANGE-1)",
+    "e2e/tests/three-party.spec.ts (preserved, AC-X-NO-EXAMPLE-DELETION-3P-1)",
+    "any mutation of e2e/fixtures/two-party.ts (only additive consumption of existing exports)"
+  ],
+  "external_ports": [
+    "Production group hooks via two-party.ts wrappers: createGroup/inviteByNpub/selectGroup (UI flows), forgetLeafByIndex/leafIndexesFor (__notestrTestForgetLeaf/__notestrTestPubkeyLeafIndexes), getGroupEpochHook (__notestrTestGroupEpoch via readGroupEpoch3P), __notestrTestGroups (inline group-count reads)"
+  ],
+  "events_emitted": [
+    "MLS group-state mutations via the live UI: group create (Cg), Welcome/Add commits (In), self-removal commit (Lg), Remove commit (Fd). Identity switch (Sw) re-auths the page against a different bunker."
+  ],
+  "events_consumed": [
+    "Welcome events (invitee join path, via selectGroup after reload)"
+  ],
+  "test_targets": [
+    "AC-3P-CG-1: CgCommand3P admin-only — runs on pageA only; check true only when m.groupId===null && !m.memberA.",
+    "AC-3P-IN-1: InCommand3P(invitee:'B'|'C'), inviter always A; check true only when m.memberA && !m.actorIsMember(invitee).",
+    "AC-3P-IN-2: the already-a-member invite shape is pruned by check (!m.actorIsMember(invitee)), not silently no-op'd at run.",
+    "AC-3P-LG-1: LgCommand3P(actor) — each actor leaves via its own page r.page(actor).",
+    "AC-3P-FD-1: FdCommand3P — A forgets a B-or-C leaf; check m.memberA && (m.memberB||m.memberC) && m.groupId!==null.",
+    "AC-3P-RD-1: RdCommand3P(actor,name) — per-actor own device on the actor's own page.",
+    "AC-3P-SW-1: SwCommand3P switches pageA between bunker A and bunker B ONLY (A↔C/B↔C never generated); restriction documented inline naming AC-3P-SW-1."
+  ],
+  "design_notes": [
+    "VQ-S3-001 / AC-3P-CG-1: CgCommand3P.check = !m.memberA && m.groupId === null && m.pubkeyA !== null; run dispatches createGroup exclusively on r.pageA. There is no CgCommand3P('B'|'C') — group origination is restricted to A as a model precondition (design-decision #2), not a runtime guard.",
+    "VQ-S3-002 / AC-3P-IN-1: InCommand3P constructor type is `invitee: 'B'|'C'` (inviter hard-wired to A). check = m.memberA && m.groupId !== null && !m.actorIsMember(this.invitee).",
+    "VQ-S3-003 / AC-3P-IN-2: the !m.actorIsMember(invitee) clause in check() excludes the already-a-member shape so fast-check never generates a redundant re-invite — pruned, not run-time no-op'd.",
+    "VQ-S3-004 / AC-3P-LG-1: LgCommand3P(actor: ActorId); run dispatches the leave on r.page(this.actor). Any member can leave; only invite/forget are admin-only.",
+    "VQ-S3-005 / AC-3P-FD-1: FdCommand3P.check = m.memberA && (m.memberB || m.memberC) && m.groupId !== null; forget always runs on pageA. Non-admin forget is not representable (no per-actor Fd) — a model precondition.",
+    "VQ-S3-006 / AC-3P-RD-1: RdCommand3P renames on r.page(this.actor); UI-local, no MLS/membership mutation.",
+    "VQ-S3-007 / AC-3P-SW-1: SwCommand3P alternates pageA between E2E_BUNKER_URL (A) and E2E_BUNKER_B_URL (B) by comparing m.pubkeyA to cachedPubkeyA; an inline comment names AC-3P-SW-1 and states A↔C/B↔C are never generated.",
+    "VQ-S3-008: admin-only MIP-03 constraints (inviter==A, forget-by-A-only) are encoded as model preconditions — there are simply no commands for B/C-invite or non-admin-forget — keeping random-action density high rather than using fc.pre() discards.",
+    "VQ-S3-009: Cg sets memberA + groupId + groupName and clears tasks; In sets the invitee's membership flag; Lg clears only the leaver's flag (groupId persists for remaining members); Fd clears an invitee's flag iff its last leaf is forgotten. Consistent with the S4 assertions.",
+    "VQ-S3-010: LgCommand3P.check requires at least one OTHER member to remain, mirroring the 2-party Lg guard, so the harness never shrinks into a sole-member-leave (covered by forget-device-self.spec.ts) or a degenerate empty group.",
+    "VQ-S3-011: SwCommand3P captures priorGroupIds into m.lastSwitched BEFORE the switch and excludes the shared group when the post-switch identity is also a member (false-positive guard); after switch it updates m.pubkeyA, clears m.memberA, and resets m.epochSequenceA — matching what assertS7_3P expects in S4.",
+    "Single-group model: Lg does NOT null m.groupId (unlike the 2-party Lg which nulled the leaver's per-actor groupId) because there is exactly one shared group that survives for the remaining members; only the leaver's membership flag flips.",
+    "Forget-target resolution: Fd prefers a B leaf, falling back to C, and only forgets an invitee that actually has a leaf on A's tree (leafIndexesFor length > 0), so the command never targets a phantom leaf.",
+    "cachedPubkeyA is referenced lazily inside SwCommand3P.run (a method body), so the module-scope `let cachedPubkeyA` declared later in the test-lifecycle section is resolved at run time, not at class-definition time."
+  ]
+}

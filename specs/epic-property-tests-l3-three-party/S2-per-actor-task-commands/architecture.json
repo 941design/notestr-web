@@ -1,0 +1,88 @@
+{
+  "module_name": "3P per-actor task commands (multi-user-3p.property.spec.ts)",
+  "purpose": "Port the 2-party task commands (Ct/Ut/Sc/As/Un/Dt/Rl) to the three-party axis. Each command is a fast-check AsyncCommand parameterised on actor: \"A\"|\"B\"|\"C\", dispatching its task event through that actor's own page and asserting the matching per-command postcondition (A1/A2/A3/A4/A5/A11) from the same page. Commands are wired into the fc.commands array in S5; in S2 they are defined but not yet referenced (expected for a property machine).",
+  "public_api": [
+    {
+      "name": "CtCommand3P",
+      "signature": "new CtCommand3P(actor: \"A\"|\"B\"|\"C\", title: string, description: string)",
+      "description": "Dispatches task.created on r.page(actor). check: m.actorIsMember(actor) && m.groupId !== null. Postcondition (A1): r.getTask(actor,id) is defined, status==='open', assignee===null, createdBy===actor pubkey. toString: `${actor}.Ct(title.slice(0,20))`."
+    },
+    {
+      "name": "UtCommand3P",
+      "signature": "new UtCommand3P(actor: \"A\"|\"B\"|\"C\", title: string)",
+      "description": "Dispatches task.updated {title}. check: + m.tasks.size > 0. Postcondition (A3): r.getTask(actor,targetId).title === title. toString: `${actor}.Ut(title.slice(0,20))`."
+    },
+    {
+      "name": "ScCommand3P",
+      "signature": "new ScCommand3P(actor: \"A\"|\"B\"|\"C\", status: TaskStatus)",
+      "description": "Dispatches task.status_changed. check: + m.tasks.size > 0. Postcondition (A2): r.getTask(actor,targetId).status === status AND status is one of the closed enum (open|in_progress|done|cancelled). toString: `${actor}.Sc(status)`."
+    },
+    {
+      "name": "AsCommand3P",
+      "signature": "new AsCommand3P(actor: \"A\"|\"B\"|\"C\")",
+      "description": "Dispatches task.assigned assignee=m.pubkeyA. check: + m.tasks.size > 0 && m.pubkeyA !== null. Postcondition (A4): r.getTask(actor,targetId).assignee === pubkeyA. toString: `${actor}.As(pubkeyA)`."
+    },
+    {
+      "name": "UnCommand3P",
+      "signature": "new UnCommand3P(actor: \"A\"|\"B\"|\"C\")",
+      "description": "Dispatches task.assigned assignee=null. check: + m.tasks.size > 0. Postcondition (A5): r.getTask(actor,targetId).assignee === null. toString: `${actor}.Un(task)`."
+    },
+    {
+      "name": "DtCommand3P",
+      "signature": "new DtCommand3P(actor: \"A\"|\"B\"|\"C\")",
+      "description": "Dispatches task.deleted. check: + m.tasks.size > 0. Postcondition (A5): r.getTasks(actor) no longer has targetId. toString: `${actor}.Dt(task)`."
+    },
+    {
+      "name": "RlCommand3P",
+      "signature": "new RlCommand3P(actor: \"A\"|\"B\"|\"C\")",
+      "description": "Reloads r.page(actor), re-navigates to the shared group, asserts task persistence. check: m.actorIsMember(actor) && m.groupId !== null. Postcondition (A11): every pre-reload task still expected by the model is present after reload. toString: `${actor}.Rl()`."
+    },
+    {
+      "name": "readGroupEpoch3P (file-private helper)",
+      "signature": "async function readGroupEpoch3P(page: Page, groupId: string | null): Promise<number | null>",
+      "description": "Reads the MLS epoch for the single shared group via getGroupEpochHook; returns null when groupId is null. Mirrors the 2-party readGroupEpoch but keyed on m.groupId (one group, not per-actor groupIdA/groupIdB). Feeds m.recordEpoch for the S6 monotonicity check wired in S4/S5."
+    }
+  ],
+  "private_files": [],
+  "owned_data": [
+    "CtCommand3P / UtCommand3P / ScCommand3P / AsCommand3P / UnCommand3P / DtCommand3P / RlCommand3P (7 fc.AsyncCommand classes)",
+    "readGroupEpoch3P (file-private epoch reader)"
+  ],
+  "dependencies_allowed": [
+    "@playwright/test (expect, Page)",
+    "fast-check (fc.AsyncCommand)",
+    "uuid (v4 for task ids)",
+    "e2e/fixtures/two-party.ts (read-only: dispatchTaskEvent, getGroupEpochHook, reload, settle — all pre-existing exports)",
+    "ModelState3P / RealSystem3P / ModelTask3P / ActorId / TaskStatus (S1 symbols in the same file)"
+  ],
+  "dependencies_forbidden": [
+    "src/** (no production-code edits, AC-X-NO-PROD-CHANGE-3P-1)",
+    "e2e/tests/multi-user.property.spec.ts (frozen, AC-X-NO-2P-CHANGE-1)",
+    "e2e/tests/three-party.spec.ts (preserved, AC-X-NO-EXAMPLE-DELETION-3P-1)",
+    "any mutation of e2e/fixtures/two-party.ts (S2 needed only additive consumption of existing exports — no new exports added)"
+  ],
+  "external_ports": [
+    "Production task-store hook __notestrTestDispatchTaskEvent (via dispatchTaskEvent)",
+    "Production hooks __notestrTestTasks (via RealSystem3P.getTasks) and __notestrTestGroupEpoch (via getGroupEpochHook)"
+  ],
+  "events_emitted": [
+    "task.created / task.updated / task.status_changed / task.assigned / task.deleted — dispatched through the in-page TaskStore test hook, scoped to the selected shared group"
+  ],
+  "events_consumed": [],
+  "test_targets": [
+    "AC-3P-CMD-CT-1: CtCommand3P(actor,title,desc); check gates on actorIsMember && groupId!==null",
+    "AC-3P-CMD-UT-1: UtCommand3P(actor,title); run asserts post-update title via r.getTask(actor,...)",
+    "AC-3P-CMD-SC-1: ScCommand3P(actor,status); asserts A2 status + enum closure",
+    "AC-3P-CMD-AS-1: AsCommand3P(actor); asserts A4 assignee",
+    "AC-3P-CMD-UN-1: UnCommand3P(actor); asserts A5 assignee===null",
+    "AC-3P-CMD-DT-1: DtCommand3P(actor); asserts deleted task absent",
+    "AC-3P-CMD-RL-1: RlCommand3P(actor); asserts A11 task persistence after reload",
+    "AC-3P-CMD-TOSTRING-1: every toString() returns `${actor}.Verb(args)` matching the matrix DSL"
+  ],
+  "design_notes": [
+    "VQ-S2-009: every command dispatches on r.page(actor) and reads its postcondition from r.getTask(actor,...)/r.getTasks(actor) — no hard-coded pageA. Contrast the 2-party file which sometimes resolved pubkey via actor==='A'?pubkeyA:pubkeyB; here pubkey resolution goes through m.pubkey(actor) which already covers all three actors.",
+    "VQ-S2-010: Ut/Sc/As/Un/Dt all gate on m.tasks.size > 0; As additionally gates on m.pubkeyA !== null (the assignment target). Impossible commands are pruned by fast-check rather than failing at run time.",
+    "VQ-S2-012: postcondition assertions are wrapped in `if (task) { ... }` exactly as the 2-party file, so a transient non-delivery (task not yet materialised on the local page) skips the per-command assert rather than failing the property spuriously. Convergence is still caught at quiescence by the S4 headline assertions. Dt's absence check has no such guard because absence is the success condition.",
+    "Single-group model: there is no per-actor groupIdA/groupIdB here (S1 design-decision), so readGroupEpoch3P and recordEpoch are keyed on the single m.groupId for all actors."
+  ]
+}

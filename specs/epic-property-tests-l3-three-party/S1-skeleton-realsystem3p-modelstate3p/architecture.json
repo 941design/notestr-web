@@ -1,0 +1,57 @@
+{
+  "module_name": "3P property spec (multi-user-3p.property.spec.ts)",
+  "purpose": "Self-contained 3-context model-based property-test file for three DISTINCT pubkeys A/B/C. S1 lands only the skeleton: ModelState3P, RealSystem3P, beforeAll/afterAll lifecycle, and exactly one placeholder test under one test.describe.serial. Commands and assertions land in S2-S5.",
+  "public_api": [
+    {
+      "name": "test (discovered)",
+      "signature": "test.describe.serial(\"[C0,S5,S6,S7,S10,A7-A12,A14] 3-party multi-user property\", () => test(\"[C0,S5,S6,S7,S10] settled-state equality holds across A/B/C\", ...))",
+      "description": "Exactly one Playwright test under one serial describe. Body is a minimal placeholder in S1 (test.skip on mobile + trivial body). Wired with the full fc.commands property in S5."
+    },
+    {
+      "name": "ModelState3P",
+      "signature": "class ModelState3P { groupId/groupName: string|null; pubkeyA/B/C: string|null; memberA/B/C: boolean; tasks: Map<string, ModelTask3P>; epochSequenceA/B/C: number[]; lastSwitched; pubkey(actor): string|null; actorIsMember(actor): boolean; recordEpoch(actor, n: number|null): void; reset(): void }",
+      "description": "Expected-state model for the property machine. Single shared group, three distinct per-actor pubkeys, per-actor membership + epoch sequences. NO multi-device same-pubkey state (contrast multi-user-md). Consumed by S2-S5 command/assertion classes within this file only."
+    },
+    {
+      "name": "RealSystem3P",
+      "signature": "class RealSystem3P { readonly pageA/pageB/pageC: Page; page(actor: \"A\"|\"B\"|\"C\"): Page; getTasks(actor): Promise<Map<string, ModelTask3P>>; getTask(actor, id): Promise<ModelTask3P|undefined>; quiesce(): Promise<void> }",
+      "description": "Wraps three Playwright pages. page() accessor + getTasks/getTask/quiesce readers implemented in S1 (they are stable and used by S2-S5). Command-dispatch methods are added by S2/S3 directly as command classes, not as RealSystem3P methods (mirrors 2-party + md templates)."
+    }
+  ],
+  "private_files": [],
+  "owned_data": [
+    "ModelState3P",
+    "RealSystem3P",
+    "ModelTask3P (interface)",
+    "module-scope lifecycle vars (contextA/B/C, pageA/B/C, cachedPubkeyA/B/C, skipMobile)",
+    "future *Command3P and assert*_3P symbols (S2-S5)"
+  ],
+  "dependencies_allowed": [
+    "@playwright/test",
+    "fast-check",
+    "uuid",
+    "e2e/fixtures/two-party.ts (read-only: authenticate, getPubkeyHex, projectIsMobile, quiesceFor, and S2-S5 verbs/hook readers)",
+    "e2e/fixtures/auth-helper.ts (E2E_BUNKER_URL)",
+    "e2e/fixtures/auth-helper-b.ts (E2E_BUNKER_B_URL)",
+    "e2e/fixtures/auth-helper-c.ts (E2E_BUNKER_C_URL)"
+  ],
+  "dependencies_forbidden": [
+    "src/** (no production-code edits, AC-X-NO-PROD-CHANGE-3P-1)",
+    "e2e/tests/multi-user.property.spec.ts (frozen, AC-X-NO-2P-CHANGE-1)",
+    "e2e/tests/three-party.spec.ts (preserved, AC-X-NO-EXAMPLE-DELETION-3P-1)",
+    "any mutation of e2e/fixtures/two-party.ts (consume read-only; additive exports only if strictly needed, none needed in S1)"
+  ],
+  "external_ports": [
+    "Playwright test runner (discovery via playwright.config.ts testDir e2e/tests)",
+    "NIP-46 bunkers A/B/C (static URLs from .bunker-keys.json via auth-helper*.ts) reached through authenticate()"
+  ],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "AC-3P-FILE-1: file exists",
+    "AC-3P-FILE-2: exactly one test under one test.describe.serial",
+    "AC-3P-FILE-3: test title contains [C0,S5,S6,S7,S10]",
+    "AC-3P-FILE-4: three contexts + three pages in beforeAll, torn down in afterAll, each authenticating its bunker",
+    "AC-3P-FILE-5: cachedPubkeyA/B/C read once after auth, module-scope"
+  ]
+}

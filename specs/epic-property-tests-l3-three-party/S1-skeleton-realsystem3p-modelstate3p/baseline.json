@@ -1,0 +1,19 @@
+{
+  "story_id": "S1",
+  "captured_at": "2026-05-25T17:30:00Z",
+  "baseline_commit": "23823bbda6f82e83d0dfedbb018398ac493a52b3",
+  "status": "NEW_FILE_NO_PRIOR_TESTS",
+  "rationale": "S1 creates a brand-new file e2e/tests/multi-user-3p.property.spec.ts. There are no prior tests for this target. The existing e2e suite is unaffected (additive new file under e2e/tests/, picked up only by make e2e; L1/L2 make test untouched per AC-X-CI-3P-1).",
+  "discovery_baseline": {
+    "command": "npx playwright test --list",
+    "exit_code": 0,
+    "total_tests": 399,
+    "total_files": 32,
+    "three_party_file_present": false,
+    "note": "e2e/ is not in tsconfig include; Playwright scans e2e/tests independently. Discovery succeeds pre-impl."
+  },
+  "regression_target": {
+    "after_impl_total_tests": 402,
+    "explanation": "Exactly one new test definition, fanned out across the THREE configured Playwright projects (chromium + Mobile Chrome + Mobile Safari), so the `npx playwright test --list` total rises by 3 (399 -> 402) and file count by 1 (32 -> 33). The two mobile projects are test.skip-ed at runtime via the SKIP_MOBILE_REASON guard but still LISTED. No previously-discovered test is removed or renamed — the total only grows, so zero regressions."
+  }
+}

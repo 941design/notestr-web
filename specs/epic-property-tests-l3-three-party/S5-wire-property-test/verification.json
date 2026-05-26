@@ -1,0 +1,19 @@
+{
+  "story_id": "S5",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-25T17:11:38Z",
+  "questions": [
+    {"question_id": "VQ-S5-001", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-RUN-1", "question": "Does the fc.commands array contain exactly the command arbitraries listed in spec § Single test, three-actor commands array (CgCommand3P; admin InCommand3P over B|C; per-actor Lg/Fd/Ct/Ut/Sc/As/Un/Dt/Rl; SwCommand3P) and no additional commands? Cite the array."},
+    {"question_id": "VQ-S5-002", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-RUN-2", "question": "Does fc.assert run with numRuns: 15 and fc.commands(..., { maxCommands: 10 })? Cite the literals."},
+    {"question_id": "VQ-S5-003", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-RUN-3", "question": "Does the test honour FAST_CHECK_SEED and FAST_CHECK_PATH env vars identically to the 2-party file's pattern? Cite the seed/path wiring."},
+    {"question_id": "VQ-S5-004", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-RUN-4", "question": "Is test.setTimeout(720_000) set (12 minutes)? Cite the call."},
+    {"question_id": "VQ-S5-005", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-RUN-5", "question": "Was a counterexample print verified to include all three actors in the Actor.Verb(args) chain (fault-injection probe requiring a C.* command, observed, then reverted)? Cite the result.json note recording the one-shot verification."},
+    {"question_id": "VQ-S5-006", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-X-NAMING-3P-1", "question": "Does every property-test it/test/describe title start with the asserted invariant IDs in brackets (e.g. [C0,S5,S6,S7,S10] ...)? Quote the titles."},
+    {"question_id": "VQ-S5-007", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-X-RUNS-3P-1", "question": "Is default numRuns 15 with a FAST_CHECK_NUM_RUNS env override honoured? Cite the resolution of the numRuns value."},
+    {"question_id": "VQ-S5-008", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-X-CI-3P-2", "question": "On a failing assertion, does fast-check shrink to a minimal counterexample whose printout names all three actors when relevant (same shrinking discipline as the 2-party file)?"},
+    {"question_id": "VQ-S5-009", "phase": "pre-impl", "category": "ARCHITECTURE", "question": "Is the per-iteration body using fc.asyncModelRun(() => ({ model, real }), cmds) with a fresh ModelState3P seeded with cachedPubkeyA/B/C, followed by identity restore (A↔B switch cleanup) and real.quiesce() before the assertions — mirroring the 2-party structure?"},
+    {"question_id": "VQ-S5-010", "phase": "pre-impl", "category": "QUALITY", "question": "Does the wiring call all five assertions (assertC0_3P, assertS5_3P, assertS6_3P, assertS7_3P, assertS10_3P) after quiesce in the property body?"},
+    {"question_id": "VQ-S5-011", "phase": "pre-impl", "category": "TEST", "question": "Does the admin-invite arbitrary generate only A-as-inviter over invitee B|C (no B.In(C) / TP-70c), consistent with the S3 InCommand3P model precondition?"},
+    {"question_id": "VQ-S5-012", "phase": "pre-impl", "category": "BEST_PRACTICES", "question": "Does the identity-restore block after the run reset model.pubkeyA/memberA/groupId when pubkeyA drifted from cachedPubkeyA (preventing cross-iteration identity leakage), matching the 2-party pattern?"}
+  ]
+}

@@ -1,0 +1,93 @@
+{
+  "story_id": "S2",
+  "status": "verified",
+  "completed_at": "2026-05-25T20:15:00Z",
+  "files_created": [
+    "specs/epic-property-tests-l3-three-party/S2-per-actor-task-commands/architecture.json",
+    "specs/epic-property-tests-l3-three-party/S2-per-actor-task-commands/baseline.json",
+    "specs/epic-property-tests-l3-three-party/S2-per-actor-task-commands/result.json"
+  ],
+  "files_modified": [
+    "e2e/tests/multi-user-3p.property.spec.ts"
+  ],
+  "commands_implemented": 7,
+  "command_classes": [
+    "CtCommand3P",
+    "UtCommand3P",
+    "ScCommand3P",
+    "AsCommand3P",
+    "UnCommand3P",
+    "DtCommand3P",
+    "RlCommand3P"
+  ],
+  "helpers_added": [
+    "readGroupEpoch3P (file-private)"
+  ],
+  "imports_added": [
+    "fast-check (* as fc)",
+    "uuid (v4 as uuidv4)",
+    "dispatchTaskEvent, getGroupEpochHook, reload, settle (from e2e/fixtures/two-party.js — all pre-existing exports, no new exports added)"
+  ],
+  "tests_added": {
+    "property": 0,
+    "note": "S2 adds command classes only; they are wired into the fc.commands array in S5. Test definition count is unchanged (still 1)."
+  },
+  "test_counts": {
+    "tests_in_file_before": 3,
+    "tests_in_file_after": 3,
+    "test_definitions": 1,
+    "verification_command": "npx playwright test e2e/tests/multi-user-3p.property.spec.ts --list",
+    "note": "Confirmed exactly 1 test definition (fanned out across chromium + Mobile Chrome + Mobile Safari = 3 listings). Unchanged from S1 baseline — zero regression."
+  },
+  "acceptance_criteria_satisfied": [
+    {"id": "AC-3P-CMD-CT-1", "how": "CtCommand3P(actor: \"A\"|\"B\"|\"C\", title, description); check returns true only when m.actorIsMember(actor) && m.groupId !== null."},
+    {"id": "AC-3P-CMD-UT-1", "how": "UtCommand3P(actor, title) accepts the three-actor type; run() asserts the post-update title via r.getTask(actor, targetId).title === title (guarded by if(task))."},
+    {"id": "AC-3P-CMD-SC-1", "how": "ScCommand3P(actor, status) asserts r.getTask(actor,...).status === status AND status-enum closure (one of open|in_progress|done|cancelled), the A2 postcondition."},
+    {"id": "AC-3P-CMD-AS-1", "how": "AsCommand3P(actor) asserts r.getTask(actor,...).assignee === pubkeyA (A4), mirroring the 2-party form; check additionally gates on m.pubkeyA !== null."},
+    {"id": "AC-3P-CMD-UN-1", "how": "UnCommand3P(actor) asserts r.getTask(actor,...).assignee === null post-dispatch (A5)."},
+    {"id": "AC-3P-CMD-DT-1", "how": "DtCommand3P(actor) asserts r.getTasks(actor).has(targetId) === false post-dispatch (deleted task absent)."},
+    {"id": "AC-3P-CMD-RL-1", "how": "RlCommand3P(actor) reloads r.page(actor), re-navigates to the shared group, and asserts every model-expected pre-reload task is present after reload (A11), mirroring the 2-party form."},
+    {"id": "AC-3P-CMD-TOSTRING-1", "how": "Every toString() returns `${actor}.Verb(args)`: A.Ct(title), A.Ut(title), A.Sc(open), A.As(pubkeyA), A.Un(task), A.Dt(task), A.Rl() — actor is the literal A/B/C, so shrunk counterexamples print in the matrix DSL."}
+  ],
+  "verification_questions_addressed": [
+    {"id": "VQ-S2-009", "answer": "All task commands dispatch via r.page(this.actor) and read postconditions via r.getTask(this.actor,...)/r.getTasks(this.actor). No pageA is hard-coded. Pubkey resolution goes through m.pubkey(this.actor), covering all three actors uniformly (the 2-party file used actor==='A'?pubkeyA:pubkeyB which only handled two)."},
+    {"id": "VQ-S2-010", "answer": "Ut/Sc/As/Un/Dt all gate check() on m.tasks.size > 0; As additionally gates on m.pubkeyA !== null. fast-check prunes impossible commands rather than failing at run time."},
+    {"id": "VQ-S2-011", "answer": "The 3-party command classes are self-contained in e2e/tests/multi-user-3p.property.spec.ts. No edit to e2e/tests/multi-user.property.spec.ts (AC-X-NO-2P-CHANGE-1). No change to two-party.ts signatures — only additive consumption of existing exports (dispatchTaskEvent, getGroupEpochHook, reload, settle)."},
+    {"id": "VQ-S2-012", "answer": "Per-command postcondition asserts for Ut/Sc/As/Un are wrapped in `if (task) { ... }` exactly as the 2-party file, so a transient non-delivery skips the per-command assert rather than failing the property spuriously; convergence is still caught by the S4 headline assertions at quiescence. Dt's absence check is unguarded because absence is the success condition. No new try/catch was needed (these are dispatch-through-hook events on the actor's own page, not MLS commit operations like Fd/Lg)."}
+  ],
+  "issues_encountered": [
+    "S1 imported neither fast-check, uuid, nor the task-dispatch helpers — S2 added those imports. getGroupEpochHook was added to support the readGroupEpoch3P helper (needed for recordEpoch / S6 monotonicity wiring in S4/S5).",
+    "The single-group 3P model has no per-actor groupIdA/groupIdB, so readGroupEpoch3P is keyed on the single m.groupId for every actor (unlike the 2-party readGroupEpoch which switched on actor)."
+  ],
+  "deferred_to_later_stories": [
+    "S3: group-lifecycle commands (Cg/In/Lg/Fd/Rd/Sw) — these mutate membership/groupId and are not part of S2.",
+    "S4: headline assertions (assertC0_3P / assertS5_3P / assertS6_3P / assertS7_3P / assertS10_3P).",
+    "S5: wire all commands into the fc.commands array + fc.assert (this is where the S2 classes become live arbitraries)."
+  ],
+  "verification": {
+    "verified_by": "verification-examiner",
+    "verified_at": "2026-05-25T20:42:00Z",
+    "method": "Direct source read of e2e/tests/multi-user-3p.property.spec.ts cross-referenced against the 2-party reference (e2e/tests/multi-user.property.spec.ts) and architecture.json; frozen-file integrity confirmed via git diff/status.",
+    "verdict": "PASS",
+    "questions_passed": 12,
+    "questions_failed": 0,
+    "results": [
+      {"id": "VQ-S2-001", "verdict": "PASS", "ac_id": "AC-3P-CMD-CT-1", "evidence": "CtCommand3P(actor: ActorId, title, description) constructor at multi-user-3p.property.spec.ts:267-272; check(m) returns `m.actorIsMember(this.actor) && m.groupId !== null` at :274-276."},
+      {"id": "VQ-S2-002", "verdict": "PASS", "ac_id": "AC-3P-CMD-UT-1", "evidence": "UtCommand3P(actor: ActorId, title) at :327-331; run() reads `r.getTask(this.actor, targetId)` and asserts `task.title === this.title` at :361-364."},
+      {"id": "VQ-S2-003", "verdict": "PASS", "ac_id": "AC-3P-CMD-SC-1", "evidence": "ScCommand3P run() asserts `task.status === this.status` AND enum closure `[\"open\",\"in_progress\",\"done\",\"cancelled\"]` toContain(task.status) at :408-414 (A2 per-command postcondition)."},
+      {"id": "VQ-S2-004", "verdict": "PASS", "ac_id": "AC-3P-CMD-AS-1", "evidence": "AsCommand3P(actor) constructor at :424; run() asserts `task.assignee === assignee` (assignee = m.pubkeyA) at :458-461, mirroring the 2-party AsCommand (:676 toString form); check gates on m.pubkeyA !== null at :426-433 (A4)."},
+      {"id": "VQ-S2-005", "verdict": "PASS", "ac_id": "AC-3P-CMD-UN-1", "evidence": "UnCommand3P(actor) at :471; run() dispatches assignee:null and asserts `task.assignee` toBeNull() at :500-503 (A5)."},
+      {"id": "VQ-S2-006", "verdict": "PASS", "ac_id": "AC-3P-CMD-DT-1", "evidence": "DtCommand3P(actor) at :513; run() reads r.getTasks(this.actor) and asserts `tasks.has(targetId)` toBe(false) at :541-542 (deleted task absent, unguarded since absence is the success condition)."},
+      {"id": "VQ-S2-007", "verdict": "PASS", "ac_id": "AC-3P-CMD-RL-1", "evidence": "RlCommand3P(actor) at :552; run() reloads r.page(actor) (:567), re-navigates to the shared group (:573-592), and asserts every model-expected pre-reload task survives in tasksAfter at :599-604 (A11), mirroring the 2-party RlCommand (:810-813)."},
+      {"id": "VQ-S2-008", "verdict": "PASS", "ac_id": "AC-3P-CMD-TOSTRING-1", "evidence": "All 7 toString() return `${actor}.Verb(args)`: Ct :322 `${this.actor}.Ct(...)`, Ut :368, Sc :418 `${this.actor}.Sc(${this.status})`, As :465 `${this.actor}.As(pubkeyA)`, Un :507 `${this.actor}.Un(task)`, Dt :546 `${this.actor}.Dt(task)`, Rl :608 `${this.actor}.Rl()` — actor is the literal A/B/C so shrunk counterexamples print in the matrix DSL."},
+      {"id": "VQ-S2-009", "verdict": "PASS", "ac_id": "ARCHITECTURE", "evidence": "Every command dispatches via dispatchTaskEvent(r.page(this.actor), ...) (Ct :285, Ut :347, Sc :393, As :444, Un :486, Dt :528, Rl :564) and reads postconditions via r.getTask(this.actor,...)/r.getTasks(this.actor) (e.g. :314, :361, :408, :541). No pageA is hard-coded; pubkey resolution uses m.pubkey(this.actor) (:283 etc.), covering all three actors."},
+      {"id": "VQ-S2-010", "verdict": "PASS", "ac_id": "TEST", "evidence": "check() preconditions requiring an existing task all gate on m.tasks.size > 0: Ut :333-336, Sc :379-382, As :426-433 (also m.pubkeyA !== null), Un :473-476, Dt :515-518. fast-check prunes impossible commands rather than failing at run time."},
+      {"id": "VQ-S2-011", "verdict": "PASS", "ac_id": "QUALITY", "evidence": "All 7 command classes + readGroupEpoch3P helper are self-contained in multi-user-3p.property.spec.ts (:237-610). git diff/status confirm zero changes to e2e/tests/multi-user.property.spec.ts and e2e/fixtures/two-party.ts; only additive consumption of pre-existing two-party.ts exports (dispatchTaskEvent, getGroupEpochHook, reload, settle) at :39-48."},
+      {"id": "VQ-S2-012", "verdict": "PASS", "ac_id": "BEST_PRACTICES", "evidence": "Per-command postconditions for Ut/Sc/As/Un are wrapped in `if (task) { ... }` (:362-364, :409-414, :459-461, :501-503) exactly as the 2-party file (:574, :623, :671, :718), so a transient non-delivery skips the per-command assert rather than failing the property run spuriously. Dt's absence check (:542) is intentionally unguarded because absence is the success condition; convergence is still caught at quiescence by the S4 headline assertions."}
+    ],
+    "notes": [
+      "Implementation accurately matches result.json's self-reported acceptance_criteria_satisfied and verification_questions_addressed claims — no discrepancies found between claimed and actual behaviour.",
+      "Frozen-seam integrity (AC-X-NO-2P-CHANGE-1) holds: two-party.ts and multi-user.property.spec.ts are byte-identical to HEAD."
+    ]
+  }
+}

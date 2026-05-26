@@ -1,0 +1,13 @@
+{
+  "story_id": "S6",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-25T17:11:38Z",
+  "questions": [
+    {"question_id": "VQ-S6-001", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-DOC-1", "question": "Does docs/two-party-permutation-matrix.md § Property-test coverage now read the TP-70..72 row as \"C0, S5, S6, S7, S10, A7..A12 (3-party at L3)\" instead of \"(covered by 2-party C0 + induction)\"? Quote the before/after row."},
+    {"question_id": "VQ-S6-002", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-DOC-2", "question": "Is there a footnote naming TP-70c as labelled-only / blocked-by-MIP-03, linking the (fixme) annotation in the scenario catalogue? Quote the footnote."},
+    {"question_id": "VQ-S6-003", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-DOC-3", "question": "Are NO other rows in the coverage table modified (the diff touches only the TP-70..72 property-coverage row and the new TP-70c footnote)? Cite the diff scope."},
+    {"question_id": "VQ-S6-004", "phase": "pre-impl", "category": "QUALITY", "question": "Is the edit confined to docs/two-party-permutation-matrix.md (no test-code or src files touched by this story)?"},
+    {"question_id": "VQ-S6-005", "phase": "pre-impl", "category": "BEST_PRACTICES", "question": "Does the new row text accurately reflect what the 3P file actually asserts (C0, S5, S6, S7, S10) — i.e. the doc claim is backed by S4's implemented assertions, not aspirational?"},
+    {"question_id": "VQ-S6-006", "phase": "pre-impl", "category": "TEST", "question": "Does the table remain well-formed markdown after the edit (column alignment / pipe structure intact), so the matrix still renders?"}
+  ]
+}

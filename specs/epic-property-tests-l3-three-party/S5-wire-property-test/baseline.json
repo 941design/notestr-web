@@ -1,0 +1,33 @@
+{
+  "story_id": "S5",
+  "captured_at": "2026-05-26T06:09:18Z",
+  "baseline_commit": "23823bbda6f82e83d0dfedbb018398ac493a52b3",
+  "status": "S1_SKELETON_PLUS_S2_TASK_COMMANDS_PLUS_S3_GROUP_COMMANDS_PLUS_S4_ASSERTIONS_PRESENT",
+  "rationale": "S5 replaces the placeholder test body inside the single test under test.describe.serial in e2e/tests/multi-user-3p.property.spec.ts with the real fast-check property run. At baseline the file already contains: the S1 skeleton (ModelState3P, RealSystem3P, readGroupEpoch3P, beforeAll/afterAll, cachedPubkeyA/B/C, one placeholder test under one test.describe.serial), the S2 per-actor task commands (CtCommand3P … RlCommand3P), the S3 group-lifecycle commands (CgCommand3P … SwCommand3P), and the S4 headline assertions (assertC0_3P / assertS5_3P / assertS6_3P / assertS7_3P / assertS10_3P, plus strictHooksPresent / leafCountHookPresent probes). The five S4 assertion functions are defined but unreferenced until S5 wires them into the test body. The placeholder body asserts only skeleton-wiring soundness (three distinct cached pubkeys + a constructible RealSystem3P) — no fc.commands run yet.",
+  "discovery_baseline": {
+    "command": "npx playwright test e2e/tests/multi-user-3p.property.spec.ts --list",
+    "exit_code": 0,
+    "tests_in_file_pre_s5": 3,
+    "test_definitions_pre_s5": 1,
+    "note": "One test definition fanned out across the three configured Playwright projects (chromium + Mobile Chrome + Mobile Safari)."
+  },
+  "regression_target": {
+    "tests_in_file_after_s5": 3,
+    "test_definitions_after_s5": 1,
+    "explanation": "S5 only replaces the BODY of the existing single test — it does not add or remove test definitions. Test count is unchanged (still exactly one definition / 3 listed). After S5 the body runs fc.assert(fc.asyncProperty(fc.commands(...))) and invokes all five S4 assertions, so the previously-unreferenced assertion functions become referenced."
+  },
+  "preconditions_verified": [
+    "e2e/tests/multi-user-3p.property.spec.ts exists with S1 skeleton + S2 task commands + S3 group-lifecycle commands + S4 assertions",
+    "All 13 command classes present: CgCommand3P (no-arg), InCommand3P(invitee:'B'|'C'), LgCommand3P(actor), FdCommand3P (no-arg, A-only), RdCommand3P(actor,name), SwCommand3P (no-arg, A<->B), CtCommand3P(actor,title,desc), UtCommand3P(actor,title), ScCommand3P(actor,status), AsCommand3P(actor), UnCommand3P(actor), DtCommand3P(actor), RlCommand3P(actor)",
+    "All five S4 assertion functions present and exported into module scope: assertC0_3P, assertS5_3P, assertS6_3P, assertS7_3P, assertS10_3P",
+    "Imports already present for the wiring: switchIdentity and E2E_BUNKER_URL (for the identity-restore block), fc (fast-check), uuid (used by command bodies)",
+    "test.setTimeout(720_000) already present in the describe.serial block (S1)",
+    "ModelState3P exposes pubkeyA/B/C, memberA, groupId, epochSequenceA — all fields the identity-restore block mutates",
+    "Frozen files untouched at baseline: git diff --stat on e2e/fixtures/two-party.ts, e2e/tests/multi-user.property.spec.ts, e2e/tests/three-party.spec.ts returns empty"
+  ],
+  "pre_existing_type_error": {
+    "location": "e2e/tests/multi-user-3p.property.spec.ts CtCommand3P task.created payload (S2 frozen code, line 296)",
+    "error": "TS2741: Property 'updatedBy' is missing in type ... but required in type 'Task'",
+    "note": "Identical in shape to the 2-party reference file's CtCommand (multi-user.property.spec.ts line 495, which also raises TS2741). Present before S5; the S5 test-body wiring (lines 1427+) produces ZERO new tsc errors. esbuild/swc transpile (Playwright's runner) strips types without type-checking, so this does not affect execution. Documented across S3/S4 baselines. NOT in S5 scope to fix (it lives in S2's command body and changing it would diverge from the verified 2-party reference)."
+  }
+}

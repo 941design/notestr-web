@@ -1,0 +1,69 @@
+{
+  "created_at": "2026-05-25T17:11:38Z",
+  "verdict_strict_vs_degraded": "STRICT_FORM_AVAILABLE",
+  "prior_learnings": [
+    {"id": "lww-tie-break-pubkey-alone-fails", "note": "LWW tie-break on pubkey alone fails when two devices share one Nostr identity — irrelevant here (3 distinct pubkeys) but relevant to convergence assertions."},
+    {"id": "kind-445-events-have-ephemeral-authors", "note": "kind-445 events have ephemeral authors — never filter NDK subscriptions by author. Relevant to the A14 wire-check in Lg/Fd commands."},
+    {"id": "joingroupfromwelcome-throws-no-matching", "note": "joinGroupFromWelcome throws on no matching KeyPackage — relevant when invites race."}
+  ],
+  "similar_features": {
+    "two_party_property_spec": {
+      "path": "e2e/tests/multi-user.property.spec.ts",
+      "lines": 1135,
+      "RealSystem": {"loc": "140-216", "methods": ["page(actor)", "getTasks(actor)", "getEpoch(actor)", "quiesce()", "reset(bunkerUrlA, bunkerUrlB, model)"], "holds": "pageA, pageB public readonly"},
+      "ModelState": {"loc": "77-134", "fields": ["groupName", "groupIdA", "groupIdB", "pubkeyA", "pubkeyB", "memberA", "memberB", "tasks Map", "epochA", "epochB", "epochSequenceA[]", "epochSequenceB[]", "lastSwitched"], "methods": ["reset()", "actorIsAuthenticated(actor)", "actorIsMember(actor)", "actorHasGroup(actor)", "recordEpoch(actor, epoch)"]},
+      "commands": {
+        "loc": "232-868",
+        "iface": "fc.AsyncCommand<ModelState, RealSystem>",
+        "Cg": "check: groupName===null && pubkeyA!==null; run: createGroup(pageA); toString A.Cg(group)",
+        "In": "check: memberA && !memberB && groupName!==null; run: inviteByNpub(pageA, bunkerB.npub), reload pageB, selectGroup; toString A.In(B)",
+        "Lg": "ctor(actor); check: actorIsMember(actor) && actorIsMember(other) && groupName!==null (prevents sole-member leave); run: leave+confirm, A14 kind-445 wire check",
+        "Fd": "check: memberA && memberB && groupIdA!==null; run: leafIndexesFor(pageA,gid,pubkeyB), forgetLeafByIndex, leafCount bookkeeping, A14 wire check",
+        "Rd": "check: memberA && groupIdA!==null; run: fill first device-row textbox",
+        "Ct": "ctor(actor,title,desc); check: actorIsMember && actorHasGroup; run: dispatchTaskEvent task.created, assert status open/assignee null",
+        "Ut": "ctor(actor,title); check: +tasks.size>0; run: task.updated, assert title",
+        "Sc": "ctor(actor,status); run: task.status_changed, assert status",
+        "As": "ctor(actor); check: +pubkeyA!==null; run: task.assigned assignee=pubkeyA",
+        "Un": "ctor(actor); run: task.assigned assignee=null",
+        "Dt": "ctor(actor); run: task.deleted, assert removed",
+        "Rl": "ctor(actor); check: actorIsAuthenticated; run: reload, re-nav, A11 persistence assert",
+        "Sw": "check: pubkeyA!==null; run: captures priorGroupIds, switchIdentity(pageA, bunkerB.url), resets memberA/groupIdA/epochSequenceA"
+      },
+      "assertions": {
+        "loc": "874-984",
+        "assertC0": "guard !memberA||!memberB return; asserts task-id sets equal, per-task status/assignee/title equal, member sets equal (getGroupMembersHook), epoch equal (getGroupEpochHook), per-pubkey leafCount equal (getPubkeyLeafCountHook)",
+        "assertS5": "guard !groupIdA||!pubkeyA||!pubkeyB||members null return; biconditional member<=>leafCount>=1 for pubkeyA,pubkeyB",
+        "assertS6": "no guard; per-actor epochSequence non-decreasing; cross-actor NOT compared",
+        "assertS7": "guard lastSwitched===null return; reads __notestrTestGroups on switched ctx, asserts none of priorGroupIds present",
+        "assertS10": "guard !groupIdA||!pubkeyA return; device-row count === leafCount for pubkeyA"
+      },
+      "fc_wiring": {"loc": "1052-1162", "describe": "test.describe.serial('[S5,S6,S7,S10,A7-A12,A14,C0] multi-user property')", "title": "[C0,S5,S6,S7,S10] settled-state equality holds for any 5-10 action chain", "timeout": "600_000 (10min)", "numRuns": 20, "maxCommands": 10, "seed_env": "FAST_CHECK_SEED", "path_env": "FAST_CHECK_PATH", "skipMobile": "SKIP_MOBILE_REASON='Multi-context MLS tests require desktop viewport'"},
+      "beforeAll": {"loc": "1007-1043", "pattern": "spawnSpecBunker('mu-prop-A'/'mu-prop-B') for fresh per-spec bunkers, B authenticates first, poll __notestrTestPubkey, cache pubkeys", "afterAll": "1045-1050 close contexts + dispose bunkers"}
+    },
+    "three_party_spec": {"path": "e2e/tests/three-party.spec.ts", "auth_loc": "52-80", "pattern": "3 contexts/pages; B then C then A authenticate via static E2E_BUNKER_B_URL/E2E_BUNKER_C_URL/E2E_BUNKER_URL constants; B+C publish KP first"},
+    "multi_device_3p_property_spec": {"path": "e2e/tests/multi-user-md.property.spec.ts", "note": "EXISTING 3-context property harness (3 leaves of ONE pubkey, from epic-property-tests-l3-multi-device). Closest structural template for a 3-context fc.commands property test. Architect should read this alongside the 2-party file."}
+  },
+  "architecture": {
+    "fixtures": {
+      "two_party_ts": {"path": "e2e/fixtures/two-party.ts", "exports_count": 27, "key_exports": ["authenticate(page,bunkerUrl,slot?)", "createGroup", "inviteByNpub", "selectGroup", "leaveGroup", "reload", "dispatchTaskEvent", "getPubkeyHex", "currentGroupId", "getNostrGroupIdHex", "projectIsMobile", "settle", "switchIdentity", "renameDevice", "quiesceFor", "forgetLeafByIndex", "leafIndexesFor", "getGroupEpochHook(479-490)", "waitForEpochConvergence(511-529)", "getGroupMembersHook(532-543)", "getPubkeyLeafCountHook(546-561)"]},
+      "auth_helper_c": {"path": "e2e/fixtures/auth-helper-c.ts", "exports": ["E2E_BUNKER_C_PUBKEY_HEX:31", "E2E_BUNKER_C_URL:32", "USER_C_NPUB:35", "authenticateAsBunkerC:40-48"], "caveat": "authenticateAsBunkerC does NOT clearAppState, NOT pin slot, NOT wait for __notestrTestPubkey. Prefer two-party.ts authenticate(page, E2E_BUNKER_C_URL) for slot-pin + hook-wait parity."},
+      "bunker_url_constants": {"E2E_BUNKER_URL": "auth-helper.ts:36", "E2E_BUNKER_B_URL": "auth-helper-b.ts:31", "E2E_BUNKER_C_URL": "auth-helper-c.ts:32", "note": "Not re-exported from two-party.ts; import from the auth-helper modules directly."},
+      "spec_bunker": {"path": "e2e/fixtures/spec-bunker.ts", "export": "spawnSpecBunker(label) -> {bunkerUrl, npub, pubkeyHex, dispose()}", "why": "per-spec fresh bunkers to avoid relay KeyPackage accumulation across property-test iterations"},
+      "ndk_subscriber": {"path": "e2e/fixtures/ndk-subscriber.ts", "export": "openNdkSubscriber", "why": "wire-level kind-445 A14 checks in Lg/Fd"}
+    },
+    "test_hooks_src": {"path": "src/marmot/client.tsx:634-648", "hooks": ["__notestrTestGroupEpoch", "__notestrTestGroupMembers", "__notestrTestPubkeyLeafCount"], "types": "src/types/notestr-test-hooks.d.ts:55-59"},
+    "device_row_testid": {"render_sites": ["src/components/DeviceList.tsx:211", "src/components/DevicesTab.tsx:300"], "selector": "[data-testid=\"device-row\"]"},
+    "docker_compose": {"path": "docker-compose.e2e.yml", "note": "NO bunker C docker service. A/B/C identities all use in-process keypairs from e2e/.bunker-keys.json (generated by globalSetup). spawnSpecBunker creates fresh per-spec keypairs."}
+  },
+  "conventions": {
+    "fast_check": {"import": "import * as fc from 'fast-check'", "version": "^3.23.0", "pattern": "fc.AsyncCommand<ModelState, RealSystem>; fc.commands(commands, {maxCommands}); fc.asyncProperty; fc.asyncModelRun(() => ({model, real}), cmds)"},
+    "tsconfig_eslint": "e2e/ NOT in tsconfig include; no root .eslintrc; Playwright scans e2e/tests independently",
+    "make_targets": {"e2e": "Makefile:94-104 -> manages relay then npx playwright test (auto-discovers e2e/tests/**/*.spec.ts via playwright.config.ts:3 testDir)", "test": "Makefile:45 npm test (L1/L2 only, unaffected by e2e additions)"},
+    "coverage_matrix": {"path": "docs/two-party-permutation-matrix.md", "tp70_72_scenario_rows": "213-216", "tp70c_fixme": "300 (pending spec/protocol decisions block)", "property_coverage_row": "321 '| TP-70..72 (3-party)   | (covered by 2-party C0 + induction)|'"}
+  },
+  "key_tensions": [
+    "SPEC vs CONVENTION (bunker setup): spec Design Decision #8 + AC-3P-FILE-4 say copy three-party.spec.ts STATIC bunker setup (E2E_BUNKER_*_URL). But the 2-party PROPERTY spec deliberately uses spawnSpecBunker per-spec fresh bunkers to avoid KeyPackage accumulation across the many property iterations. A property test runs ~15x10 commands; static shared bunkers risk reintroducing the KP-accumulation flakiness spawnSpecBunker was built to prevent. The architect should weigh this; if static bunkers prove flaky in S7 wall-clock validation, switching to spawnSpecBunker(x3) is the known mitigation. AC-3P-FILE-4 names the static constants as the literal requirement; honoring the spec while watching for flakiness in S7 is the default posture.",
+    "auth-helper-c.authenticateAsBunkerC lacks slot-pin + hook-wait; route C through two-party.ts authenticate(page, E2E_BUNKER_C_URL) for parity with A/B.",
+    "STRICT FORM available -> S4 degraded-form ACs (AC-3P-DEG-1, AC-3P-DEG-2) are satisfied vacuously/by-comment; assertions ship strict."
+  ]
+}

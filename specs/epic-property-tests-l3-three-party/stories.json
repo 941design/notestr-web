@@ -1,0 +1,252 @@
+{
+  "epic_name": "property-tests-l3-three-party",
+  "created_at": "2026-05-25T17:11:38Z",
+  "updated_at": "2026-05-26T06:40:00Z",
+  "total_stories": 7,
+  "story_order": [
+    "S1",
+    "S2",
+    "S3",
+    "S4",
+    "S5",
+    "S6",
+    "S7"
+  ],
+  "dependency_notes": "All test-code stories (S1–S5) edit the single new file e2e/tests/multi-user-3p.property.spec.ts sequentially — there is no parallel-implementation race, so no frozen seam contract is needed; the dependency is enforced by story_order. S1 establishes ModelState3P/RealSystem3P/beforeAll-afterAll (the in-file shapes every later story builds on). S2 (per-actor task commands) and S3 (group-lifecycle commands) both depend on S1 and are independent of each other. S4 (headline assertions) depends on S1 and on the two-party.ts test-hook readers (present → strict form). S5 (wire the property test) depends on S2+S3+S4. S6 (coverage-matrix doc edit) is independent of the test code and is a pure markdown edit (lighter_path). S7 (wall-clock validation) depends on S5 being runnable and is execution-bound (runs `make e2e` three times).",
+  "mock_resolution_plan": "No mocks introduced. This is a test-only epic consuming existing fixtures and real browser contexts.",
+  "seams": [],
+  "stories": [
+    {
+      "id": "S1",
+      "name": "skeleton-realsystem3p-modelstate3p",
+      "title": "Skeleton: file, three-context beforeAll/afterAll, RealSystem3P, ModelState3P",
+      "description": "Create e2e/tests/multi-user-3p.property.spec.ts with a test.describe.serial block, test.beforeAll opening three BrowserContexts + Pages and authenticating one bunker per actor (A/B/C), test.afterAll teardown, module-scope cachedPubkeyA/B/C reads, and the RealSystem3P (holds pageA/pageB/pageC; page(actor) accessor) and ModelState3P (single shared group, per-actor pubkeys/membership flags, per-actor epochSequence arrays, lastSwitched, reset()) classes. No command classes and no commands array yet — confirm Playwright discovers exactly one test under one describe.serial block. DECISION TO SURFACE in result: bunker setup approach — default is the spec's static E2E_BUNKER_*_URL constants (authenticate C via two-party.ts authenticate(page, E2E_BUNKER_C_URL), not bare authenticateAsBunkerC); note the spawnSpecBunker alternative and the KP-accumulation flakiness trade-off for S7 to watch.",
+      "acceptance_criteria": [
+        "AC-3P-FILE-1",
+        "AC-3P-FILE-2",
+        "AC-3P-FILE-3",
+        "AC-3P-FILE-4",
+        "AC-3P-FILE-5"
+      ],
+      "scope": {
+        "includes": [
+          "e2e/tests/multi-user-3p.property.spec.ts"
+        ],
+        "excludes": [
+          "src/marmot/",
+          "src/store/",
+          "src/components/",
+          "e2e/tests/multi-user.property.spec.ts",
+          "e2e/tests/three-party.spec.ts",
+          "e2e/fixtures/two-party.ts"
+        ]
+      },
+      "complexity": "medium",
+      "status": "completed",
+      "owning_module": "3P property spec",
+      "lighter_path": false,
+      "notes": "Reference e2e/tests/multi-user-md.property.spec.ts (existing 3-context property harness) and the 2-party file for RealSystem/ModelState shape; copy the 3-bunker auth pattern from three-party.spec.ts. Authenticate C via two-party.ts authenticate(page, E2E_BUNKER_C_URL)."
+    },
+    {
+      "id": "S2",
+      "name": "per-actor-task-commands",
+      "title": "Per-actor task command classes (Ct, Ut, Sc, As, Un, Dt, Rl)",
+      "description": "Port the 2-party task commands to 3-party form, each parameterised on actor: \"A\" | \"B\" | \"C\". CtCommand3P(actor,title,desc), UtCommand3P(actor,title), ScCommand3P(actor,status), AsCommand3P(actor), UnCommand3P(actor), DtCommand3P(actor), RlCommand3P(actor). Each check(m) gates on m.actorIsMember(actor) && m.groupId !== null (As/Un/Dt/Ut/Sc also require m.tasks.size>0; As requires a pubkey). Each run dispatches the task event via the actor's page and asserts its postcondition (A2/A4/A5/A11) via r.getTask(actor, ...). Every toString() returns `${actor}.Verb(args)` matching the matrix DSL.",
+      "acceptance_criteria": [
+        "AC-3P-CMD-CT-1",
+        "AC-3P-CMD-UT-1",
+        "AC-3P-CMD-SC-1",
+        "AC-3P-CMD-AS-1",
+        "AC-3P-CMD-UN-1",
+        "AC-3P-CMD-DT-1",
+        "AC-3P-CMD-RL-1",
+        "AC-3P-CMD-TOSTRING-1"
+      ],
+      "scope": {
+        "includes": [
+          "e2e/tests/multi-user-3p.property.spec.ts"
+        ],
+        "excludes": [
+          "src/marmot/",
+          "src/store/",
+          "src/components/",
+          "e2e/tests/multi-user.property.spec.ts",
+          "e2e/tests/three-party.spec.ts",
+          "e2e/fixtures/two-party.ts"
+        ]
+      },
+      "complexity": "medium",
+      "status": "completed",
+      "owning_module": "3P property spec",
+      "lighter_path": false,
+      "notes": "Depends on S1's ModelState3P/RealSystem3P shapes. Independent of S3."
+    },
+    {
+      "id": "S3",
+      "name": "group-lifecycle-commands",
+      "title": "Group-lifecycle command classes (Cg, In, Lg, Fd, Rd, Sw)",
+      "description": "Port the group-lifecycle commands to 3-party form. CgCommand3P (admin-only: dispatches on pageA; check true only when m.groupId===null && !m.memberA). InCommand3P(invitee: \"B\"|\"C\") (inviter always A; check true only when m.memberA && !m.actorIsMember(invitee); no-op shape pruned by check, not silently no-op'd at run). LgCommand3P(actor) (each actor leaves via own page). FdCommand3P(actor) (A forgets a B-or-C leaf; check true only when m.memberA && (m.memberB||m.memberC) && m.groupId!==null). RdCommand3P(actor,name) (per-actor own device). SwCommand3P (switches pageA between bunker A and bunker B ONLY — A↔C and B↔C are NOT generated; document inline naming AC-3P-SW-1). Admin-only/MIP-03 constraints are model preconditions, not runtime checks.",
+      "acceptance_criteria": [
+        "AC-3P-CG-1",
+        "AC-3P-IN-1",
+        "AC-3P-IN-2",
+        "AC-3P-LG-1",
+        "AC-3P-FD-1",
+        "AC-3P-RD-1",
+        "AC-3P-SW-1"
+      ],
+      "scope": {
+        "includes": [
+          "e2e/tests/multi-user-3p.property.spec.ts"
+        ],
+        "excludes": [
+          "src/marmot/",
+          "src/store/",
+          "src/components/",
+          "e2e/tests/multi-user.property.spec.ts",
+          "e2e/tests/three-party.spec.ts",
+          "e2e/fixtures/two-party.ts"
+        ]
+      },
+      "complexity": "medium",
+      "status": "completed",
+      "owning_module": "3P property spec",
+      "lighter_path": false,
+      "notes": "Depends on S1. Independent of S2. SwCommand3P restricted to A↔B (Design Decision #6)."
+    },
+    {
+      "id": "S4",
+      "name": "headline-assertions-3p",
+      "title": "Headline invariant assertions (assertC0_3P, S5, S6, S7, S10)",
+      "description": "Implement the three-actor headline assertions. assertC0_3P (guard: groupId!==null && memberA && memberB && memberC) asserts task-id sets pairwise equal across A/B/C, per-task status/assignee/title equal, member sets equal (getGroupMembersHook), epoch equal (getGroupEpochHook), per-pubkey leafCount equal (getPubkeyLeafCountHook) for every p in unionMembers. assertS5_3P runs the biconditional member<=>leafCount>=1 for pubkeyA/B/C scoped to m.groupId. assertS6_3P walks epochSequenceA/B/C non-decreasing. assertS7_3P triggers when lastSwitched!==null and asserts post-switch context holds no prior-identity groups. assertS10_3P asserts device-row count equals getPubkeyLeafCountHook for each actor's own pubkey. STRICT FORM is live (hooks present); include the documented degraded-form fallbacks + a top-of-assertion comment naming AC-3P-DEG-2 / the l3-completion hook story.",
+      "acceptance_criteria": [
+        "AC-3P-C0-1",
+        "AC-3P-C0-2",
+        "AC-3P-C0-3",
+        "AC-3P-C0-4",
+        "AC-3P-C0-5",
+        "AC-3P-S5-1",
+        "AC-3P-S6-1",
+        "AC-3P-S7-1",
+        "AC-3P-S10-1",
+        "AC-3P-DEG-1",
+        "AC-3P-DEG-2"
+      ],
+      "scope": {
+        "includes": [
+          "e2e/tests/multi-user-3p.property.spec.ts"
+        ],
+        "excludes": [
+          "src/marmot/",
+          "src/store/",
+          "src/components/",
+          "e2e/tests/multi-user.property.spec.ts",
+          "e2e/tests/three-party.spec.ts",
+          "e2e/fixtures/two-party.ts"
+        ]
+      },
+      "complexity": "high",
+      "status": "completed",
+      "owning_module": "3P property spec",
+      "lighter_path": false,
+      "notes": "Depends on S1. Consumes getGroupEpochHook/getGroupMembersHook/getPubkeyLeafCountHook from two-party.ts (read-only import; do not modify two-party.ts)."
+    },
+    {
+      "id": "S5",
+      "name": "wire-property-test",
+      "title": "Wire the single three-actor property test",
+      "description": "Assemble the fc.commands array (exactly the arbitraries from spec § Single test, three-actor commands array: CgCommand3P, admin-invite InCommand3P over B|C, per-actor Lg/Fd/Ct/Ut/Sc/As/Un/Dt/Rl, SwCommand3P), wrap in fc.asyncProperty(fc.commands(commands,{maxCommands:10})) with fc.asyncModelRun, numRuns:15, test.setTimeout(720_000), FAST_CHECK_SEED/FAST_CHECK_PATH/FAST_CHECK_NUM_RUNS env handling, identity-restore after the run (A↔B switch cleanup), real.quiesce(), then call all five assert*_3P. Title and describe.serial start with the bracketed invariant IDs.",
+      "acceptance_criteria": [
+        "AC-3P-RUN-1",
+        "AC-3P-RUN-2",
+        "AC-3P-RUN-3",
+        "AC-3P-RUN-4",
+        "AC-3P-RUN-5",
+        "AC-X-NAMING-3P-1",
+        "AC-X-RUNS-3P-1",
+        "AC-X-CI-3P-2"
+      ],
+      "scope": {
+        "includes": [
+          "e2e/tests/multi-user-3p.property.spec.ts"
+        ],
+        "excludes": [
+          "src/marmot/",
+          "src/store/",
+          "src/components/",
+          "e2e/tests/multi-user.property.spec.ts",
+          "e2e/tests/three-party.spec.ts",
+          "e2e/fixtures/two-party.ts"
+        ]
+      },
+      "complexity": "medium",
+      "status": "completed",
+      "owning_module": "3P property spec",
+      "lighter_path": false,
+      "notes": "Depends on S2+S3+S4. AC-3P-RUN-5 / AC-X-CI-3P-2 (counterexample names a C.* command) is a fault-injection probe verified once during implementation then reverted; the automated form of the same is AC-VAL-3P-1 under S7 (manual)."
+    },
+    {
+      "id": "S6",
+      "name": "coverage-matrix-doc-edit",
+      "title": "Coverage-matrix doc edit (TP-70..72 property-coverage row + TP-70c footnote)",
+      "description": "In docs/two-party-permutation-matrix.md § Property-test coverage, change the TP-70..72 row from \"(covered by 2-party C0 + induction)\" to \"C0, S5, S6, S7, S10, A7..A12 (3-party at L3)\". Add a footnote naming TP-70c as labelled-only / blocked-by-MIP-03 linking the (fixme) annotation in the scenario catalogue. Modify no other rows in the coverage table.",
+      "acceptance_criteria": [
+        "AC-3P-DOC-1",
+        "AC-3P-DOC-2",
+        "AC-3P-DOC-3"
+      ],
+      "scope": {
+        "includes": [
+          "docs/two-party-permutation-matrix.md"
+        ],
+        "excludes": [
+          "src/marmot/",
+          "src/store/",
+          "src/components/",
+          "e2e/tests/multi-user.property.spec.ts",
+          "e2e/tests/three-party.spec.ts",
+          "e2e/tests/multi-user-3p.property.spec.ts"
+        ]
+      },
+      "complexity": "low",
+      "status": "completed",
+      "owning_module": "Coverage matrix",
+      "lighter_path": true,
+      "notes": "Pure markdown documentation edit, fully specified by AC-3P-DOC-1/2/3, no new file — qualifies for lighter_path (lead implements via Edit; examiner still runs). Independent of all test-code stories."
+    },
+    {
+      "id": "S7",
+      "name": "wall-clock-validation",
+      "title": "Wall-clock validation + whole-epic scope/no-regression checks",
+      "description": "Execution-bound story. Run `make e2e` against the new 3P file three times locally; record the maximum observed wall-clock in the epic completion notes (AC-3P-WC-1). If any run exceeds 720s, reduce numRuns to 12 (or maxCommands to 8) and repeat, capturing the chosen value in a code comment beside the numRuns literal (AC-3P-WC-2); note the CI envelope expectation (AC-3P-WC-3). Also perform the whole-epic guardrail checks: no src/ change (AC-X-NO-PROD-CHANGE-3P-1), 2-party file untouched (AC-X-NO-2P-CHANGE-1), three-party.spec.ts not deleted/renamed/skipped (AC-X-NO-EXAMPLE-DELETION-3P-1), make test unaffected + make e2e runs the 3P file (AC-X-CI-3P-1). AC-VAL-3P-1 is a one-shot MANUAL fault-injection recorded in completion notes — not an automated assertion. Treat persistent multi-context red as harness flakiness per project memory unless a real 3-party divergence is shown.",
+      "acceptance_criteria": [
+        "AC-3P-WC-1",
+        "AC-3P-WC-2",
+        "AC-3P-WC-3",
+        "AC-X-NO-PROD-CHANGE-3P-1",
+        "AC-X-NO-2P-CHANGE-1",
+        "AC-X-NO-EXAMPLE-DELETION-3P-1",
+        "AC-X-CI-3P-1",
+        "AC-VAL-3P-1"
+      ],
+      "scope": {
+        "includes": [
+          "e2e/tests/multi-user-3p.property.spec.ts",
+          "specs/epic-property-tests-l3-three-party/"
+        ],
+        "excludes": [
+          "src/marmot/",
+          "src/store/",
+          "src/components/",
+          "e2e/tests/multi-user.property.spec.ts",
+          "e2e/tests/three-party.spec.ts"
+        ]
+      },
+      "complexity": "medium",
+      "status": "completed",
+      "owning_module": "3P property spec",
+      "lighter_path": false,
+      "notes": "Depends on S5 being runnable. Execution-bound: runs the heavy multi-context e2e suite (12-min envelope) up to 3 times; sensitive to documented multi-context e2e flakiness. COMPLETED 2026-05-26: wall-clock 73/93/212s (max 212<720, no breach, numRuns stays 15); all guardrails clean; AC-VAL-3P-1 fault-injection performed+reverted, clean C.* catch blocked by documented multi-context group-discovery flakiness (VQ-S7-009 disposition with evidence). Examiner verdict: verified."
+    }
+  ]
+}

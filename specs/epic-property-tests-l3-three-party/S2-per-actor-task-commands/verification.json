@@ -1,0 +1,19 @@
+{
+  "story_id": "S2",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-25T17:11:38Z",
+  "questions": [
+    {"question_id": "VQ-S2-001", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-CMD-CT-1", "question": "Does CtCommand3P(actor,title,desc) take actor: \"A\"|\"B\"|\"C\", and does check(m) return true only when m.actorIsMember(actor) && m.groupId !== null? Cite the constructor and check body."},
+    {"question_id": "VQ-S2-002", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-CMD-UT-1", "question": "Does UtCommand3P(actor,title) accept the three-actor type and assert the post-update task title via r.getTask(actor, ...) in run()? Cite the run postcondition."},
+    {"question_id": "VQ-S2-003", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-CMD-SC-1", "question": "Does ScCommand3P(actor,status) assert status-enum closure post-dispatch (the A2 per-command postcondition)? Cite the assertion."},
+    {"question_id": "VQ-S2-004", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-CMD-AS-1", "question": "Does AsCommand3P(actor) take actor and assert its assignment postcondition (A4) mirroring the 2-party form? Cite the assertion."},
+    {"question_id": "VQ-S2-005", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-CMD-UN-1", "question": "Does UnCommand3P(actor) take actor and assert assignee===null post-dispatch (A5)? Cite the assertion."},
+    {"question_id": "VQ-S2-006", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-CMD-DT-1", "question": "Does DtCommand3P(actor) take actor and assert the deleted task is absent post-dispatch? Cite the assertion."},
+    {"question_id": "VQ-S2-007", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-CMD-RL-1", "question": "Does RlCommand3P(actor) take actor and assert task persistence after reload (A11) mirroring the 2-party form? Cite the assertion."},
+    {"question_id": "VQ-S2-008", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-CMD-TOSTRING-1", "question": "Does every command's toString() return `${actor}.Verb(args)` matching the matrix DSL (e.g. C.Ct(title), B.Sc(open))? Cite each toString()."},
+    {"question_id": "VQ-S2-009", "phase": "pre-impl", "category": "ARCHITECTURE", "question": "Do all task commands dispatch on the acting actor's own page (r.page(actor)) and read postconditions from that same actor's page, never hard-coding pageA?"},
+    {"question_id": "VQ-S2-010", "phase": "pre-impl", "category": "TEST", "question": "Do the check() preconditions that require an existing task (Ut/Sc/As/Un/Dt) also gate on m.tasks.size > 0 so fast-check prunes impossible commands rather than failing at run time?"},
+    {"question_id": "VQ-S2-011", "phase": "pre-impl", "category": "QUALITY", "question": "Are the 3-party command classes self-contained in the new file (no edits to e2e/tests/multi-user.property.spec.ts and no changes to two-party.ts signatures)?"},
+    {"question_id": "VQ-S2-012", "phase": "pre-impl", "category": "BEST_PRACTICES", "question": "Are MLS commit/dispatch errors that are non-actionable (e.g. transient epoch races) handled the same way as the 2-party file (try/catch that skips postconditions) rather than failing the property run spuriously?"}
+  ]
+}

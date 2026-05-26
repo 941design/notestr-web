@@ -318,11 +318,13 @@ asserted for each scenario family.
 | TP-40..42 (leave)     | A9, A14, S5, C0                    |
 | TP-50..53 (forget)    | A10, A14, S5, S10, C0              |
 | TP-60..62 (rename)    | (UI-local; out of property scope)  |
-| TP-70..72 (3-party)   | (covered by 2-party C0 + induction)|
+| TP-70..72 (3-party)   | C0, S5, S6, S7, S10, A7..A12 (3-party at L3) [^tp70c] |
 | TP-80..82 (multi-dev) | A15, C0, S5, S6, S10 (multi-device at L3) [^tp52] |
 | TP-90..91 (concurrent)| D1                                 |
 
 [^tp52]: Leaf-count consequence asserted; full forget-self membership behaviour pending the `(fixme)` resolution in `epic-multi-device-sync`.
+
+[^tp70c]: TP-70 (admin-issued chain), TP-71, and TP-72 are now asserted empirically at L3 by the three-party property test `e2e/tests/multi-user-3p.property.spec.ts`, replacing the earlier "covered by 2-party C0 + induction" claim. TP-70c (the `A.In(B) → B.In(C)` invitee-chains-invitee shape) remains **labelled-only** — it is blocked by MIP-03 admin-only-commits and so is generated as a pruned model precondition, never run; see the `(fixme)` annotation on the TP-70c row above and the deferred-coverage note (TP-70c: three-party chain — requires admin promotion or auto-commit of Add proposals).
 
 ## Updating this document
 

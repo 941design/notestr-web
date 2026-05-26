@@ -1,0 +1,61 @@
+{
+  "module_name": "3P headline invariant assertions (multi-user-3p.property.spec.ts)",
+  "purpose": "Port the 2-party headline assertions (assertC0 / assertS5 / assertS6 / assertS7 / assertS10 in multi-user.property.spec.ts) to the three-party axis. Five standalone async functions taking (m: ModelState3P, r: RealSystem3P) that assert the settled-state invariants C0/S5/S6/S7/S10 across three distinct-pubkey actors A/B/C against the single shared group. Defined in S4; invoked after r.quiesce() in the S5 test body. STRICT form is live (production hooks present, verdict_strict_vs_degraded = STRICT_FORM_AVAILABLE); degraded-form fallbacks are present-but-dormant per AC-3P-DEG-1/2.",
+  "public_api": [
+    {
+      "name": "assertC0_3P",
+      "signature": "async assertC0_3P(m: ModelState3P, r: RealSystem3P): Promise<void>",
+      "description": "Settled-state equality across A/B/C. Guard (AC-3P-C0-1): runs only when m.groupId !== null && memberA && memberB && memberC. Strict asserts: AC-3P-C0-2 task-id sets pairwise equal + per-task status/assignee/title equal across all three; AC-3P-C0-3 member sets pairwise equal (getGroupMembersHook); AC-3P-C0-4 epoch(A)==epoch(B)==epoch(C) (getGroupEpochHook); AC-3P-C0-5 leafCount(g,p) equal across A/B/C for every p in the union of members (getPubkeyLeafCountHook). Degraded fallback (dormant): task-subset check only, gated by strictHooksPresent / leafCountHookPresent probes."
+    },
+    {
+      "name": "assertS5_3P",
+      "signature": "async assertS5_3P(m: ModelState3P, r: RealSystem3P): Promise<void>",
+      "description": "AC-3P-S5-1: biconditional (p ∈ membersA) === (leafCount(m.groupId, p) >= 1) for each of m.pubkeyA/B/C, membersA read via getGroupMembersHook on pageA, scoped to m.groupId (no cross-group false negatives, VQ-S4-006/013). Guard: returns when groupId or any pubkey is null, or membersA is null (group not loaded). Degraded fallback (dormant): positive direction only (member ⇒ ≥1 leaf), gated by leafCountHookPresent."
+    },
+    {
+      "name": "assertS6_3P",
+      "signature": "async assertS6_3P(m: ModelState3P): Promise<void>",
+      "description": "AC-3P-S6-1: walks each of m.epochSequenceA/B/C and asserts non-decreasing. Cross-actor epochs are NOT compared (synchronized only at C0 quiescence). No production hooks needed — the recorded epochSequence* arrays are the proxy; strict and degraded form are identical (the proxy IS the degraded mechanism per AC-3P-DEG-1)."
+    },
+    {
+      "name": "assertS7_3P",
+      "signature": "async assertS7_3P(m: ModelState3P, r: RealSystem3P): Promise<void>",
+      "description": "AC-3P-S7-1: triggers only when m.lastSwitched !== null. Reads the loaded group idStrs on the post-switch context via __notestrTestGroups and asserts none belong to the prior identity's exclusive group set (priorGroupIds). Uses only the always-present __notestrTestGroups hook; strict and degraded form identical."
+    },
+    {
+      "name": "assertS10_3P",
+      "signature": "async assertS10_3P(m: ModelState3P, r: RealSystem3P): Promise<void>",
+      "description": "AC-3P-S10-1: for each member actor with a known own pubkey, reads [data-testid=\"device-row\"] count on that actor's own page and asserts equality with getPubkeyLeafCountHook(page, m.groupId, ownPubkey). Degraded fallback (dormant): assert device-row count >= 0 only, gated by leafCountHookPresent."
+    }
+  ],
+  "private_files": [],
+  "owned_data": [
+    "assertC0_3P / assertS5_3P / assertS6_3P / assertS7_3P / assertS10_3P (5 standalone async assertion functions)",
+    "strictHooksPresent / leafCountHookPresent (runtime hook-presence probes gating the dormant degraded-form branches)"
+  ],
+  "dependencies_allowed": [
+    "@playwright/test (expect, Page)",
+    "e2e/fixtures/two-party.ts (read-only: getGroupMembersHook, getGroupEpochHook, getPubkeyLeafCountHook — all pre-existing exports; getGroupMembersHook + getPubkeyLeafCountHook added to the S4 import list, no new exports created)",
+    "ModelState3P / RealSystem3P / ActorId / ModelTask3P (S1 symbols in the same file)",
+    "window.__notestrTestGroups (inline group-id reads for S7), window.__notestrTestGroupMembers / __notestrTestGroupEpoch / __notestrTestPubkeyLeafCount (presence probes)"
+  ],
+  "dependencies_forbidden": [
+    "src/** (no production-code edits, AC-X-NO-PROD-CHANGE-3P-1)",
+    "e2e/tests/multi-user.property.spec.ts (frozen, AC-X-NO-2P-CHANGE-1)",
+    "e2e/tests/three-party.spec.ts (preserved, AC-X-NO-EXAMPLE-DELETION-3P-1)",
+    "any mutation of e2e/fixtures/two-party.ts (only additive consumption of existing exports)"
+  ],
+  "external_ports": [
+    "Production MLS group-state hooks via two-party.ts wrappers: getGroupMembersHook (__notestrTestGroupMembers), getGroupEpochHook (__notestrTestGroupEpoch), getPubkeyLeafCountHook (__notestrTestPubkeyLeafCount); plus inline __notestrTestGroups + __notestrTestTasks reads"
+  ],
+  "events_emitted": [],
+  "events_consumed": [
+    "Read-only: settled MLS group state (members, epoch, leaf counts) and task snapshots, read at quiescence on each actor's page"
+  ],
+  "design_decisions": [
+    "Three-way equality is asserted as pairwise B-vs-A and C-vs-A (transitive closure) rather than an explicit O(n^2) all-pairs loop where the comparison is symmetric (members, epoch, leaf-count), matching the 2-party A-vs-B shape extended by one comparand. Task id-set equality keeps the full pairwise loop because it is the degraded-form floor and must hold symmetrically even when hooks are absent.",
+    "All membership/leaf/epoch reads are scoped to the single shared m.groupId (VQ-S4-013) so cross-run MLS leftover leaves in older groups cannot cause false negatives.",
+    "Degraded-form fallbacks are gated by runtime hook-presence probes (strictHooksPresent / leafCountHookPresent) that are always true in the STRICT_FORM_AVAILABLE world, so the dormant branches never execute today but remain reachable if the l3-completion test-hook story is reverted (AC-3P-DEG-1/2). A top-of-assertion comment in each function names AC-3P-DEG-2 and points at epic-property-tests-l3-completion's test-hook story.",
+    "S6 and S7 need no l3-completion group-state hooks (S6 uses the recorded epochSequence* proxy; S7 uses the always-present __notestrTestGroups list), so their strict and degraded forms are identical — documented inline."
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "story_id": "S2",
+  "captured_at": "2026-05-25T20:10:00Z",
+  "baseline_commit": "23823bbda6f82e83d0dfedbb018398ac493a52b3",
+  "status": "S1_SKELETON_PRESENT",
+  "rationale": "S2 appends 7 per-actor task command classes (plus a file-private readGroupEpoch3P helper) to the existing e2e/tests/multi-user-3p.property.spec.ts created by S1. No prior task-command tests exist for this target. The file already contains the S1 skeleton: ModelState3P, RealSystem3P, the beforeAll/afterAll lifecycle, cachedPubkeyA/B/C, and exactly one placeholder test under one test.describe.serial.",
+  "discovery_baseline": {
+    "command": "npx playwright test e2e/tests/multi-user-3p.property.spec.ts --list",
+    "exit_code": 0,
+    "tests_in_file_pre_s2": 3,
+    "test_definitions_pre_s2": 1,
+    "note": "One test definition fanned out across the three configured Playwright projects (chromium + Mobile Chrome + Mobile Safari). The S1 placeholder test works and lists cleanly."
+  },
+  "regression_target": {
+    "tests_in_file_after_s2": 3,
+    "test_definitions_after_s2": 1,
+    "explanation": "S2 adds only command CLASSES, not test definitions. The command set is wired into the fc.commands array by S5, not S2. Therefore the test count is unchanged (still exactly one definition / 3 listed). The 7 new classes are intentionally unreferenced in S2 — they become live arbitraries in S5. e2e/ is not in tsconfig include and there is no root eslint gate, so unused-symbol lint does not apply (exploration.json conventions.tsconfig_eslint)."
+  },
+  "preconditions_verified": [
+    "e2e/tests/multi-user-3p.property.spec.ts exists (S1, AC-3P-FILE-1)",
+    "S1 skeleton test discovers as exactly 1 definition (AC-3P-FILE-2)",
+    "ModelState3P exposes actorIsMember(actor), pubkey(actor), tasks Map, recordEpoch(actor,epoch), groupId/groupName",
+    "RealSystem3P exposes page(actor), getTasks(actor), getTask(actor,id)",
+    "two-party.ts already exports dispatchTaskEvent, getGroupEpochHook, reload, settle (no new exports required by S2)"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "story_id": "S3",
+  "captured_at": "2026-05-25T23:30:00Z",
+  "baseline_commit": "23823bbda6f82e83d0dfedbb018398ac493a52b3",
+  "status": "S1_SKELETON_PLUS_S2_TASK_COMMANDS_PRESENT",
+  "rationale": "S3 appends 6 group-lifecycle command classes (Cg/In/Lg/Fd/Rd/Sw, in 3-party form) to e2e/tests/multi-user-3p.property.spec.ts after the S2 per-actor task-command block and before the test lifecycle. The file already contains the S1 skeleton (ModelState3P, RealSystem3P, readGroupEpoch3P, beforeAll/afterAll, cachedPubkeyA/B/C, one placeholder test under one test.describe.serial) and the S2 task commands (CtCommand3P … RlCommand3P). No prior group-lifecycle command classes exist for this target.",
+  "discovery_baseline": {
+    "command": "npx playwright test e2e/tests/multi-user-3p.property.spec.ts --list",
+    "exit_code": 0,
+    "tests_in_file_pre_s3": 3,
+    "test_definitions_pre_s3": 1,
+    "note": "One test definition fanned out across the three configured Playwright projects (chromium + Mobile Chrome + Mobile Safari). The S1/S2 file lists cleanly as exactly one definition."
+  },
+  "regression_target": {
+    "tests_in_file_after_s3": 3,
+    "test_definitions_after_s3": 1,
+    "explanation": "S3 adds only command CLASSES, not test definitions. The command set is wired into the fc.commands array by S5, not S3. The test count is therefore unchanged (still exactly one definition / 3 listed). The 6 new classes are intentionally unreferenced in S3 — they become live arbitraries in S5. e2e/ is not in tsconfig include and there is no root eslint gate, so unused-symbol lint does not apply (exploration.json conventions.tsconfig_eslint)."
+  },
+  "preconditions_verified": [
+    "e2e/tests/multi-user-3p.property.spec.ts exists with S1 skeleton + S2 task commands",
+    "ModelState3P exposes memberA/memberB/memberC, groupId/groupName, lastSwitched, actorIsMember(actor), pubkey(actor), recordEpoch(actor,epoch)",
+    "RealSystem3P exposes page(actor)",
+    "readGroupEpoch3P(page, groupId) file-private helper already present (added by S2)",
+    "two-party.ts already exports createGroup, currentGroupId, inviteByNpub, selectGroup, forgetLeafByIndex, leafIndexesFor, switchIdentity, getPubkeyHex, settle (no new exports required by S3)",
+    "auth-helper-b.ts exports USER_B_NPUB; auth-helper-c.ts exports USER_C_NPUB; auth-helper.ts exports E2E_BUNKER_URL; auth-helper-b.ts exports E2E_BUNKER_B_URL",
+    "module-scope cachedPubkeyA is declared in the test-lifecycle section and set in beforeAll — referenced lazily inside SwCommand3P.run"
+  ]
+}

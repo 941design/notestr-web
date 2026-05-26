@@ -1,0 +1,17 @@
+{
+  "story_id": "S7",
+  "authored_by": "story-planner",
+  "authored_at": "2026-05-25T17:11:38Z",
+  "questions": [
+    {"question_id": "VQ-S7-001", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-WC-1", "question": "Was `make e2e` against the 3P file alone run three times locally and the maximum observed wall-clock recorded in the epic completion notes? Cite the recorded numbers."},
+    {"question_id": "VQ-S7-002", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-WC-2", "question": "If any of the three runs exceeded 720s, was numRuns reduced to 12 (or maxCommands to 8), the validation repeated, and the chosen final value captured in a code comment beside the numRuns literal? If no breach, is that explicitly recorded? Cite the comment or note."},
+    {"question_id": "VQ-S7-003", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-3P-WC-3", "question": "Is the CI envelope expectation documented (3P runtime appears in post-merge log within the same envelope; first-merge warning acceptable; sustained ≥3-merge breach triggers a follow-up)? Cite the note."},
+    {"question_id": "VQ-S7-004", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-X-NO-PROD-CHANGE-3P-1", "question": "Does `git diff --stat` over the epic show NO changes under src/marmot/, src/store/, or src/components/ — only e2e/tests/multi-user-3p.property.spec.ts, optional additive two-party.ts exports, docs/two-party-permutation-matrix.md, and this epic's specs/ dir? Cite the diff."},
+    {"question_id": "VQ-S7-005", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-X-NO-2P-CHANGE-1", "question": "Is e2e/tests/multi-user.property.spec.ts unmodified by this epic? Cite git diff for that path showing no change."},
+    {"question_id": "VQ-S7-006", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-X-NO-EXAMPLE-DELETION-3P-1", "question": "Is e2e/tests/three-party.spec.ts not deleted, renamed, or .skip-ed (the example-based three-party tests remain)? Cite the file's continued presence and absence of .skip."},
+    {"question_id": "VQ-S7-007", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-X-CI-3P-1", "question": "Is `make test` (L1/L2) unaffected, and does `make e2e` run the 3P file as part of the suite (no Makefile/config change needed beyond auto-discovery)? Cite evidence."},
+    {"question_id": "VQ-S7-008", "phase": "pre-impl", "category": "SPEC", "ac_id": "AC-VAL-3P-1", "question": "Was the one-shot MANUAL fault-injection validation performed (introduce a 3-party-only divergence, e.g. disable C's relay subscription, run make e2e, observe a counterexample whose chain includes a C.* command and a task event C cannot see post-quiesce, then revert) and documented in completion notes? This is manual, not an automated assertion — confirm it was done and reverted."},
+    {"question_id": "VQ-S7-009", "phase": "pre-impl", "category": "TEST", "question": "If runs show persistent multi-context red without a demonstrable 3-party divergence, is it treated as documented harness flakiness (project memory: multi-context e2e blanking) rather than a test defect — and is that judgment recorded with evidence rather than silently passing?"},
+    {"question_id": "VQ-S7-010", "phase": "pre-impl", "category": "QUALITY", "question": "Are the wall-clock measurements and any numRuns/maxCommands tuning captured durably (completion notes + code comment) so a future maintainer can see the chosen budget and why?"}
+  ]
+}
