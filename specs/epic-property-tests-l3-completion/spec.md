@@ -160,6 +160,8 @@ try {
 }
 ```
 
+> **Correction (post-implementation).** The snippet above (`since = now` set after the leave click, asserting `0`) was found to race the whole-second `created_at` boundary and intermittently count the leaver's *own* RFC 9420 §12.4 Remove proposal — counterexample `[A.Cg, A.In(B), A.Lg]`, seed `1508688479`. The shipped code replaces this with a shared `assertNoOngoingGroupTraffic(groupNostrIdHex, sinceBeforeDeparture)` helper that captures the departure's own kind-445 first (filtering from a timestamp taken *before* the click) and anchors the 2-second negative-delivery window strictly after it. See the corrected **AC-A14-1 / AC-A14-2 / AC-A14-8** in `acceptance-criteria.md` for the normative semantics.
+
 Apply the same pattern in `FdCommand.run` for the `leafCount === 1` branch (last-leaf case). For `leafCount > 1`, A14 does not apply (the pubkey still has remaining leaves and continues to receive events).
 
 `getNostrGroupIdHex` is a thin Playwright `evaluate` over the existing `__notestrTestGroups()` hook to find the entry whose `idStr === groupIdA` and return its `nostrGroupIdHex`.

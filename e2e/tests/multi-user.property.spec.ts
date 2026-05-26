@@ -225,6 +225,63 @@ async function readGroupEpoch(page: Page, groupId: string | null): Promise<numbe
   return getGroupEpochHook(page, groupId);
 }
 
+/**
+ * A14 negative-delivery check (wire-level, AC-A14-8).
+ *
+ * After a member departs a group (Lg self-leave, or Fd of the last leaf of a
+ * pubkey), assert that no *ongoing* kind-445 group traffic reaches the
+ * subscriber's relay connection.
+ *
+ * The departure action itself publishes a kind-445 on the group's `#h`:
+ *  - self-leave emits an RFC 9420 §12.4 Remove **proposal** (`proposeLeaveGroup`),
+ *  - forgetting another member's last leaf emits a Remove **commit**.
+ * That event is the action, not forbidden ongoing traffic, so it must be
+ * excluded from the window. Because nostr `created_at` is whole-second and the
+ * proposal is published in roughly the same second the subscriber opens, a
+ * naive `since = now` filter replays it and yields a false positive (the bug
+ * this check previously had: it counted the leaver's own departure event).
+ *
+ * Fix: capture the departure event(s) first (filtering from a timestamp taken
+ * *before* the leave click, so the relay replays them), then anchor the
+ * negative window strictly after the latest one (`+1` second) so the 2-second
+ * observation only sees genuinely subsequent traffic.
+ *
+ * @param groupNostrIdHex  the group's MLS nostr_group_id (#h tag value)
+ * @param sinceBeforeDeparture  unix-seconds captured BEFORE the leave/forget UI
+ *   action, so the departure's own kind-445 is within the replay range
+ */
+async function assertNoOngoingGroupTraffic(
+  groupNostrIdHex: string,
+  sinceBeforeDeparture: number,
+): Promise<void> {
+  const subscriber = await openNdkSubscriber([RELAY_URL]);
+  try {
+    const baseFilter: NDKFilter = {
+      kinds: [445 as NDKKind],
+      "#h": [groupNostrIdHex],
+    };
+    // Phase 1: capture the departure's own proposal/commit (replayed from the
+    // relay because we filter from before the leave click).
+    const departureEvents = await subscriber.waitForDuration(
+      { ...baseFilter, since: sinceBeforeDeparture },
+      3000,
+    );
+    // Anchor the negative window strictly after the departure event(s). If none
+    // were seen (no kind-445 emitted by this departure path), fall back to now.
+    const anchor = departureEvents.length
+      ? Math.max(...departureEvents.map((e) => e.created_at ?? sinceBeforeDeparture)) + 1
+      : Math.floor(Date.now() / 1000);
+    // Phase 2: no kind-445 traffic arrives after the departure has settled.
+    const ongoing = await subscriber.waitForDuration(
+      { ...baseFilter, since: anchor },
+      2000,
+    );
+    expect(ongoing.length).toBe(0);
+  } finally {
+    await subscriber.close();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Command classes — one per DSL verb
 // ---------------------------------------------------------------------------
@@ -334,6 +391,10 @@ class LgCommand implements fc.AsyncCommand<ModelState, RealSystem> {
     const groupRow = page
       .locator('nav[aria-label="Groups"] li')
       .filter({ hasText: groupName });
+    // Capture the wire clock BEFORE the leave click so the leave's own Remove
+    // proposal (RFC 9420 §12.4, published as kind-445) is inside the A14 replay
+    // range and can be excluded from the negative-delivery window below.
+    const sinceBeforeLeave = Math.floor(Date.now() / 1000);
     await groupRow.locator('[data-testid="group-leave-btn"]').click();
     await page.locator('[data-testid="group-leave-confirm"]').click();
 
@@ -349,24 +410,13 @@ class LgCommand implements fc.AsyncCommand<ModelState, RealSystem> {
     const epoch = await readGroupEpoch(remainingPage, remainingGroupId);
     m.recordEpoch(remainingActor, epoch);
 
-    // A14: verify no new kind-445 events arrive at the relay connection for this
-    // group in the 2-second window after leave (wire-level check per AC-A14-8).
-    // Uses the remaining member's page to resolve groupNostrIdHex since the
-    // leaving page no longer has the group loaded.
+    // A14: no ONGOING kind-445 group traffic reaches the leaving context after
+    // the leave settles (wire-level check per AC-A14-8). The leave's own Remove
+    // proposal is excluded — it is the action, not subsequent traffic. Uses the
+    // remaining member's page to resolve groupNostrIdHex since the leaving page
+    // no longer has the group loaded.
     const groupNostrIdHex = await getNostrGroupIdHex(remainingPage, groupId);
-    const subscriber = await openNdkSubscriber([RELAY_URL]);
-    try {
-      const filter: NDKFilter = {
-        kinds: [445 as NDKKind],
-        "#h": [groupNostrIdHex],
-      };
-      const events = await subscriber.waitForDuration(filter, 2000);
-      // A14: no new kind-445 events arrive at the leaving context's relay
-      // connection. Wire-level interpretation per AC-A14-8.
-      expect(events.length).toBe(0);
-    } finally {
-      await subscriber.close();
-    }
+    await assertNoOngoingGroupTraffic(groupNostrIdHex, sinceBeforeLeave);
   }
 
   toString(): string {
@@ -396,6 +446,9 @@ class FdCommand implements fc.AsyncCommand<ModelState, RealSystem> {
     // forgetLeafByIndex can fail due to MLS state accumulated from prior runs.
     // Treat this as a non-actionable error in the property test context —
     // the real forget-device semantics are covered by forget-device.spec.ts.
+    // Capture the wire clock BEFORE the forget commit so A's own Remove commit
+    // (kind-445) is inside the A14 replay range and excluded from the window.
+    const sinceBeforeForget = Math.floor(Date.now() / 1000);
     try {
       await forgetLeafByIndex(r.pageA, groupId, indexes[0]!);
     } catch {
@@ -410,23 +463,11 @@ class FdCommand implements fc.AsyncCommand<ModelState, RealSystem> {
       m.memberB = false;
       m.groupIdB = null;
 
-      // A14: verify no new kind-445 events arrive at the relay connection for
-      // this group in the 2-second window after B's last leaf is forgotten
-      // (wire-level check per AC-A14-8).
+      // A14: no ONGOING kind-445 traffic arrives after B's last leaf is removed
+      // (wire-level check per AC-A14-8). A's own Remove commit is excluded — it
+      // is the forget action itself, not subsequent traffic.
       const groupNostrIdHex = await getNostrGroupIdHex(r.pageA, groupId);
-      const subscriber = await openNdkSubscriber([RELAY_URL]);
-      try {
-        const filter: NDKFilter = {
-          kinds: [445 as NDKKind],
-          "#h": [groupNostrIdHex],
-        };
-        const events = await subscriber.waitForDuration(filter, 2000);
-        // A14: no new kind-445 events arrive at the relay connection after
-        // B's last leaf is removed. Wire-level interpretation per AC-A14-8.
-        expect(events.length).toBe(0);
-      } finally {
-        await subscriber.close();
-      }
+      await assertNoOngoingGroupTraffic(groupNostrIdHex, sinceBeforeForget);
     } else {
       // A10: K > 1 → B remains member with K-1 leaves
       await expect
