@@ -251,6 +251,10 @@ export function GroupManager({
           return (
             <li
               key={group.idStr}
+              // Stable id selector for e2e: lets cross-client tests target a
+              // group by id when its display name may not have propagated yet
+              // (e.g. a group created by another implementation).
+              data-group-id={group.idStr}
               aria-current={selectedGroupId === group.idStr ? "true" : undefined}
               data-detached={isDetached ? "true" : undefined}
               className={cn(
