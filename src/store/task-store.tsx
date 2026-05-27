@@ -137,6 +137,10 @@ export const TaskStoreProvider: React.FC<TaskStoreProviderProps> = ({
                 restoredCount: restored.size,
               });
               setState(restored);
+              // Pin the ref synchronously so a dispatch that fires before the
+              // post-load render reads the bootstrapped state, not the empty
+              // initial Map (see the dispatch-path note at the ref assignment).
+              stateRef.current = restored;
               setLoading(false);
               return;
             }
@@ -155,6 +159,10 @@ export const TaskStoreProvider: React.FC<TaskStoreProviderProps> = ({
           restoredCount: restored.size,
         });
         setState(restored);
+        // Pin the ref synchronously (see the bootstrap path above and the
+        // dispatch-path note): the ref must reflect the replayed state before
+        // any dispatch that races the post-load render.
+        stateRef.current = restored;
         setLoading(false);
       }
     }
@@ -220,6 +228,13 @@ export const TaskStoreProvider: React.FC<TaskStoreProviderProps> = ({
           taskEventId: rumor.id,
         });
         setState(nextState);
+        // Advance the ref synchronously (same rationale as the dispatch path):
+        // setState only schedules a render, so until the next render `:78`
+        // re-syncs the ref. A local dispatch that interleaves before that
+        // render would otherwise read the pre-remote task in
+        // ensureMonotonicTimestamp/applyEvent and drop its own edit. Keep the
+        // ref pinned to the most recently *accepted* state.
+        stateRef.current = nextState;
 
         // Persistence is handled by device-sync's applicationMessage listener
         // which runs even when this provider isn't mounted.
