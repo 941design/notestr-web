@@ -71,6 +71,7 @@ const arbTaskFresh: fc.Arbitrary<Task> = fc
     createdBy,
     createdAt,
     updatedAt: createdAt,
+    updatedBy: createdBy,
   }));
 
 // ---------------------------------------------------------------------------
@@ -940,12 +941,15 @@ describe("reducer property tests — S2 story", () => {
         (events, fakeAuthor) => {
           // Skip sequences with per-task timestamp ties — the tie-breaker
           // uses updatedBy, so relabelling changes outcomes in that case.
+          // The create event also carries a timestamp (createdAt == updatedAt)
+          // and its updatedBy participates in the tie-break, so it must be
+          // counted too — otherwise a create+mutation at the same timestamp
+          // slips through and relabelling flips the winner.
           const seenTimes = new Map<string, Set<number>>();
           for (const e of events) {
-            if (e.type === "task.created") continue;
-            const taskId = e.taskId;
+            const taskId = e.type === "task.created" ? e.task.id : e.taskId;
+            const ts = e.type === "task.created" ? e.task.updatedAt : e.updatedAt;
             if (!seenTimes.has(taskId)) seenTimes.set(taskId, new Set());
-            const ts = e.updatedAt;
             if (seenTimes.get(taskId)!.has(ts)) return; // skip this example
             seenTimes.get(taskId)!.add(ts);
           }

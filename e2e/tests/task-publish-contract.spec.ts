@@ -227,6 +227,7 @@ test.describe("task publish contract", () => {
       createdBy: userPk,
       createdAt: Math.floor(Date.now() / 1000),
       updatedAt: Math.floor(Date.now() / 1000),
+      updatedBy: userPk,
     };
 
     try {
@@ -312,6 +313,7 @@ test.describe("task publish contract", () => {
         createdBy: userPk,
         createdAt: now,
         updatedAt: now,
+        updatedBy: userPk,
       },
     });
 
@@ -368,6 +370,7 @@ test.describe("task publish contract", () => {
         createdBy: userPk,
         createdAt: baseTime,
         updatedAt: baseTime,
+        updatedBy: userPk,
       },
     });
 
@@ -430,6 +433,7 @@ test.describe("task publish contract", () => {
         createdBy: userPk,
         createdAt: now,
         updatedAt: now,
+        updatedBy: userPk,
       },
     });
 
@@ -522,6 +526,7 @@ test.describe("task publish contract", () => {
         createdBy: userPk,
         createdAt: now,
         updatedAt: now,
+        updatedBy: userPk,
       },
     });
 
@@ -593,6 +598,7 @@ test.describe("task publish contract", () => {
         createdBy: userPk,
         createdAt: now,
         updatedAt: now,
+        updatedBy: userPk,
       },
     };
 
@@ -653,6 +659,7 @@ test.describe("task publish contract", () => {
           createdBy: userPk,
           createdAt: Math.floor(Date.now() / 1000),
           updatedAt: Math.floor(Date.now() / 1000),
+          updatedBy: userPk,
         },
       };
       await dispatchTaskEvent(page, recoveryEvent);

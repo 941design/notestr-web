@@ -104,6 +104,7 @@ test.describe.serial("concurrent-edits setup", () => {
         createdBy: pubkeyA,
         createdAt: now,
         updatedAt: now,
+        updatedBy: pubkeyA,
       },
     });
 

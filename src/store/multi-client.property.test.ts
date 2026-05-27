@@ -124,6 +124,7 @@ const arbTaskFresh: fc.Arbitrary<Task> = fc
     createdBy,
     createdAt,
     updatedAt: createdAt,
+    updatedBy: createdBy,
   }));
 
 // ---------------------------------------------------------------------------

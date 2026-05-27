@@ -52,8 +52,9 @@ node_modules: package.json package-lock.json
 	@npm install --ignore-scripts
 	@# ts-mls is a transitive dep of marmot-ts but hoisted incorrectly by npm;
 	@# install it directly so Next.js can resolve it during the build step.
-	@# applesauce-core/accounts are also transitive deps needed by marmot-ts.
-	@npm install ts-mls@2.0.0-rc.10 applesauce-core applesauce-accounts --ignore-scripts 2>/dev/null || true
+	@# applesauce-core/accounts/common are also transitive deps needed by marmot-ts
+	@# (common provides the Rumor type imported by device-sync/task-store).
+	@npm install ts-mls@2.0.0-rc.10 applesauce-core applesauce-accounts applesauce-common --ignore-scripts 2>/dev/null || true
 	@echo "$(CURRENT_PLATFORM)" > $(PLATFORM_STAMP)
 	@touch node_modules
 

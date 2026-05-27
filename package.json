@@ -29,6 +29,7 @@
     "@nostr-dev-kit/ndk": "^3.0.3",
     "@tailwindcss/postcss": "^4.2.1",
     "applesauce-accounts": "^6.0.0",
+    "applesauce-common": "^6.1.0",
     "applesauce-core": "^6.1.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

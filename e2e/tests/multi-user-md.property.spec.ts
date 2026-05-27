@@ -632,6 +632,7 @@ class CtCommand_MD implements fc.AsyncCommand<ModelStateMD, RealSystemMD> {
         createdBy: pubkey,
         createdAt: now,
         updatedAt: now,
+        updatedBy: pubkey,
       },
     });
 

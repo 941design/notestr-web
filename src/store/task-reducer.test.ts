@@ -17,6 +17,7 @@ function sampleTask(overrides?: Partial<Task>): Task {
     createdBy: "pubkey-alice",
     createdAt: 1000,
     updatedAt: 1000,
+    updatedBy: "pubkey-alice",
     ...overrides,
   };
 }

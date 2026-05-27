@@ -132,6 +132,7 @@ test.describe("TP-71: A's task lands on both B and C", () => {
         createdBy: pubkeyA,
         createdAt: now,
         updatedAt: now,
+        updatedBy: pubkeyA,
       },
     });
 
@@ -174,6 +175,7 @@ test.describe("TP-72: a task by C lands on A and B", () => {
         createdBy: pubkeyC,
         createdAt: now,
         updatedAt: now,
+        updatedBy: pubkeyC,
       },
     });
 

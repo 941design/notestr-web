@@ -542,6 +542,7 @@ class CtCommand implements fc.AsyncCommand<ModelState, RealSystem> {
         createdBy: pubkey,
         createdAt: now,
         updatedAt: now,
+        updatedBy: pubkey,
       },
     });
 

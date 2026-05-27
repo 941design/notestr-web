@@ -96,6 +96,7 @@ test.describe.serial("cross-author setup", () => {
         createdBy: pubkeyA,
         createdAt: now,
         updatedAt: now,
+        updatedBy: pubkeyA,
       },
     });
 
@@ -258,6 +259,7 @@ test.describe("TP-14: A status-changes → B observes", () => {
         createdBy: pubkeyA,
         createdAt: now,
         updatedAt: now,
+        updatedBy: pubkeyA,
       },
     });
     // Wait for it to land on B before mutating, otherwise the receiver could
@@ -302,6 +304,7 @@ test.describe("TP-24: B deletes A's task → A observes removal", () => {
         createdBy: pubkeyA,
         createdAt: now,
         updatedAt: now,
+        updatedBy: pubkeyA,
       },
     });
     await expect(pageB.locator('[data-column="open"]').first()).toContainText(t3Title, {
@@ -342,6 +345,7 @@ test.describe("TP-17: A deletes own task → B observes removal", () => {
         createdBy: pubkeyA,
         createdAt: now,
         updatedAt: now,
+        updatedBy: pubkeyA,
       },
     });
     await expect(pageB.locator('[data-column="open"]').first()).toContainText(t4Title, {

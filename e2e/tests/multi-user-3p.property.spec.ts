@@ -302,6 +302,7 @@ class CtCommand3P implements fc.AsyncCommand<ModelState3P, RealSystem3P> {
         createdBy: pubkey,
         createdAt: now,
         updatedAt: now,
+        updatedBy: pubkey,
       },
     });
 

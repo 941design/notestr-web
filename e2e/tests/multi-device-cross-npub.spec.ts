@@ -125,6 +125,7 @@ test.describe("TP-81: A1's task lands on A2 and B", () => {
         createdBy: pubkeyA,
         createdAt: now,
         updatedAt: now,
+        updatedBy: pubkeyA,
       },
     });
 
@@ -162,6 +163,7 @@ test.describe("TP-82: B's status change reaches A1 and A2", () => {
         createdBy: pubkeyA,
         createdAt: now,
         updatedAt: now,
+        updatedBy: pubkeyA,
       },
     });
     await expect(pageB.locator('[data-column="open"]').first()).toContainText(title, {

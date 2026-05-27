@@ -290,7 +290,7 @@ describe("forgetSelfDevice", () => {
     // ratchetTree shape only when invoked on groupWithout.
     const mod = await import("@internet-privacy/marmot-ts");
     const original = vi.mocked(mod.getPubkeyLeafNodeIndexes);
-    original.mockImplementation((state: { ratchetTree: Array<{ nodeType?: string; leaf?: { id?: string } } | null> }) => {
+    original.mockImplementation(((state: { ratchetTree: Array<{ nodeType?: string; leaf?: { id?: string } } | null> }) => {
       const first = state.ratchetTree[0];
       if (first && first.leaf?.id === "kp-other") return [];
       const indexes: number[] = [];
@@ -299,7 +299,7 @@ describe("forgetSelfDevice", () => {
         if (node && node.nodeType === "leaf") indexes.push(Math.floor(nodeIndex / 2));
       }
       return indexes;
-    });
+    }) as unknown as typeof mod.getPubkeyLeafNodeIndexes);
 
     const client = makeSelfClient([groupWithSelf, groupWithout], []);
     await forgetSelfDevice(client, makeSigner(), [], vi.fn());
@@ -758,21 +758,21 @@ describe("forget-device mutation-gap properties", () => {
     vi.mocked(tsMlsReset.defaultKeyPackageEqualityConfig.compareKeyPackageToLeafNode).mockReset();
     vi.mocked(tsMlsReset.getOwnLeafNode).mockReset();
     vi.mocked(mod.getPubkeyLeafNodeIndexes).mockImplementation(
-      (state: { ratchetTree: Array<{ nodeType?: string } | null> }) => {
+      ((state: { ratchetTree: Array<{ nodeType?: string } | null> }) => {
         const indexes: number[] = [];
         for (let ni = 0; ni < state.ratchetTree.length; ni++) {
           const n = state.ratchetTree[ni];
           if (n && n.nodeType === "leaf") indexes.push(Math.floor(ni / 2));
         }
         return indexes;
-      },
+      }) as unknown as typeof mod.getPubkeyLeafNodeIndexes,
     );
     vi.mocked(mod.getGroupMembers).mockReturnValue(["member-pubkey"]);
     vi.mocked(mod.getKeyPackage).mockImplementation(
-      (event: { keyPackage: unknown }) => event.keyPackage,
+      ((event: { keyPackage: unknown }) => event.keyPackage) as unknown as typeof mod.getKeyPackage,
     );
     vi.mocked(mod.getKeyPackageIdentifier).mockImplementation(
-      (event: { _slot?: string }) => event._slot,
+      ((event: { _slot?: string }) => event._slot) as unknown as typeof mod.getKeyPackageIdentifier,
     );
     vi.mocked(mod.keyPackageFilters).mockReturnValue([]);
     vi.mocked(mod.isAdmin).mockReturnValue(true);
@@ -780,7 +780,7 @@ describe("forget-device mutation-gap properties", () => {
     const tsMls = await import("ts-mls");
     vi.mocked(tsMls.defaultKeyPackageEqualityConfig.compareKeyPackageToLeafNode)
       .mockImplementation(
-        (kp: { id: string }, leaf: { id: string }) => kp.id === leaf.id,
+        ((kp: { id: string }, leaf: { id: string }) => kp.id === leaf.id) as unknown as typeof tsMls.defaultKeyPackageEqualityConfig.compareKeyPackageToLeafNode,
       );
     // Default getOwnLeafNode throws — the rotation-fallback's own-leaf
     // exclusion is opt-in per test.
@@ -1316,7 +1316,7 @@ describe("forget-device mutation-gap properties", () => {
           vi.mocked(removeLeafByIndex).mockReset();
           cmp.mockReset();
           cmp.mockImplementation(
-            (kp: { id: string }, leaf: { id: string }) => kp.id === leaf.id,
+            ((kp: { id: string }, leaf: { id: string }) => kp.id === leaf.id) as unknown as typeof tsMls.defaultKeyPackageEqualityConfig.compareKeyPackageToLeafNode,
           );
 
           // Build the ratchet tree: leaves at even indexes, parent nodes at
@@ -1440,7 +1440,7 @@ describe("forget-device mutation-gap properties", () => {
     // matches the leaf at node index 4 → leaf index 2).
     vi.mocked(tsMls.defaultKeyPackageEqualityConfig.compareKeyPackageToLeafNode)
       .mockImplementation(
-        (kp: { id: string }, leaf: { id: string }) => kp.id === leaf.id,
+        ((kp: { id: string }, leaf: { id: string }) => kp.id === leaf.id) as unknown as typeof tsMls.defaultKeyPackageEqualityConfig.compareKeyPackageToLeafNode,
       );
 
     // Fallback would yield a DIFFERENT index (99) — a value no correct
