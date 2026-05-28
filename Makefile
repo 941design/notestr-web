@@ -43,17 +43,28 @@ node_modules: package.json package-lock.json
 			https://github.com/941design/marmot-ts.git /tmp/marmot-ts 2>/dev/null || true; \
 		cd /tmp/marmot-ts && pnpm install --ignore-scripts 2>/dev/null && pnpm run build 2>/dev/null; \
 	fi
+	@# Pack the built fork into a stable-named tarball and depend on THAT — never a
+	@# file: symlink to /tmp/marmot-ts/dist. marmot-ts declares ts-mls as a
+	@# peerDependency; a symlink to the dev tree resolves ts-mls to the fork's own
+	@# devDep copy — a second ts-mls instance whose branded (unique-symbol) types
+	@# don't unify with ours, breaking `tsc` / `next build`. The packed tarball
+	@# excludes devDependencies, so it carries no ts-mls and our single copy is used.
+	@# (See CLAUDE.md → "marmot-ts (we control the fork)".)
+	@# npm_config_ignore_scripts skips the fork's `prepare` (pnpm build) — dist is
+	@# already built above; running prepare here trips pnpm's build-script gate.
+	@cd /tmp/marmot-ts && npm_config_ignore_scripts=true pnpm pack >/dev/null 2>&1 && \
+		cp -f /tmp/marmot-ts/internet-privacy-marmot-ts-*.tgz /tmp/marmot-ts/marmot-ts.tgz
 	@node -e " \
 		const fs=require('fs'); \
 		const p=JSON.parse(fs.readFileSync('package.json','utf8')); \
-		p.dependencies['@internet-privacy/marmot-ts']='file:/tmp/marmot-ts/dist'; \
+		p.dependencies['@internet-privacy/marmot-ts']='file:/tmp/marmot-ts/marmot-ts.tgz'; \
 		fs.writeFileSync('package.json',JSON.stringify(p,null,2)); \
 	"
 	@npm install --ignore-scripts
-	@# ts-mls is a transitive dep of marmot-ts but hoisted incorrectly by npm;
-	@# install it directly so Next.js can resolve it during the build step.
-	@# applesauce-core/accounts/common are also transitive deps needed by marmot-ts
-	@# (common provides the Rumor type imported by device-sync/task-store).
+	@# ts-mls is marmot-ts's peerDependency (we supply the single shared copy) and
+	@# the applesauce packages are types it re-exposes; install them directly so
+	@# Next.js resolves them during the build step. (common provides the Rumor type
+	@# imported by device-sync/task-store.)
 	@npm install ts-mls@2.0.0-rc.10 applesauce-core applesauce-accounts applesauce-common --ignore-scripts 2>/dev/null || true
 	@echo "$(CURRENT_PLATFORM)" > $(PLATFORM_STAMP)
 	@touch node_modules

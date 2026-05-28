@@ -25,7 +25,7 @@
   "license": "MIT",
   "dependencies": {
     "@hpke/chacha20poly1305": "^1.7.1",
-    "@internet-privacy/marmot-ts": "file:/tmp/marmot-ts/dist",
+    "@internet-privacy/marmot-ts": "file:/tmp/marmot-ts/marmot-ts.tgz",
     "@nostr-dev-kit/ndk": "^3.0.3",
     "@tailwindcss/postcss": "^4.2.1",
     "applesauce-accounts": "^6.0.0",

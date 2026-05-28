@@ -18,37 +18,46 @@ This project is developed across Linux x86_64 and macOS ARM (darwin-arm64). Nati
 
 ## marmot-ts (we control the fork)
 
-`@internet-privacy/marmot-ts` is **our fork**, consumed via a `file:` dependency —
-`node_modules/@internet-privacy/marmot-ts` is a symlink to the local fork build.
+`@internet-privacy/marmot-ts` is **our fork**. The `make node_modules` target clones
+it to `/tmp/marmot-ts`, builds `dist`, **packs it into a tarball**
+(`/tmp/marmot-ts/marmot-ts.tgz`), and rewrites `package.json` to depend on that
+tarball — **not** a `file:` symlink to the dev tree. The tarball is the only
+consumption shape that keeps a single `ts-mls` instance (see below).
 
 - **Never monkey-patch marmot-ts in `node_modules`.** Edits there are ephemeral
-  (any reinstall wipes them) and only touch a symlink into the fork's build output.
-  Fix the issue in the fork, rebuild, and re-consume.
+  (any reinstall wipes them). Fix the issue in the fork, rebuild, repack, re-consume.
 
-### Pitfall: duplicate `ts-mls` instance breaks `make build`
+### Why a tarball, not a symlink or workspace (duplicate `ts-mls`)
 
-**Symptom:** `make build` (or `npx tsc --noEmit`) fails with `TS2345` errors that
-cite two `ts-mls` locations — the fork's tree (`…/marmot-ts/…/ts-mls`) and this
-project's `node_modules/ts-mls` — e.g. `ClientState`/`KeyPackage` "not assignable",
-or a missing `[__custom_extension_brand]` property.
+marmot-ts re-exposes `ts-mls` types in its public API (`MarmotGroup.state` is a
+`ts-mls` `ClientState`, etc.), and `ts-mls` brands types with a `unique symbol`
+(`CustomExtension[__custom_extension_brand]`). If marmot-ts and this app resolve
+*two physical copies* of `ts-mls`, those branded types **don't unify — even at the
+identical version**, and `make build` / `npx tsc --noEmit` fail with `TS2345`
+errors citing two `ts-mls` paths (one under `/tmp/marmot-ts`, one under our
+`node_modules`).
 
-**Cause:** marmot-ts re-exposes `ts-mls` types in its public API (`MarmotGroup.state`
-is a `ts-mls` `ClientState`, etc.), and `ts-mls` brands types with a `unique symbol`.
-If marmot-ts and this app resolve *two separate physical copies* of `ts-mls`, those
-branded types don't unify — even at the identical version. The fork currently lists
-`ts-mls` as a regular `dependency` and is consumed via a `file:` symlink to its dev
-tree, so the fork's own copy and this app's copy are two instances.
+The fix has two halves, both in place:
+1. **Fork:** `ts-mls` is a `peerDependency` (+ `devDependency`), not a regular
+   `dependency` — so the published/packed package carries no `ts-mls` and uses the
+   host's copy. (marmot-ts commit "Declare ts-mls as a peer dependency".)
+2. **Consumer:** the Makefile depends on the **packed tarball**, whose
+   `devDependencies` (and thus `ts-mls`) are excluded — so npm installs marmot-ts as
+   a real dir with no sibling `ts-mls`, deduping to our single copy.
 
-**The fix lives in the fork — do not work around it here (no `tsconfig` paths
-hacks, no copying into `node_modules`; both have been tried and fail):**
-1. In the fork, move `ts-mls` from `dependencies` to `peerDependencies` (keep it in
-   `devDependencies` so the fork still builds/tests). This declares "use the host's
-   single `ts-mls`."
-2. Consume the fork as a packed artifact (`pnpm pack` → depend on the `.tgz`) or a
-   published/git version — **not** a `file:` link to the live dev directory. A
-   tarball installs as a real package with no sibling `ts-mls`, so the install
-   dedupes to this app's single copy. For active co-development of both repos, use a
-   workspace so they share one `node_modules` / one `ts-mls`.
+**Do NOT switch marmot-ts to a pnpm `workspace:*` / live symlink to "get live
+edits".** It reintroduces the bug: pnpm creates *two virtual `ts-mls` instances*
+because the fork's devDep `ts-mls` resolves a different transitive `@noble/ciphers`
+than the consumer scope, and pnpm keys its store by full resolution. The tarball
+excludes devDeps and sidesteps this entirely. Also rejected (verified): `tsconfig`
+`paths` for `ts-mls` (no effect — the fork's `.d.ts` resolve by realpath) and
+copying marmot-ts into `node_modules` (breaks its other deps).
+
+**Co-development loop:** after editing the fork, rebuild its dist
+(`cd /tmp/marmot-ts && pnpm build`), then in this repo force a repack+reinstall:
+`touch package.json && make node_modules`. (`make node_modules` re-runs the pack +
+`npm install` steps; the clone/build step is skipped while `/tmp/marmot-ts/dist`
+exists, so delete it to pull a fresh fork branch.)
 
 **Note:** `vitest` unit tests pass even when the build is broken (they transpile
 per-file without a whole-program typecheck), so green unit tests do **not** prove
