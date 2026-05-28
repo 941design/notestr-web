@@ -2,7 +2,21 @@
 
 ## Status
 
-Open. Filed 2026-05-27. **Symptom reproduced and root-caused** by a same-identity
+Fixed in commit `2fbf91e` (2026-05-28). The web auto-invite path now publishes the
+snapshot via the shared `inviteAndPublishSnapshot` helper; web-side regression tests
+guard the contract. The canonical end-to-end check (LINK2 in the parent workspace's
+`e2e/same-identity.spec.ts`) still must run from the parent — it cannot run from
+notestr-web alone.
+
+**Everything below this Status section — the Summary, the Reproduction LINK
+table, the Root cause, and the Suggested fix — is the original pre-`2fbf91e`
+investigation, retained for historical context. It describes the behavior
+_before_ the fix and is no longer current** (e.g. the auto path now does call
+`publishTaskStateSync`, and LINK2 is expected to pass once the snapshot
+publishes). Past-tense markers are noted inline where a claim is most likely to
+mislead.
+
+Filed 2026-05-27. **Symptom reproduced and root-caused** by a same-identity
 cross-implementation reproduction (notestr-web ↔ notestr-cli/daemon, one npub on
 two devices). The fix is **web-side only** — notestr-cli already performs the
 equivalent snapshot publish when it auto-admits a sibling device. Verification
@@ -42,20 +56,21 @@ both the browser and the CLI/daemon as the **same** npub (keys.A) and walks six
 reuses the ephemeral relay, so retry results are contaminated by the prior
 attempt's events for the same npub — read the first attempt only).
 
-Clean-relay result:
+Clean-relay result (**pre-`2fbf91e`** — historical):
 
 | Link | What it checks | Result |
 |------|----------------|--------|
 | LINK1 | CLI device auto-joins a **web**-created group | ✅ |
-| LINK2 | CLI sees tasks created in that web group **before it joined** | ❌ **(this bug)** |
+| LINK2 | CLI sees tasks created in that web group **before it joined** | ❌ **(this bug — fixed in `2fbf91e`; now expected ✅)** |
 | LINK3 | CLI sees a web task created **after** it joined (kind-445) | ✅ |
 | LINK4 | Web sees a task the CLI creates | ✅ |
 | LINK5 | Web auto-joins a **CLI**-created group | ✅ |
 | LINK6 | Web sees tasks created in that CLI group before it joined | ✅ (slow) |
 
-LINK2 fails on **every** run; LINK1/LINK5 pass on every run. So discovery /
-sibling-admission is solid in both directions; only the **web→sibling history
-snapshot** is missing.
+Pre-fix, LINK2 failed on **every** run while LINK1/LINK5 passed on every run —
+so discovery / sibling-admission was solid in both directions; only the
+**web→sibling history snapshot** was missing. That snapshot is now published
+(see Status), so LINK2 is expected to pass.
 
 ## Symptoms
 
@@ -68,15 +83,18 @@ snapshot** is missing.
 
 ## Root cause
 
-The web has **two** invite paths and only one of them publishes the snapshot:
+_(Pre-`2fbf91e` root cause — the asymmetry below has since been removed; both
+paths now publish via the shared `inviteAndPublishSnapshot` helper.)_
+
+The web had **two** invite paths and only one of them published the snapshot:
 
 - **Manual invite** (`src/components/GroupManager.tsx:189-195`): calls
   `group.inviteByKeyPackageEvent(...)` **and then**
   `publishTaskStateSync(group.idStr, hex, signer, client, relays)`. ✅
 - **Automatic sibling invite** (`src/marmot/device-sync.ts:1133-1183`,
-  `inviteToAllGroups`): calls `group.inviteByKeyPackageEvent(kpEvent)` at
-  `device-sync.ts:1171` and records dedup state — but **never calls
-  `publishTaskStateSync`**. ❌
+  `inviteToAllGroups`): called `group.inviteByKeyPackageEvent(kpEvent)` and
+  recorded dedup state — but **never called `publishTaskStateSync`**. ❌
+  (Fixed in `2fbf91e`: the auto path now publishes the snapshot.)
 
 `inviteToAllGroups` is the same-identity sibling path: its key-package scan is
 filtered to `authors:[pubkey]` (own pubkey), so every invitee here is another
@@ -91,6 +109,10 @@ admits a sibling (`publish_bootstrap_for_watcher_admit`, cli
 `src/commands/groups.rs` ~:3798), which is why LINK6 (cli→web history) works.
 
 ## Suggested fix
+
+_(Historical — this is the plan that was implemented in `2fbf91e`. The shipped
+fix extracted a shared `inviteAndPublishSnapshot` helper rather than inlining the
+call, but the intent below is what landed.)_
 
 Mirror the manual path: after a **successful** auto-invite in `inviteToAllGroups`,
 publish the snapshot for the invitee. Concretely, inside the `try` block at
