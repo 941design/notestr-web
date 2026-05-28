@@ -1167,8 +1167,19 @@ export function useDeviceSync(
           pendingInvites.add(dedupKey);
 
           try {
-            // Sequential to avoid MLS epoch conflicts
-            await group.inviteByKeyPackageEvent(kpEvent);
+            // Sequential to avoid MLS epoch conflicts. Invite AND publish the
+            // task-state snapshot as one unit (shared with the manual-invite
+            // path): a sibling device auto-added at a later MLS epoch cannot
+            // decrypt pre-join kind-445 traffic, so without the snapshot it
+            // would start from an empty board.
+            await inviteAndPublishSnapshot(
+              group,
+              kpEvent,
+              inviteePubkey,
+              signer,
+              client,
+              relays,
+            );
             invited.add(dedupKey);
             await persistInvitedKey(dedupKey);
           } catch (err) {
@@ -1492,5 +1503,44 @@ export async function publishTaskStateSync(
     // Non-fatal: log and continue. New member gracefully degrades to empty state.
     console.error("[task-sync] publishTaskStateSync failed (non-fatal):", err);
   }
+}
+
+/**
+ * Invites a key package into a group and then publishes the task-state
+ * snapshot for the invitee, as a single unit.
+ *
+ * This pairing is the contract that keeps a newly-added member's board in
+ * sync. A member admitted at a later MLS epoch cannot decrypt the group's
+ * pre-join kind-445 traffic (MLS forward secrecy), so the kind-30078
+ * snapshot is the ONLY way it learns about tasks that existed before it
+ * joined. Both invite paths — the manual invite in GroupManager and the
+ * automatic sibling-device invite in useDeviceSync — MUST route through
+ * this helper so they can never drift. (They previously did drift: the
+ * auto-invite path omitted the snapshot, leaving auto-added sibling
+ * devices starting from an empty board.)
+ *
+ * The invite is awaited (callers depend on it having completed and on the
+ * epoch having advanced). The snapshot publish is fire-and-forget:
+ * publishTaskStateSync catches and logs its own errors and never throws,
+ * so a failed snapshot never fails the invite. The snapshot is published
+ * only after the invite resolves, so a rejected invite publishes nothing.
+ *
+ * @param group             - the MLS group to invite into
+ * @param kpEvent           - the invitee's key-package event
+ * @param inviteePubkeyHex  - hex pubkey of the invited member (NIP-44 target)
+ * @param signer            - EventSigner with optional nip44 capability
+ * @param client            - MarmotClient for network publish
+ * @param relays            - relay URLs to publish to
+ */
+export async function inviteAndPublishSnapshot(
+  group: MarmotGroup,
+  kpEvent: NostrEvent,
+  inviteePubkeyHex: string,
+  signer: EventSigner,
+  client: MarmotClient,
+  relays: string[],
+): Promise<void> {
+  await group.inviteByKeyPackageEvent(kpEvent);
+  void publishTaskStateSync(group.idStr, inviteePubkeyHex, signer, client, relays);
 }
 

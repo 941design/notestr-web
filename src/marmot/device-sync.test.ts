@@ -60,6 +60,7 @@ import {
   enqueueExpectedPublish,
   fetchAndApplyTaskBootstrap,
   groupHasKeyPackageLeaf,
+  inviteAndPublishSnapshot,
   isSlotForgotten,
   joinFromWelcomeInvite,
   MAX_RETRIES_PER_EPOCH,
@@ -591,6 +592,106 @@ describe("publishTaskStateSync (AC-13)", () => {
     expect(dTagEntry).toBeDefined();
     expect(dTagEntry[1]).toBe(`notestr:task-sync:${groupId}:${inviteePubkey}`);
     expect(signedArg.kind).toBe(30078);
+  });
+});
+
+/**
+ * inviteAndPublishSnapshot — the shared invite+snapshot helper.
+ *
+ * Regression coverage for the same-identity divergence bug: the auto-invite
+ * path used to call inviteByKeyPackageEvent WITHOUT publishing the task-state
+ * snapshot, so a sibling device added at a later MLS epoch started from an
+ * empty board. Both invite paths now route through this helper, so the
+ * invite-then-snapshot pairing is asserted in one place.
+ *
+ * The end-to-end cross-implementation reproduction (web → CLI sibling, LINK2)
+ * lives in the parent workspace's e2e/same-identity.spec.ts and cannot run
+ * from notestr-web alone. These unit tests guard the web-side contract: a
+ * successful invite is always followed by a snapshot publish, and a rejected
+ * invite publishes nothing.
+ */
+describe("inviteAndPublishSnapshot", () => {
+  const mockReplayEvents = replayEvents as ReturnType<typeof vi.fn>;
+  const mockLoadEvents = loadEvents as ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLoadEvents.mockResolvedValue([]);
+    mockReplayEvents.mockReturnValue(new Map());
+  });
+
+  function makeSigner() {
+    return {
+      nip44: {
+        encrypt: vi.fn().mockResolvedValue("encrypted-payload"),
+        decrypt: vi.fn(),
+      },
+      // Echo the unsigned event back so the published event carries the d-tag.
+      signEvent: vi.fn().mockImplementation((unsigned: unknown) => unsigned),
+      getPublicKey: vi.fn().mockResolvedValue("ownpubkey"),
+    };
+  }
+
+  it("publishes the task-state snapshot after a successful invite", async () => {
+    const group = {
+      idStr: "group-mls-id",
+      inviteByKeyPackageEvent: vi.fn().mockResolvedValue(undefined),
+    };
+    const signer = makeSigner();
+    const publish = vi.fn().mockResolvedValue(undefined);
+    const client = { network: { publish } };
+    const kpEvent = { id: "kp-event-1" };
+
+    await inviteAndPublishSnapshot(
+      group as any,
+      kpEvent as any,
+      "siblingpubkey",
+      signer as any,
+      client as any,
+      ["wss://relay"],
+    );
+
+    expect(group.inviteByKeyPackageEvent).toHaveBeenCalledWith(kpEvent);
+
+    // The snapshot publish is fire-and-forget (not awaited by the helper),
+    // so wait for the async chain to settle.
+    await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(1));
+
+    const publishedEvent = publish.mock.calls[0][1] as {
+      kind: number;
+      tags: string[][];
+    };
+    expect(publishedEvent.kind).toBe(30078);
+    const dTag = publishedEvent.tags.find((t) => t[0] === "d");
+    expect(dTag?.[1]).toBe("notestr:task-sync:group-mls-id:siblingpubkey");
+  });
+
+  it("publishes nothing when the invite rejects", async () => {
+    const group = {
+      idStr: "group-mls-id",
+      inviteByKeyPackageEvent: vi
+        .fn()
+        .mockRejectedValue(new Error("epoch conflict")),
+    };
+    const signer = makeSigner();
+    const publish = vi.fn().mockResolvedValue(undefined);
+    const client = { network: { publish } };
+
+    await expect(
+      inviteAndPublishSnapshot(
+        group as any,
+        { id: "kp-event-1" } as any,
+        "siblingpubkey",
+        signer as any,
+        client as any,
+        ["wss://relay"],
+      ),
+    ).rejects.toThrow("epoch conflict");
+
+    // Give any (erroneously) scheduled publish a chance to run, then assert
+    // it never happened — the snapshot must only follow a successful invite.
+    await Promise.resolve();
+    expect(publish).not.toHaveBeenCalled();
   });
 });
 

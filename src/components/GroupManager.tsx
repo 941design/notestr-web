@@ -14,7 +14,7 @@ import {
 import { NpubQrModal } from "@/components/NpubQrModal";
 import { forgetBootstrapCompleted } from "@/marmot/device-store";
 import { clearEvents } from "@/store/persistence";
-import { publishTaskStateSync } from "@/marmot/device-sync";
+import { inviteAndPublishSnapshot } from "@/marmot/device-sync";
 import { abbreviateRelay, isValidRelayUrl, getGroupRelays } from "@/lib/relay-utils";
 import { DEFAULT_RELAYS } from "@/config/relays";
 import {
@@ -186,14 +186,21 @@ export function GroupManager({
         .slice()
         .sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0))[0];
 
-      await group.inviteByKeyPackageEvent(freshestKeyPackage);
-
-      // Fire-and-forget — non-fatal if publish fails.
-      // Error is already caught and logged inside publishTaskStateSync.
+      // Invite + task-state snapshot go through one shared helper so the
+      // manual and auto-invite paths can never drift. The snapshot publish is
+      // fire-and-forget inside the helper (non-fatal if it fails). Without a
+      // signer we cannot encrypt the snapshot, so fall back to a bare invite.
       if (signer) {
-        publishTaskStateSync(group.idStr, hex, signer, client, relays).catch(() => {
-          // Error already logged inside publishTaskStateSync
-        });
+        await inviteAndPublishSnapshot(
+          group,
+          freshestKeyPackage,
+          hex,
+          signer,
+          client,
+          relays,
+        );
+      } else {
+        await group.inviteByKeyPackageEvent(freshestKeyPackage);
       }
 
       setInviteNpub("");

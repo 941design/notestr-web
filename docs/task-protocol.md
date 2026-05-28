@@ -599,7 +599,12 @@ effect on the receiver's existing state.
 ### Publish lifecycle (inviter)
 
 1. **Trigger:** the inviter's client calls `publishTaskStateSync` immediately
-   after `group.inviteByKeyPackageEvent(kpEvent)` succeeds.
+   after `group.inviteByKeyPackageEvent(kpEvent)` succeeds. Both invite paths —
+   the manual invite (`GroupManager`) and the automatic sibling-device invite
+   (`useDeviceSync`) — route through the shared `inviteAndPublishSnapshot`
+   helper so the invite-then-snapshot pairing cannot drift. (It previously did
+   drift: the auto-invite path omitted the snapshot, so same-identity sibling
+   devices added at a later epoch started from an empty board.)
 2. **Fire-and-forget:** publish failure is non-fatal. If the relay rejects the
    event or the network is unavailable, the new member gracefully degrades to
    an empty initial state and accumulates tasks from epoch N onward via
