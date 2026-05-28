@@ -42,6 +42,13 @@ matrix below.
   destroys local state. Until an admin commits the proposal, the
   ex-member's pubkey remains in the admin's `getGroupMembers(state)`
   view. There is no auto-commit on the admin side today.
+  **Note:** because `leave()` proposes a Remove for *every* leaf bearing
+  the caller's pubkey, it is per-identity, not per-device. "Forget this
+  device" (`forgetSelfDevice`) therefore does NOT use `leave()` on the
+  normal path — it publishes a single-leaf Remove proposal via
+  `group.propose(...)` targeting only the current device's own leaf
+  (resolved by `signaturePublicKey`), so sibling devices of the same
+  identity are not evicted (regression `self-forget-evicts-sibling-leaves`).
 - **Task-event merge is LWW on `updatedAt` with no tiebreaker.**
   `task-reducer.applyEvent` admits an event iff
   `event.updatedAt >= existing.updatedAt`; on a tie, the

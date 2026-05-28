@@ -56,6 +56,7 @@ import type { MarmotClient, MarmotGroup } from "@internet-privacy/marmot-ts";
 import type { EventSigner } from "applesauce-core";
 import {
   defaultKeyPackageEqualityConfig,
+  defaultProposalTypes,
   getOwnLeafNode,
   nodeTypes,
 } from "ts-mls";
@@ -178,6 +179,48 @@ function siblingLeafIndexesForEvents(
 }
 
 /**
+ * Returns the ratchet-tree leaf index of THIS device's own leaf in the group,
+ * or null if it cannot be determined.
+ *
+ * The own leaf is identified by its MLS `signaturePublicKey`, which is unique
+ * per device even when two devices share one Nostr pubkey. `getOwnLeafNode`
+ * reads `state.privatePath.leafIndex` and works for both group creators
+ * (ephemeral KP, never in `keyPackages.list()`) and joiners. We then walk the
+ * ratchet tree to find the node whose signature key matches and convert the
+ * node index to a leaf index.
+ *
+ * Returns null when `getOwnLeafNode` throws (`state.privatePath` absent) — a
+ * degraded state that should not occur for a group this device belongs to. The
+ * pubkey alone cannot identify a single device's leaf (a Nostr identity may own
+ * several leaves in one group), which is exactly why credential/pubkey matching
+ * is per-identity and the signature key is needed for per-device resolution.
+ *
+ * @param group - The group whose own leaf index to resolve.
+ */
+function ownLeafIndex(group: MarmotGroup): number | null {
+  try {
+    const ownLeaf = getOwnLeafNode(group.state);
+    const ownSigKey = ownLeaf.signaturePublicKey;
+    // Walk the ratchet tree to find the node index whose signature key matches.
+    for (let ni = 0; ni < group.state.ratchetTree.length; ni++) {
+      const node = group.state.ratchetTree[ni];
+      if (!node || node.nodeType !== nodeTypes.leaf) continue;
+      const sig = node.leaf.signaturePublicKey;
+      if (
+        sig.length === ownSigKey.length &&
+        sig.every((b, i) => b === ownSigKey[i])
+      ) {
+        return Math.floor(ni / 2);
+      }
+    }
+  } catch {
+    // getOwnLeafNode throws if state.privatePath is absent (very unlikely in a
+    // live group context). Treat as "own leaf unknown".
+  }
+  return null;
+}
+
+/**
  * Fallback leaf-index resolution for the case where the sibling has rotated
  * its KeyPackage after being admitted to the group.
  *
@@ -188,8 +231,7 @@ function siblingLeafIndexesForEvents(
  *
  * This function resolves the ambiguity by credential-identity: all ratchet tree
  * leaves for `siblingPubkey` are found, then the local admin's own leaf (same
- * pubkey when admin == sibling-npub) is identified by its unique
- * `signaturePublicKey` (obtained via `getOwnLeafNode`) and excluded.
+ * pubkey when admin == sibling-npub) is excluded via {@link ownLeafIndex}.
  * The remaining leaf indexes belong to the sibling.
  *
  * @param group          - The group to search.
@@ -203,33 +245,10 @@ function siblingLeafIndexesByPubkeyExcludingOwn(
   // when A1 and the sibling share the same npub).
   const allForPubkey = getPubkeyLeafNodeIndexes(group.state, siblingPubkey);
 
-  // Identify the local admin's own leaf by its signaturePublicKey.
-  // getOwnLeafNode reads state.privatePath.leafIndex — it works for both
-  // group creators (ephemeral KP, never in keyPackages.list()) and joiners.
-  let ownLeafIndex: number | null = null;
-  try {
-    const ownLeaf = getOwnLeafNode(group.state);
-    const ownSigKey = ownLeaf.signaturePublicKey;
-    // Walk the ratchet tree to find the node index whose signature key matches.
-    for (let ni = 0; ni < group.state.ratchetTree.length; ni++) {
-      const node = group.state.ratchetTree[ni];
-      if (!node || node.nodeType !== nodeTypes.leaf) continue;
-      const sig = node.leaf.signaturePublicKey;
-      if (
-        sig.length === ownSigKey.length &&
-        sig.every((b, i) => b === ownSigKey[i])
-      ) {
-        ownLeafIndex = Math.floor(ni / 2);
-        break;
-      }
-    }
-  } catch {
-    // getOwnLeafNode may throw if state.privatePath is absent (very unlikely
-    // in a live group context). Treat as "own leaf unknown" — skip exclusion.
-  }
-
-  return ownLeafIndex !== null
-    ? allForPubkey.filter((idx) => idx !== ownLeafIndex)
+  // Exclude the local admin's own leaf (same pubkey when admin == sibling-npub).
+  const own = ownLeafIndex(group);
+  return own !== null
+    ? allForPubkey.filter((idx) => idx !== own)
     : allForPubkey;
 }
 
@@ -242,10 +261,15 @@ function siblingLeafIndexesByPubkeyExcludingOwn(
  * relay, clears all local IDB stores, and signs out.
  *
  * Step order (must not be reordered — AC-SELF-1 through AC-SIGNOUT-2):
- *   1. Self-leave proposals: for each group containing this user's leaf, call
- *      `group.leave()` to publish kind-445 Remove proposal events. RFC 9420
- *      §12.4 forbids a member from committing a Remove targeting their own
- *      leaf, so we publish proposals and let another admin commit them.
+ *   1. Self-leave proposals: for each group containing this user's leaf,
+ *      publish a kind-445 Remove proposal targeting ONLY this device's own
+ *      leaf. RFC 9420 §12.4 forbids a member from committing a Remove
+ *      targeting their own leaf, so we publish a proposal (via
+ *      `group.propose`, the same wire path as `group.leave()`) and let another
+ *      admin commit it. We do NOT use `group.leave()`: it proposes a Remove for
+ *      EVERY leaf bearing this Nostr pubkey, which would evict the user's other
+ *      devices (sibling leaves) from the group too — a per-identity action
+ *      behind a per-device button. See selfLeafIndexesForPubkey / ownLeafIndex.
  *   2. Kind-5 publish: for each published KP event, publish a NIP-09 deletion.
  *   3. IDB cleanup: clear identity, key-packages, group-state, invite stores,
  *      invitedKeys, joinedGroups.
@@ -278,9 +302,35 @@ export async function forgetSelfDevice(
   const localKps = await client.keyPackages.list();
 
   // --- Step 1: Self-leave proposals (sequential, per group with a self-leaf) ---
+  // Per-device, not per-identity. A member who shares one Nostr pubkey across
+  // several devices has one ratchet-tree leaf PER device. We must propose a
+  // Remove for ONLY this device's own leaf — `group.leave()` would propose one
+  // Remove per leaf matching the pubkey (marmot-ts `proposeLeaveGroup`), evicting
+  // the user's sibling devices too. RFC 9420 §12.4 forbids committing a Remove of
+  // one's own leaf, so we publish a kind-445 *proposal* via `group.propose`
+  // (same relay path as `leave()`, no self-commit) and let an admin commit it.
   for (const group of client.groups.loaded) {
     if (selfLeafIndexesForPubkey(group, pubkey).length === 0) continue;
-    await group.leave();
+    const leafIndex = ownLeafIndex(group);
+    if (leafIndex === null) {
+      // Degraded state: this device's own leaf could not be identified
+      // (state.privatePath absent). Fall back to the pubkey-wide `leave()` so
+      // the device still departs every group rather than silently staying in.
+      // Should not happen for a live group this device is a member of.
+      await group.leave();
+      continue;
+    }
+    await group.propose(async () => ({
+      proposalType: defaultProposalTypes.remove,
+      remove: { removed: leafIndex },
+    }));
+    // Mirror group.leave()'s teardown: purge this group's local MLS state once
+    // the departure proposal is published. group.leave() called destroy()
+    // internally; group.propose() does not, so we do it here. Without this, a
+    // failure in a later step (e.g. kind-5 publish) — or a reload before
+    // Step 3's IDB wipe — could resurface state for a group we've already
+    // announced leaving.
+    await group.destroy();
   }
 
   // --- Step 2: Kind-5 deletion events (one per published KP entry) ---

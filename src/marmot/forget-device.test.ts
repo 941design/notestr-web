@@ -50,10 +50,14 @@ vi.mock("ts-mls", () => ({
       (kp: { id: string }, leaf: { id: string }) => kp.id === leaf.id,
     ),
   },
+  // Self-Remove proposals are built from this — the value only needs to be a
+  // stable marker the tests can assert against.
+  defaultProposalTypes: { remove: "remove" },
   nodeTypes: { leaf: "leaf" },
   // Default: throw "no privatePath" so the rotation-fallback (which only
   // runs when the primary KP-equality match returns []) skips the own-leaf
-  // exclusion. Tests that exercise the same-pubkey path override this.
+  // exclusion. The forgetSelfDevice describe overrides this in a nested
+  // beforeEach so the per-device own-leaf resolution path is exercised.
   getOwnLeafNode: vi.fn(() => {
     throw new Error("no privatePath in default mock");
   }),
@@ -98,21 +102,33 @@ import { forgetSelfDevice, forgetSiblingDevice } from "./forget-device";
 // Helpers — build minimal mock objects
 // ---------------------------------------------------------------------------
 
+// Per-device MLS signature keys. Two devices sharing one Nostr pubkey have
+// distinct signaturePublicKeys; this is how the own leaf is told apart from a
+// sibling's leaf. OWN_SIG is what getOwnLeafNode returns in the self-forget
+// describe, so a leaf carrying OWN_SIG is "this device's leaf".
+const OWN_SIG = [9, 9, 9];
+const SIBLING_SIG = [5, 5, 5];
+
 /**
  * Builds a ratchet tree node representing a leaf whose KP has the given id.
- * The node lives at nodeIndex; leaf index = floor(nodeIndex / 2).
+ * The node lives at nodeIndex; leaf index = floor(nodeIndex / 2). The leaf
+ * carries a signaturePublicKey (defaulting to this device's OWN_SIG) so the
+ * per-device own-leaf resolution (getOwnLeafNode + signature match) can run.
  */
-function makeLeafNode(id: string) {
-  return { nodeType: "leaf" as const, leaf: { id } };
+function makeLeafNode(id: string, signaturePublicKey: number[] = OWN_SIG) {
+  return { nodeType: "leaf" as const, leaf: { id, signaturePublicKey } };
 }
 
 /**
  * Builds a minimal MarmotGroup mock for forgetSelfDevice tests.
  *
- * The ratchet tree contains one leaf node at nodeIndex 0 with the given kpId.
- * Leaf index = floor(0 / 2) = 0. `leave` is a `vi.fn()` so the test can
- * assert that self-removal flows through `group.leave()` (RFC 9420 §12.4
- * forbids self-commit of Remove) rather than `removeLeafByIndex`.
+ * The ratchet tree contains one leaf node at nodeIndex 0 with the given kpId,
+ * carrying OWN_SIG (this device's leaf). Leaf index = floor(0 / 2) = 0.
+ * `propose` is a `vi.fn()` so the test can assert that self-removal publishes a
+ * single-leaf kind-445 Remove *proposal* (RFC 9420 §12.4 forbids self-commit of
+ * Remove) targeting only this device's leaf — not `group.leave()`, which would
+ * sweep every leaf for the pubkey, nor `removeLeafByIndex`. `leave` is also
+ * stubbed because the degraded-state fallback still uses it.
  */
 function makeSelfGroup(kpId: string) {
   return {
@@ -120,6 +136,10 @@ function makeSelfGroup(kpId: string) {
       ratchetTree: [makeLeafNode(kpId)],
     },
     leave: vi.fn().mockResolvedValue({}),
+    propose: vi.fn().mockResolvedValue({}),
+    // Mirrors group.leave()'s internal teardown — forgetSelfDevice calls
+    // destroy() after the targeted self-Remove proposal.
+    destroy: vi.fn().mockResolvedValue(undefined),
   } as unknown as import("@internet-privacy/marmot-ts").MarmotGroup;
 }
 
@@ -215,12 +235,24 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("forgetSelfDevice", () => {
+  // Self-removal resolves THIS device's own leaf via getOwnLeafNode + signature
+  // match. The module-level mock makes getOwnLeafNode throw (for the sibling
+  // rotation-fallback tests); here we make it return OWN_SIG so the normal
+  // per-device propose path runs. Individual tests override this to exercise
+  // the degraded fallback.
+  beforeEach(async () => {
+    const tsMls = await import("ts-mls");
+    vi.mocked(tsMls.getOwnLeafNode).mockReturnValue({
+      signaturePublicKey: OWN_SIG,
+    } as unknown as ReturnType<typeof tsMls.getOwnLeafNode>);
+  });
+
   /**
    * Full happy-path: two groups each with one leaf for this user.
    *
    * AC-SELF-1, AC-SELF-2, AC-UNIT-1, AC-UNIT-2
    */
-  it("calls group.leave() once per group containing a self-leaf (AC-SELF-1, AC-UNIT-2)", async () => {
+  it("publishes one self-Remove proposal per group containing a self-leaf (AC-SELF-1, AC-UNIT-2)", async () => {
     // Two groups, each with one leaf belonging to this user.
     const group1 = makeSelfGroup("kp-a");
     const group2 = makeSelfGroup("kp-b");
@@ -236,45 +268,94 @@ describe("forgetSelfDevice", () => {
 
     await forgetSelfDevice(client, signer, ["wss://relay.example"], onSignOut);
 
-    // One leave() call per group containing a self-leaf.
-    expect(group1.leave).toHaveBeenCalledTimes(1);
-    expect(group2.leave).toHaveBeenCalledTimes(1);
+    // One self-Remove proposal per group containing a self-leaf; never the
+    // pubkey-wide group.leave() (which would also remove sibling devices).
+    expect(group1.propose).toHaveBeenCalledTimes(1);
+    expect(group2.propose).toHaveBeenCalledTimes(1);
+    expect(group1.leave).not.toHaveBeenCalled();
+    expect(group2.leave).not.toHaveBeenCalled();
+    // Local MLS state is torn down per group after the proposal (mirrors the
+    // teardown group.leave() used to perform internally).
+    expect(group1.destroy).toHaveBeenCalledTimes(1);
+    expect(group2.destroy).toHaveBeenCalledTimes(1);
     // removeLeafByIndex must NOT be used for self-removal — RFC 9420 §12.4
     // forbids self-commit of Remove.
     expect(removeLeafByIndex).not.toHaveBeenCalled();
   });
 
   /**
-   * A group with multiple self-leaves still results in a single leave() call
-   * (leave() internally publishes one Remove proposal per leaf — the wrapper
-   * call from forgetSelfDevice is one per group, not one per leaf).
+   * Regression for self-forget-evicts-sibling-leaves: a group containing two
+   * leaves for the SAME Nostr pubkey (this device A1 + a sibling device A2) must
+   * yield a single Remove proposal targeting ONLY this device's own leaf
+   * (identified by signature key), never the sibling's leaf. Before the fix,
+   * forgetSelfDevice called group.leave(), which proposes a Remove per leaf for
+   * the pubkey — evicting A2 as well.
    *
-   * AC-SELF-1
+   * AC-SELF-1, AC-UNIT-2
    */
-  it("calls group.leave() once per group regardless of leaf count", async () => {
-    // Group with two leaf nodes for the same pubkey at nodeIndex 0 and 2.
+  it("proposes a Remove targeting only THIS device's leaf, not sibling leaves of the same pubkey", async () => {
+    // A1's own leaf (OWN_SIG) at nodeIndex 0 → leafIndex 0; A2's sibling leaf
+    // (SIBLING_SIG) at nodeIndex 2 → leafIndex 1. Both share one Nostr pubkey,
+    // so getPubkeyLeafNodeIndexes returns both [0, 1].
     const group = {
       state: {
         ratchetTree: [
-          { nodeType: "leaf", leaf: { id: "kp-multi" } },
+          makeLeafNode("kp-a1", OWN_SIG),
           null,
-          { nodeType: "leaf", leaf: { id: "kp-multi" } },
+          makeLeafNode("kp-a2", SIBLING_SIG),
         ],
       },
       leave: vi.fn().mockResolvedValue({}),
+      propose: vi.fn().mockResolvedValue({}),
+      destroy: vi.fn().mockResolvedValue(undefined),
     } as unknown as import("@internet-privacy/marmot-ts").MarmotGroup;
 
     const client = makeSelfClient([group], [
-      { publicPackage: { id: "kp-multi" }, published: [] },
+      { publicPackage: { id: "kp-a1" }, published: [] },
     ]);
-    const signer = makeSigner();
-    const onSignOut = vi.fn();
 
-    await forgetSelfDevice(client, signer, [], onSignOut);
+    await forgetSelfDevice(client, makeSigner(), [], vi.fn());
 
-    // One leave() call regardless of how many leaves the user has in the group.
-    expect(group.leave).toHaveBeenCalledTimes(1);
+    // Exactly one self-Remove proposal, targeting A1's own leaf (index 0) only.
+    expect(group.leave).not.toHaveBeenCalled();
+    expect(group.propose).toHaveBeenCalledTimes(1);
+    expect(group.destroy).toHaveBeenCalledTimes(1);
+
+    const action = vi.mocked(group.propose).mock.calls[0][0] as unknown as () => Promise<{
+      proposalType: string;
+      remove: { removed: number };
+    }>;
+    const proposal = await action();
+    expect(proposal).toEqual({
+      proposalType: "remove",
+      remove: { removed: 0 }, // A1's leaf index — NOT A2's (index 1)
+    });
+
+    // removeLeafByIndex (a self-COMMIT) must never be used for self-removal.
     expect(removeLeafByIndex).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Degraded state: when this device's own leaf cannot be identified
+   * (getOwnLeafNode throws — state.privatePath absent), self-forget falls back
+   * to the pubkey-wide group.leave() so the device still departs every group
+   * rather than silently staying in. Should not happen for a live group.
+   */
+  it("falls back to group.leave() when this device's own leaf cannot be identified", async () => {
+    const tsMls = await import("ts-mls");
+    vi.mocked(tsMls.getOwnLeafNode).mockImplementation(() => {
+      throw new Error("no privatePath");
+    });
+
+    const group = makeSelfGroup("kp-degraded");
+    const client = makeSelfClient([group], [
+      { publicPackage: { id: "kp-degraded" }, published: [] },
+    ]);
+
+    await forgetSelfDevice(client, makeSigner(), [], vi.fn());
+
+    expect(group.leave).toHaveBeenCalledTimes(1);
+    expect(group.propose).not.toHaveBeenCalled();
   });
 
   /**
@@ -304,8 +385,8 @@ describe("forgetSelfDevice", () => {
     const client = makeSelfClient([groupWithSelf, groupWithout], []);
     await forgetSelfDevice(client, makeSigner(), [], vi.fn());
 
-    expect(groupWithSelf.leave).toHaveBeenCalledTimes(1);
-    expect(groupWithout.leave).not.toHaveBeenCalled();
+    expect(groupWithSelf.propose).toHaveBeenCalledTimes(1);
+    expect(groupWithout.propose).not.toHaveBeenCalled();
   });
 
   /**
@@ -437,12 +518,12 @@ describe("forgetSelfDevice", () => {
    *
    * AC-SELF-1, AC-CLEANUP-*, AC-SIGNOUT-1
    */
-  it("enforces step order: leave() before kind-5, IDB cleanup after kind-5, onSignOut last", async () => {
+  it("enforces step order: self-Remove proposal before kind-5, IDB cleanup after kind-5, onSignOut last", async () => {
     const callOrder: string[] = [];
 
     const group = makeSelfGroup("kp-order");
-    vi.mocked(group.leave).mockImplementation(async () => {
-      callOrder.push("leave");
+    vi.mocked(group.propose).mockImplementation(async () => {
+      callOrder.push("propose");
       return {};
     });
 
@@ -472,7 +553,7 @@ describe("forgetSelfDevice", () => {
     await forgetSelfDevice(client, makeSigner(), [], onSignOut);
 
     // Self-leave proposal must precede kind-5 publish.
-    expect(callOrder.indexOf("leave")).toBeLessThan(callOrder.indexOf("publish"));
+    expect(callOrder.indexOf("propose")).toBeLessThan(callOrder.indexOf("publish"));
     // IDB cleanup must follow kind-5 publish.
     expect(callOrder.indexOf("publish")).toBeLessThan(callOrder.indexOf("clearIdentity"));
     // onSignOut must be last.
@@ -481,14 +562,14 @@ describe("forgetSelfDevice", () => {
   });
 
   /**
-   * Error propagation: if group.leave() throws, the error bubbles out of
-   * forgetSelfDevice without proceeding to cleanup.
+   * Error propagation: if the self-Remove proposal throws, the error bubbles
+   * out of forgetSelfDevice without proceeding to cleanup.
    *
    * Q-ROBUSTNESS-1
    */
-  it("propagates an error from group.leave() without cleanup (Q-ROBUSTNESS-1)", async () => {
+  it("propagates an error from the self-Remove proposal without cleanup (Q-ROBUSTNESS-1)", async () => {
     const group = makeSelfGroup("kp-fail");
-    vi.mocked(group.leave).mockRejectedValueOnce(new Error("network failure"));
+    vi.mocked(group.propose).mockRejectedValueOnce(new Error("network failure"));
 
     const client = makeSelfClient([group], [
       { publicPackage: { id: "kp-fail" }, published: [] },
@@ -508,9 +589,10 @@ describe("forgetSelfDevice", () => {
 // ---------------------------------------------------------------------------
 // Epoch-race retry wrapper (D3) — tests via forgetSiblingDevice's leaf removal
 // (Self-forget no longer uses removeLeafByIndex — RFC 9420 §12.4 forbids
-// self-commit of Remove, so self-removal flows through group.leave().
-// removeLeafWithRetry stays in production for sibling-forget, where the
-// committer is an admin removing a DIFFERENT leaf, which is permitted.)
+// self-commit of Remove, so self-removal publishes a single-leaf Remove
+// proposal via group.propose. removeLeafWithRetry stays in production for
+// sibling-forget, where the committer is an admin removing a DIFFERENT leaf,
+// which is permitted.)
 // ---------------------------------------------------------------------------
 
 describe("removeLeafWithRetry (D3 — epoch-race wrapper, exercised via sibling-forget)", () => {
