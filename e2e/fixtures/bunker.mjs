@@ -45,8 +45,29 @@ await backend.start();
 
 console.log(`[${label}] Ready. URL: ${E2E_BUNKER_URL}`);
 
+// Parent-death watchdog. Without this, an abnormal exit of the spawning
+// playwright runner (SIGKILL, crash, terminal close — anything that skips
+// `globalTeardown`) re-parents us to launchd/init and we keep running
+// forever, still subscribed to the test relay. Over many runs that adds
+// up to hundreds of orphans each holding a NIP-46 subscription that
+// interferes with the next run's traffic. Poll our PPID every second and
+// exit cleanly the moment it changes (the canonical signal the parent
+// is gone). `.unref()` lets SIGINT shut us down without the interval
+// pinning the event loop open.
+const initialPpid = process.ppid;
+setInterval(() => {
+  if (process.ppid !== initialPpid) {
+    console.log(`[${label}] Parent ${initialPpid} gone (now reparented to ${process.ppid}). Shutting down.`);
+    process.exit(0);
+  }
+}, 1000).unref();
+
 // Keep the process alive
 process.on('SIGINT', () => {
   console.log(`[${label}] Shutting down.`);
+  process.exit(0);
+});
+process.on('SIGTERM', () => {
+  console.log(`[${label}] Shutting down on SIGTERM.`);
   process.exit(0);
 });

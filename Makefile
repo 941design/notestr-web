@@ -37,11 +37,25 @@ node_modules: package.json package-lock.json
 	@# pnpm can't find the monorepo root. Workaround: build dist locally, then
 	@# switch marmot-ts to a file: dep so npm skips the git prepare step entirely.
 	@# IMPORTANT: must clone the branch/commit that package.json pins to.
-	@if [ ! -d /tmp/marmot-ts/dist ]; then \
+	@# Reclone when EITHER dist OR package.json is missing. Checking dist alone is
+	@# not enough: a partial/interrupted previous run can leave the source tree with
+	@# a stale dist/ but no package.json, and then `pnpm pack` below dies with
+	@# ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND while the if-check happily declares "dist
+	@# exists, skip clone."
+	@if [ ! -d /tmp/marmot-ts/dist ] || [ ! -f /tmp/marmot-ts/package.json ]; then \
+		echo "[make] /tmp/marmot-ts is missing or incomplete — cloning + building the fork..."; \
 		rm -rf /tmp/marmot-ts; \
 		git clone --depth 1 --branch addressable-key-packages \
-			https://github.com/941design/marmot-ts.git /tmp/marmot-ts 2>/dev/null || true; \
-		cd /tmp/marmot-ts && pnpm install --ignore-scripts 2>/dev/null && pnpm run build 2>/dev/null; \
+			https://github.com/941design/marmot-ts.git /tmp/marmot-ts && \
+		cd /tmp/marmot-ts && pnpm install --ignore-scripts && pnpm run build; \
+	fi
+	@# Fail loud if the tree still isn't usable. Previously the clone/build swallowed
+	@# stderr and used `|| true`, so a transient `git clone` network failure (or a
+	@# missing pnpm) would cascade silently into a cryptic `Error 1` from the pack
+	@# step below with no diagnostic output at all.
+	@if [ ! -d /tmp/marmot-ts/dist ] || [ ! -f /tmp/marmot-ts/package.json ]; then \
+		echo "[make] /tmp/marmot-ts still incomplete after clone+build (dist or package.json missing). Check network access to github.com/941design/marmot-ts and that pnpm is installed. To force a fresh clone: rm -rf /tmp/marmot-ts && make node_modules"; \
+		exit 1; \
 	fi
 	@# Pack the built fork into a stable-named tarball and depend on THAT — never a
 	@# file: symlink to /tmp/marmot-ts/dist. marmot-ts declares ts-mls as a
@@ -55,7 +69,11 @@ node_modules: package.json package-lock.json
 	@# `pnpm pack` is deterministic w.r.t. /tmp/marmot-ts/dist: an unchanged fork
 	@# build always yields the same tarball, and across parallel macOS/Linux dev the
 	@# dist is identical (transpiled TS), so the hash matches on both platforms.
-	@cd /tmp/marmot-ts && npm_config_ignore_scripts=true pnpm pack >/dev/null 2>&1 && \
+	@# Do NOT redirect pnpm pack output. pnpm writes errors (e.g.
+	@# ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND when /tmp/marmot-ts is incomplete) to
+	@# stdout, so silencing stdout turned pack failures into a cryptic `Error 1`.
+	@# A few lines of "Tarball Contents:" on the happy path is the right tradeoff.
+	@cd /tmp/marmot-ts && npm_config_ignore_scripts=true pnpm pack && \
 		cp -f /tmp/marmot-ts/internet-privacy-marmot-ts-*.tgz /tmp/marmot-ts/marmot-ts.tgz
 	@node -e " \
 		const fs=require('fs'); \
@@ -163,8 +181,18 @@ relay-up: ## Start local strfry relay (Docker)
 relay-down: ## Stop local strfry relay
 	docker compose down
 
-e2e-up: ## Start ephemeral E2E relay (Docker)
-	docker compose -f docker-compose.e2e.yml up -d
+e2e-up: ## Start ephemeral E2E relay (Docker) — no-op if :7777 already held
+	@# Honour the reuse policy (see CLAUDE.md → "E2E relay (port 7777)"): if
+	@# something already holds 7777 (our own dev relay, the ephemeral container,
+	@# or even an unrelated strfry from another project), skip the start. Tests
+	@# assume relay-state-independence, so reuse is safe; trying to bind 7777
+	@# anyway just errors with `Bind for 0.0.0.0:7777 failed: port is already
+	@# allocated` and aborts the whole run.
+	@if [ -n "$$(lsof -ti:7777 2>/dev/null)" ]; then \
+		echo "[e2e-up] Port 7777 already in use; reusing the existing listener."; \
+	else \
+		docker compose -f docker-compose.e2e.yml up -d; \
+	fi
 
 e2e-down: ## Stop ephemeral E2E relay and wipe state
 	docker compose -f docker-compose.e2e.yml down -v
@@ -173,13 +201,19 @@ e2e-install: ensure-platform ## Install Playwright and browser binaries
 	@npm install
 	@npx playwright install --with-deps chromium webkit
 
-e2e: ensure-platform ## Run end-to-end tests (always restarts the ephemeral test relay; leaves any other strfry on :7777 untouched)
+# Reuse-the-existing-relay policy (see CLAUDE.md → "E2E relay (port 7777)"):
+#  1. our `notestr-web-relay-1` running → restart it (tmpfs wipe = clean)
+#  2. else 7777 held by anything else → reuse as-is, do NOT try to bind 7777
+#  3. else → start the ephemeral container
+# This avoids the `Bind for 0.0.0.0:7777 failed: port is already allocated`
+# abort when the dev relay (or an unrelated strfry on the host) is already up.
+e2e: ensure-platform ## Run end-to-end tests (reuses any existing :7777 relay; see CLAUDE.md)
 	@if docker ps --format '{{.Names}}' | grep -q '^notestr-web-relay-1$$'; then \
 		echo "[e2e] Restarting ephemeral test relay (tmpfs wipes its DB)."; \
 		docker restart notestr-web-relay-1 > /dev/null; \
 		sleep 2; \
 	elif [ -n "$$(lsof -ti:7777 2>/dev/null)" ]; then \
-		echo "[e2e] Port 7777 held by something other than the ephemeral test relay; reusing as-is."; \
+		echo "[e2e] Port 7777 held by another listener; reusing as-is (per reuse policy)."; \
 	else \
 		$(MAKE) e2e-up; \
 	fi

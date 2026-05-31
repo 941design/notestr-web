@@ -146,7 +146,43 @@ async function assertPortFree(port: number): Promise<void> {
   }
 }
 
+/**
+ * Clean up orphans from prior runs. `globalTeardown` reads PIDs from
+ * `.state.json` and kills them, but only runs when playwright exits cleanly.
+ * On SIGKILL, crash, or terminal-close, teardown is skipped and the bunker
+ * (and serve) processes get re-parented to launchd/init and keep running —
+ * observed in the wild: 649 orphan `bunker.mjs` processes accumulated over
+ * days, each still holding a NIP-46 subscription on the test relay, which
+ * starved the next run's traffic and made auth time out.
+ *
+ * Patterns are scoped to THIS PROJECT_ROOT so the sweep cannot catch an
+ * unrelated `node`/`serve` process from another project on the same host.
+ * `pkill` exits non-zero when nothing matched — that's the happy path, not
+ * an error; we swallow it.
+ *
+ * Pairs with the PPID watchdog inside `bunker.mjs` (which exits itself the
+ * moment its parent dies); this sweep is the safety net for anything that
+ * slipped through.
+ */
+async function cleanupOrphans(): Promise<void> {
+  const { execSync } = await import('child_process');
+  const patterns = [
+    `node .*${PROJECT_ROOT}/e2e/fixtures/bunker.mjs`,
+    `${PROJECT_ROOT}/node_modules/.bin/serve out -l 3100`,
+  ];
+  for (const p of patterns) {
+    try {
+      execSync(`pkill -f ${JSON.stringify(p)}`, { stdio: 'ignore' });
+    } catch {
+      // pkill returns non-zero when no match — happy path.
+    }
+  }
+}
+
 export default async function globalSetup() {
+  // -1. Sweep orphans from prior runs that skipped globalTeardown.
+  await cleanupOrphans();
+
   // 0. Make node_modules match THIS host's platform before building.
   //
   //    The build below runs `next build` directly (not through make), so it is
