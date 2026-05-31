@@ -205,6 +205,13 @@ export async function authenticateViaBunker(
     return null;
   }
 
+  // Wait for the bunker's relay subscription to be live before issuing the
+  // connect. The NIP-46 `connect` request is an ephemeral event (kind 24133) —
+  // strfry drops it if no matching subscription is active yet, and there is no
+  // client-side resend, so connecting before the bunker is Ready can hang the
+  // UI on "Connecting" indefinitely.
+  await bunker.ready();
+
   await bunkerTab.click();
   await page.getByPlaceholder('bunker://...').fill(bunker.bunkerUrl);
   await page.getByRole('button', { name: 'Connect' }).click();

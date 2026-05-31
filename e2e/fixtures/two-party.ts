@@ -93,12 +93,34 @@ export async function authenticate(
   await page.goto("/");
   await clearAppState(page);
   await page.goto("/");
-  await page.getByRole("tab", { name: /bunker:\/\/ URL/i }).click();
-  await page.getByPlaceholder("bunker://...").fill(bunkerUrl);
-  await page.getByRole("button", { name: "Connect" }).click();
-  await page
-    .locator('[data-testid="pubkey-chip"]')
-    .waitFor({ state: "visible", timeout: 30000 });
+
+  // The NIP-46 `connect` request is an *ephemeral* nostr event (kind 24133):
+  // strfry does not store it, so if it reaches the relay a beat before the
+  // bunker's subscription is live (or the bunker's relay connection briefly
+  // flaps), it is silently dropped and the UI sits on "Connecting" forever —
+  // there is no client-side resend today. That manifests as an intermittent
+  // 30s `pubkey-chip` timeout in this setup step. Retry the connect a few
+  // times: clearing state and reloading re-issues a fresh request, which the
+  // bunker (reliably subscribed by then) answers. Keep per-attempt waits short
+  // so a lost first request is re-sent quickly rather than burning one long wait.
+  const CONNECT_ATTEMPT_TIMEOUT = 12_000;
+  const MAX_CONNECT_ATTEMPTS = 3;
+  const pubkeyChip = page.locator('[data-testid="pubkey-chip"]');
+  for (let attempt = 1; attempt <= MAX_CONNECT_ATTEMPTS; attempt++) {
+    await page.getByRole("tab", { name: /bunker:\/\/ URL/i }).click();
+    await page.getByPlaceholder("bunker://...").fill(bunkerUrl);
+    await page.getByRole("button", { name: "Connect" }).click();
+    try {
+      await pubkeyChip.waitFor({ state: "visible", timeout: CONNECT_ATTEMPT_TIMEOUT });
+      break;
+    } catch (err) {
+      if (attempt === MAX_CONNECT_ATTEMPTS) throw err;
+      // Wipe the half-finished session so the reload returns to the sign-in
+      // form (not a stuck "restoring session" screen) and retry.
+      await clearAppState(page);
+      await page.goto("/");
+    }
+  }
   // Test hooks are installed by a useEffect inside MarmotProvider that
   // depends on `state.client`, which initialises after the pubkey-chip
   // appears. Without this poll, callers that immediately invoke

@@ -52,6 +52,9 @@ node_modules: package.json package-lock.json
 	@# (See CLAUDE.md → "marmot-ts (we control the fork)".)
 	@# npm_config_ignore_scripts skips the fork's `prepare` (pnpm build) — dist is
 	@# already built above; running prepare here trips pnpm's build-script gate.
+	@# `pnpm pack` is deterministic w.r.t. /tmp/marmot-ts/dist: an unchanged fork
+	@# build always yields the same tarball, and across parallel macOS/Linux dev the
+	@# dist is identical (transpiled TS), so the hash matches on both platforms.
 	@cd /tmp/marmot-ts && npm_config_ignore_scripts=true pnpm pack >/dev/null 2>&1 && \
 		cp -f /tmp/marmot-ts/internet-privacy-marmot-ts-*.tgz /tmp/marmot-ts/marmot-ts.tgz
 	@node -e " \
@@ -59,6 +62,26 @@ node_modules: package.json package-lock.json
 		const p=JSON.parse(fs.readFileSync('package.json','utf8')); \
 		p.dependencies['@internet-privacy/marmot-ts']='file:/tmp/marmot-ts/marmot-ts.tgz'; \
 		fs.writeFileSync('package.json',JSON.stringify(p,null,2)); \
+	"
+	@# This tarball is a locally-rebuilt artifact, not a fixed published package, so
+	@# verifying it against a hash baked into the committed lock is fragile: on a
+	@# platform switch we repack from a machine-local /tmp/marmot-ts, and if that fork
+	@# build ever diverged from the build the lock was generated against, `npm install`
+	@# would abort with EINTEGRITY ("tarball ... seems to be corrupted") and take the
+	@# whole reinstall down with it. Instead, recompute THIS entry's integrity from the
+	@# actual tarball before installing, so the lock always matches what's on disk.
+	@# Unchanged dist -> identical hash -> entry left untouched -> no package-lock.json
+	@# diff; a genuinely diverged fork build installs cleanly and surfaces as a lockfile
+	@# change (the honest signal that the two machines' marmot-ts builds differ).
+	@node -e " \
+		const fs=require('fs'),crypto=require('crypto'); \
+		const lf='package-lock.json',k='node_modules/@internet-privacy/marmot-ts'; \
+		const sri='sha512-'+crypto.createHash('sha512').update(fs.readFileSync('/tmp/marmot-ts/marmot-ts.tgz')).digest('base64'); \
+		const l=JSON.parse(fs.readFileSync(lf,'utf8')); \
+		if(l.packages&&l.packages[k]&&l.packages[k].integrity!==sri){ \
+			l.packages[k].integrity=sri; \
+			fs.writeFileSync(lf,JSON.stringify(l,null,2)+'\n'); \
+		} \
 	"
 	@npm install --ignore-scripts
 	@# ts-mls is marmot-ts's peerDependency (we supply the single shared copy) and
@@ -75,8 +98,24 @@ node_modules: package.json package-lock.json
 # All targets that invoke a build or test step must depend on this.
 .PHONY: ensure-platform
 ensure-platform:
+	@# Two independent triggers force a clean reinstall:
+	@#  1. Stamp mismatch — the recorded platform differs from the host (the normal
+	@#     macOS<->Linux switch).
+	@#  2. Native-binding probe failure — the stamp can LIE. npm's optional-dependency
+	@#     reconciliation across a shared tree can leave a wrong-platform native binary
+	@#     in place (e.g. the macOS lightningcss under @tailwindcss/node) while the
+	@#     stamp still reads the current platform. `next build` then dies mid-run with
+	@#     "Cannot find module '../lightningcss.<platform>.node'" — and because the e2e
+	@#     harness runs `next build` directly (outside make), it takes the whole run
+	@#     down. Probing the actual CSS binding here turns that into a self-healing
+	@#     reinstall. (@next/swc and lightningcss can diverge — npm fixed swc but not
+	@#     the nested lightningcss — so a stamp/swc-only check is not enough.)
 	@if [ "$(CURRENT_PLATFORM)" != "$$(cat $(PLATFORM_STAMP) 2>/dev/null)" ]; then \
 		echo "[make] Platform mismatch: $(CURRENT_PLATFORM) vs $$(cat $(PLATFORM_STAMP) 2>/dev/null || echo unknown). Reinstalling node_modules..."; \
+		rm -rf node_modules; \
+		$(MAKE) node_modules; \
+	elif ! node -e "require('@tailwindcss/postcss')" >/dev/null 2>&1; then \
+		echo "[make] Native bindings missing or wrong-platform for $(CURRENT_PLATFORM) (stamp is current but the CSS binding won't load). Reinstalling node_modules..."; \
 		rm -rf node_modules; \
 		$(MAKE) node_modules; \
 	fi

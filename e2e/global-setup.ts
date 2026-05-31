@@ -147,6 +147,31 @@ async function assertPortFree(port: number): Promise<void> {
 }
 
 export default async function globalSetup() {
+  // 0. Make node_modules match THIS host's platform before building.
+  //
+  //    The build below runs `next build` directly (not through make), so it is
+  //    NOT protected by the Makefile's `ensure-platform` guard. On a tree shared
+  //    between a macOS host and a Linux VM, an install/build on the other OS
+  //    leaves wrong-platform native binaries in place (classically the nested
+  //    lightningcss under @tailwindcss/node), and this build then dies with
+  //    `Cannot find module '../lightningcss.<platform>.node'` — taking the whole
+  //    e2e run down before a single test executes. `make e2e` runs
+  //    `ensure-platform` first, but `npx playwright test` run directly does not;
+  //    invoking it here closes that gap for both entry points. `ensure-platform`
+  //    is a fast no-op when the platform already matches and the CSS binding
+  //    loads; it only reinstalls (~1-2 min) on a genuine mismatch. The build is
+  //    the only platform-sensitive step — once `out/` is served, the tests hit a
+  //    static site and are immune to later node_modules churn from the other OS.
+  console.log('[setup] Ensuring node_modules matches this platform (make ensure-platform)...');
+  await new Promise<void>((resolve, reject) => {
+    const ep = spawn('make', ['ensure-platform'], { cwd: PROJECT_ROOT, stdio: 'inherit' });
+    ep.on('exit', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`make ensure-platform exited with code ${code}`));
+    });
+    ep.on('error', reject);
+  });
+
   // 1. Build the app with E2E environment
   console.log('[setup] Building app with NODE_ENV=test...');
   await new Promise<void>((resolve, reject) => {
