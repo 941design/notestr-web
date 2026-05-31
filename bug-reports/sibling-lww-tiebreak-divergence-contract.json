@@ -1,0 +1,44 @@
+{
+  "bug": "sibling-lww-tiebreak-divergence",
+  "scope": {
+    "allowed_files": [
+      "src/store/task-events.ts",
+      "src/store/task-reducer.ts",
+      "src/store/task-store.tsx",
+      "src/store/task-store-utils.ts",
+      "src/store/persistence.ts",
+      "src/store/task-reducer.test.ts",
+      "src/store/task-reducer.property.test.ts",
+      "src/store/multi-client.property.test.ts",
+      "src/store/task-store.monotonic.test.ts",
+      "src/marmot/device-sync.ts",
+      "docs/task-protocol.md"
+    ],
+    "purpose": "Add per-device tie-break (updatedByDevice) to the task reducer's LWW gate AND the bootstrap snapshot merge gate, so two devices sharing a Nostr pubkey can deterministically converge on concurrent same-timestamp edits. Optional companion: subscribe to the new marmot-ts MIP-03 rollback event and re-issue locally-sent task events from the discarded branch."
+  },
+  "constraints": [
+    "Do NOT weaken the reducer back to >=. The strict > is what makes the inter-author case converge under reorder.",
+    "The new field updatedByDevice MUST be optional on Task and TaskEvent (backward compat for persisted IDB rows). Missing/undefined treated as '' (sorts lowest) at every comparison site.",
+    "Apply the three-level tie-break identically at ALL 5 enumerated merge gates: 4 reducer mutation arms in src/store/task-reducer.ts AND the bootstrap snapshot merge gate in src/marmot/device-sync.ts. Missing any one gate causes silent divergence at that gate.",
+    "Stamp updatedByDevice at a single chokepoint (dispatch() in task-store.tsx), not threaded through every producer. The accessor is client.keyPackages.clientId per the marmot-ts API.",
+    "Preserve the existing ensureMonotonicTimestamp helper from task-store-utils.ts. The new field must round-trip through its spread return.",
+    "If layer 2 (rollback listener) is included, the handler's signature MUST match the actual emitted RollbackInfo shape from marmot-ts dist (groupId, targetEpoch, newHeadCommitEventId, invalidatedMessages: string[]). The library does NOT pass decoded application data — only invalidated event IDs."
+  ],
+  "non_goals": [
+    "Cross-kind reorder convergence (EDIT vs COMPLETE at overlapping timestamps). Out of scope for this bug; tracked as a separate known limitation in the property tests.",
+    "Healing existing diverged groups in the wild. marmot-ts MIP-03 commit message: 'Existing forked groups do not auto-heal.'",
+    "The known sibling-forget bug (sibling-forget-fails-multi-device-same) at the MLS layer.",
+    "Replacing or augmenting the existing ensureMonotonicTimestamp helper — it addresses an orthogonal axis (sequential same-actor) and must stay as-is."
+  ],
+  "verification_question_ids": [
+    "VQ1", "VQ2", "VQ3", "VQ4", "VQ5", "VQ6", "VQ7", "VQ8", "VQ9", "VQ10", "VQ11", "VQ12"
+  ],
+  "regression_guards": [
+    "Full vitest suite (`make test`) must pass with no regressions vs baseline counts.",
+    "Existing property tests in task-reducer.property.test.ts and multi-client.property.test.ts must still pass.",
+    "Existing ensureMonotonicTimestamp tests in task-store.monotonic.test.ts must still pass.",
+    "Production build (`make build`) must typecheck cleanly (whole-program tsc, not per-file vitest transpile).",
+    "If layer 2 (rollback listener) is implemented, it must not cause runtime errors on any rollback emission, including when invalidatedMessages is empty (the S2 default per marmot-ts d.ts comment 'S2 emits RollbackInfo with empty arrays for both fields')."
+  ],
+  "note": "Contract written by lead after the fixer delivered without it, to support the reviewer step. The contract is intentionally permissive on layer 2: per VQ11, layer 2 may be implemented OR explicitly deferred with reasoning, but if attempted, it must match the actual emitted RollbackInfo shape."
+}

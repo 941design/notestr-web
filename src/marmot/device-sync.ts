@@ -884,6 +884,7 @@ export function useDeviceSync(
 
       appMsgHandlersRef.current.set(group.idStr, { group, handler });
       group.on("applicationMessage", handler);
+
     };
 
     const syncGroup = async (group: MarmotGroup): Promise<void> => {
@@ -1399,13 +1400,20 @@ export async function fetchAndApplyTaskBootstrap(
       }
 
       // CRDT merge gate: FWW for tasks not yet seen, LWW (updatedAt) for
-      // existing, deterministic tie-break (lower updatedBy) on equal timestamps.
+      // existing, deterministic three-level tie-break:
+      //   1. newer updatedAt wins
+      //   2. equal updatedAt → lower updatedBy pubkey wins
+      //   3. equal updatedAt + equal updatedBy → lower updatedByDevice clientId wins
+      //   (missing updatedByDevice treated as "" for backward compat with persisted tasks)
       for (const task of payload.tasks) {
         const existing = accepted.get(task.id);
         const wins =
           !existing ||
           task.updatedAt > existing.updatedAt ||
-          (task.updatedAt === existing.updatedAt && task.updatedBy < existing.updatedBy);
+          (task.updatedAt === existing.updatedAt &&
+            (task.updatedBy < existing.updatedBy ||
+              (task.updatedBy === existing.updatedBy &&
+                (task.updatedByDevice ?? "") < (existing.updatedByDevice ?? ""))));
         if (wins) {
           accepted.set(task.id, task);
           wonFromBootstrap.set(task.id, task);

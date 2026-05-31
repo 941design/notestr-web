@@ -40,14 +40,15 @@ interface Task {
   updatedAt: number;   // internal CRDT ordering key (seconds); may advance ahead of wall-clock under rapid
                        // same-actor edits due to the sender-side monotonic bump — never rendered as a display date
   updatedBy: string;   // hex pubkey of last mutator
+  updatedByDevice: string; // MLS clientId of device that last wrote (optional; "" for legacy records)
 }
 
 type TaskEvent =
   | { type: "task.created";        task: Task }
-  | { type: "task.updated";        taskId: string; changes: Partial<Pick<Task, "title" | "description">>; updatedAt: number; updatedBy: string }
-  | { type: "task.status_changed"; taskId: string; status: TaskStatus; updatedAt: number; updatedBy: string }
-  | { type: "task.assigned";       taskId: string; assignee: string | null; updatedAt: number; updatedBy: string }
-  | { type: "task.deleted";        taskId: string; updatedAt: number; updatedBy: string };
+  | { type: "task.updated";        taskId: string; changes: Partial<Pick<Task, "title" | "description">>; updatedAt: number; updatedBy: string; updatedByDevice?: string }
+  | { type: "task.status_changed"; taskId: string; status: TaskStatus; updatedAt: number; updatedBy: string; updatedByDevice?: string }
+  | { type: "task.assigned";       taskId: string; assignee: string | null; updatedAt: number; updatedBy: string; updatedByDevice?: string }
+  | { type: "task.deleted";        taskId: string; updatedAt: number; updatedBy: string; updatedByDevice?: string };
 ```
 
 The rumor also carries `tags: [["t", "task"]]`, which the `task-store` uses to
@@ -491,9 +492,33 @@ against external second-granularity values (e.g. kind-30078 `syncedAt`).
 
 This fix does not alter the **concurrent-tie axis** (two actors editing the
 same task simultaneously). The `updatedBy` tie-breaker in the reducer remains
-authoritative for concurrent inter-author edits, and the forthcoming
-`updatedByDevice` (MLS clientId) third level is reserved for same-pubkey
-multi-device concurrent edits — neither is affected by this change.
+authoritative for concurrent inter-author edits, and the `updatedByDevice`
+(MLS clientId) third level resolves same-pubkey multi-device concurrent edits —
+both are unchanged by this fix.
+
+### Sibling-device tie-break: three-level LWW gate
+
+When two devices of the **same** Nostr identity edit the same task at the same
+`updatedAt` second, `updatedBy` alone collapses (both devices share the same
+pubkey, so `pubkey < pubkey` is always `false`), and both events are silently
+rejected. The fix adds a third tie-break level using the MLS clientId:
+
+```
+event wins iff:
+  event.updatedAt > existing.updatedAt
+  || (event.updatedAt === existing.updatedAt
+      && event.updatedBy < existing.updatedBy)
+  || (event.updatedAt === existing.updatedAt
+      && event.updatedBy === existing.updatedBy
+      && event.updatedByDevice < existing.updatedByDevice)
+```
+
+`updatedByDevice` is stamped in `task-store.tsx:dispatch()` from
+`client.keyPackages.clientId`. The field is **optional** on both `TaskEvent`
+variants and the `Task` interface — missing/undefined is treated as `""`
+(empty string), which sorts below any real clientId, ensuring backward
+compatibility with persisted historical events written before this field
+existed. No IDB migration is required.
 
 ### Legacy Task records
 
@@ -502,7 +527,8 @@ multi-device concurrent edits — neither is affected by this change.
 (nullish coalescing to empty string) to treat legacy records as if they were
 last updated by the lowest possible pubkey value — ensuring they always lose
 tie-breakers to any real pubkey and thus always accept incoming updates for
-equal timestamps. No IDB migration is required.
+equal timestamps. The same pattern applies to `updatedByDevice` (treated as
+`""` for backward compat). No IDB migration is required.
 
 ### No task.snapshot event type
 

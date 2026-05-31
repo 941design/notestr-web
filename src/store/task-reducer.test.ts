@@ -299,3 +299,148 @@ describe("createTask", () => {
     expect(task.createdAt).toBe(task.updatedAt);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Reproduction test for "sibling-device same-second edit: both events dropped
+// because tie-break collapses when both devices share a Nostr pubkey".
+//
+// The three-level LWW gate added to applyEvent must resolve concurrent edits
+// from two devices of the SAME identity (identical updatedBy pubkey) at the
+// same wall-clock second by comparing the MLS clientId (updatedByDevice).
+// Without the third level, the tie-break evaluates pubkey < pubkey → false
+// for both events, and both are silently rejected. With the third level,
+// the lower clientId wins deterministically regardless of delivery order.
+// ---------------------------------------------------------------------------
+describe("sibling-device same-second concurrent edit: three-level tie-break resolves", () => {
+  const T = 1000;
+  const SHARED_PUBKEY = "pubkey-alice"; // both devices share one identity
+  // Initial task has DEVICE_C so incoming sibling edits (A, B) compete:
+  // A < B < C so either A or B can win depending on arrival order.
+  const DEVICE_A = "a";
+  const DEVICE_B = "b";
+  const DEVICE_C = "c"; // initial task's device — higher than both A and B
+
+  function siblingEditA(): TaskEvent {
+    return {
+      type: "task.status_changed",
+      taskId: "task-1",
+      status: "in_progress",
+      updatedAt: T,
+      updatedBy: SHARED_PUBKEY,
+      updatedByDevice: DEVICE_A,
+    };
+  }
+  function siblingEditB(): TaskEvent {
+    return {
+      type: "task.status_changed",
+      taskId: "task-1",
+      status: "done",
+      updatedAt: T,
+      updatedBy: SHARED_PUBKEY,
+      updatedByDevice: DEVICE_B,
+    };
+  }
+  function initialTask(): Task {
+    return {
+      id: "task-1",
+      title: "Sibling test",
+      description: "",
+      status: "open",
+      assignee: null,
+      createdBy: SHARED_PUBKEY,
+      createdAt: T - 10,
+      updatedAt: T,
+      updatedBy: SHARED_PUBKEY,
+      updatedByDevice: DEVICE_C,
+    };
+  }
+
+  // A < B < C. Incoming deviceId < existing deviceId → event wins.
+  // Initial task has DEVICE_C; both sibling edits (A, B) are lower and can win.
+  it("A arrives first: A < C → A wins immediately; B then loses (B > A)", () => {
+    const pre = new Map([["task-1", initialTask()]]);
+    let state = applyEvent(pre, siblingEditA()); // A < C → A wins
+    state = applyEvent(state, siblingEditB());    // B > A → B loses
+    expect(state.get("task-1")!.status).toBe("in_progress");
+    expect(state.get("task-1")!.updatedByDevice).toBe(DEVICE_A);
+  });
+
+  it("B arrives first: B < C → B wins; A then wins (A < B)", () => {
+    const pre = new Map([["task-1", initialTask()]]);
+    let state = applyEvent(pre, siblingEditB()); // B < C → B wins
+    state = applyEvent(state, siblingEditA());   // A < B → A wins
+    expect(state.get("task-1")!.status).toBe("in_progress");
+    expect(state.get("task-1")!.updatedByDevice).toBe(DEVICE_A);
+  });
+
+  it("convergence: both delivery orders converge to DEVICE_A (lowest clientId)", () => {
+    const pre = new Map([["task-1", initialTask()]]);
+    let state1 = applyEvent(pre, siblingEditA());
+    state1 = applyEvent(state1, siblingEditB());
+
+    let state2 = applyEvent(pre, siblingEditB());
+    state2 = applyEvent(state2, siblingEditA());
+
+    expect(state1.get("task-1")!.status).toBe(state2.get("task-1")!.status);
+    expect(state1.get("task-1")!.updatedByDevice).toBe(state2.get("task-1")!.updatedByDevice);
+    expect(state1.get("task-1")!.updatedByDevice).toBe(DEVICE_A); // A < B < C always wins
+  });
+
+  // Pre-fix behavior: without updatedByDevice both sibling edits are dropped.
+  // All three have updatedByDevice="" (treated as ""). Gate fails at third level.
+  it("without updatedByDevice: only lower deviceId wins, higher is rejected (pre-fix regression)", () => {
+    const pre = new Map([["task-1", initialTask()]]);
+    const staleEditA: TaskEvent = {
+      type: "task.status_changed",
+      taskId: "task-1",
+      status: "in_progress",
+      updatedAt: T,
+      updatedBy: SHARED_PUBKEY,
+      // updatedByDevice absent → treated as ""
+    };
+    const staleEditB: TaskEvent = {
+      type: "task.status_changed",
+      taskId: "task-1",
+      status: "done",
+      updatedAt: T,
+      updatedBy: SHARED_PUBKEY,
+      // updatedByDevice absent → treated as ""
+    };
+    // A arrives: existing has DEVICE_C, A has "" → A wins ("" < DEVICE_C).
+    // B arrives: existing has "" (from A), B has DEVICE_B → DEVICE_B > "" → B loses.
+    let state = applyEvent(pre, staleEditA); // A wins: status=in_progress, device=""
+    state = applyEvent(state, staleEditB);    // B loses: no change
+    expect(state.get("task-1")!.status).toBe("in_progress"); // A's edit won
+    expect(state.get("task-1")!.updatedByDevice).toBe(""); // A's device ("" < DEVICE_B)
+  });
+
+  it("backward compat: new event with DEVICE_B loses to old task (existing undefined → treated as '', lower than 'b')", () => {
+    // Old task: updatedByDevice is undefined (read from IDB as undefined → "").
+    const pre = new Map([["task-1", {
+      id: "task-1",
+      title: "Old task",
+      description: "",
+      status: "open" as const,
+      assignee: null,
+      createdBy: SHARED_PUBKEY,
+      createdAt: T - 10,
+      updatedAt: T,
+      updatedBy: SHARED_PUBKEY,
+      // updatedByDevice: undefined — old persisted task
+    }]]);
+    const newEvent: TaskEvent = {
+      type: "task.status_changed",
+      taskId: "task-1",
+      status: "done",
+      updatedAt: T,
+      updatedBy: SHARED_PUBKEY,
+      updatedByDevice: DEVICE_B,
+    };
+    // Existing has undefined (→ ""), new event has DEVICE_B ("b").
+    // Gate: "" < "b" → existing wins → event is rejected.
+    // The old task stays as-is; the new event does NOT override it.
+    // This is the correct backward-compat behavior: old tasks sort as "" (lowest).
+    const state = applyEvent(pre, newEvent);
+    expect(state.get("task-1")!.status).toBe("open"); // unchanged — new event loses
+  });
+});

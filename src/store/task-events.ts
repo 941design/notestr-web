@@ -12,6 +12,8 @@ export interface Task {
   createdAt: number; // unix timestamp
   updatedAt: number; // unix timestamp
   updatedBy: string; // hex pubkey of last writer; set to createdBy on creation
+  /** MLS clientId of the device that last wrote this task (sorts sibling-device same-second edits). "" = backward compat for persisted tasks. */
+  updatedByDevice?: string;
 }
 
 export type TaskEvent =
@@ -22,6 +24,7 @@ export type TaskEvent =
       changes: Partial<Pick<Task, "title" | "description">>;
       updatedAt: number;
       updatedBy: string;
+      updatedByDevice?: string; // default "" for backward compat
     }
   | {
       type: "task.status_changed";
@@ -29,6 +32,7 @@ export type TaskEvent =
       status: TaskStatus;
       updatedAt: number;
       updatedBy: string;
+      updatedByDevice?: string; // default "" for backward compat
     }
   | {
       type: "task.assigned";
@@ -36,12 +40,14 @@ export type TaskEvent =
       assignee: string | null;
       updatedAt: number;
       updatedBy: string;
+      updatedByDevice?: string; // default "" for backward compat
     }
   | {
       type: "task.deleted";
       taskId: string;
       updatedAt: number;
       updatedBy: string;
+      updatedByDevice?: string; // default "" for backward compat
     };
 
 export const TASK_STATE_SYNC_KIND = 30078;
@@ -59,6 +65,7 @@ export function createTask(
   title: string,
   description: string,
   createdBy: string,
+  updatedByDevice = "",
 ): Task {
   const now = Math.floor(Date.now() / 1000);
   return {
@@ -71,5 +78,6 @@ export function createTask(
     createdAt: now,
     updatedAt: now,
     updatedBy: createdBy,
+    updatedByDevice,
   };
 }

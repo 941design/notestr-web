@@ -273,6 +273,17 @@ export const TaskStoreProvider: React.FC<TaskStoreProviderProps> = ({
         : undefined;
       taskEvent = ensureMonotonicTimestamp(taskEvent, existing);
 
+      // Stamp the third tie-break level: MLS clientId of this device.
+      // Both the optimistic apply and the published rumor carry this field,
+      // so the reducer's three-level gate (updatedAt → updatedBy → updatedByDevice)
+      // resolves sibling-device same-second edits deterministically.
+      if (taskEvent.type !== "task.created") {
+        taskEvent = {
+          ...taskEvent,
+          updatedByDevice: client?.keyPackages.clientId ?? "",
+        };
+      }
+
       // Apply optimistically
       const nextState = applyEvent(stateRef.current, taskEvent);
       setState(nextState);

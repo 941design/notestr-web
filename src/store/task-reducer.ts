@@ -20,13 +20,16 @@ export function applyEvent(state: TaskState, event: TaskEvent): TaskState {
         existing &&
         (event.updatedAt > existing.updatedAt ||
           (event.updatedAt === existing.updatedAt &&
-            event.updatedBy < (existing.updatedBy ?? "")))
+            (event.updatedBy < existing.updatedBy ||
+              (event.updatedBy === existing.updatedBy &&
+                (event.updatedByDevice ?? "") < (existing.updatedByDevice ?? "")))))
       ) {
         next.set(event.taskId, {
           ...existing,
           ...event.changes,
           updatedAt: event.updatedAt,
           updatedBy: event.updatedBy,
+          updatedByDevice: event.updatedByDevice ?? "",
         });
       }
       break;
@@ -38,13 +41,16 @@ export function applyEvent(state: TaskState, event: TaskEvent): TaskState {
         existing &&
         (event.updatedAt > existing.updatedAt ||
           (event.updatedAt === existing.updatedAt &&
-            event.updatedBy < (existing.updatedBy ?? "")))
+            (event.updatedBy < existing.updatedBy ||
+              (event.updatedBy === existing.updatedBy &&
+                (event.updatedByDevice ?? "") < (existing.updatedByDevice ?? "")))))
       ) {
         next.set(event.taskId, {
           ...existing,
           status: event.status,
           updatedAt: event.updatedAt,
           updatedBy: event.updatedBy,
+          updatedByDevice: event.updatedByDevice ?? "",
         });
       }
       break;
@@ -56,13 +62,16 @@ export function applyEvent(state: TaskState, event: TaskEvent): TaskState {
         existing &&
         (event.updatedAt > existing.updatedAt ||
           (event.updatedAt === existing.updatedAt &&
-            event.updatedBy < (existing.updatedBy ?? "")))
+            (event.updatedBy < existing.updatedBy ||
+              (event.updatedBy === existing.updatedBy &&
+                (event.updatedByDevice ?? "") < (existing.updatedByDevice ?? "")))))
       ) {
         next.set(event.taskId, {
           ...existing,
           assignee: event.assignee,
           updatedAt: event.updatedAt,
           updatedBy: event.updatedBy,
+          updatedByDevice: event.updatedByDevice ?? "",
         });
       }
       break;
@@ -74,7 +83,9 @@ export function applyEvent(state: TaskState, event: TaskEvent): TaskState {
         existing &&
         (event.updatedAt > existing.updatedAt ||
           (event.updatedAt === existing.updatedAt &&
-            event.updatedBy < (existing.updatedBy ?? "")))
+            (event.updatedBy < existing.updatedBy ||
+              (event.updatedBy === existing.updatedBy &&
+                (event.updatedByDevice ?? "") < (existing.updatedByDevice ?? "")))))
       ) {
         next.delete(event.taskId);
       }
