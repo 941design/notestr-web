@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-06-01T17:08:36Z",
+  "updated_at": "2026-06-01T20:20:27Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -106,22 +106,14 @@
       "path": "specs/epic-new-member-task-state-sync/",
       "status": "DONE",
       "next_action": "all 5 stories verified, 250 tests passing"
+    },
+    {
+      "path": "specs/epic-mls-trace-event-schema-parity-test/",
+      "status": "DONE",
+      "next_action": "completed 2026-06-01"
     }
   ],
   "findings": [
-    {
-      "slug": "playwright-browser-revision-stamp",
-      "scope": "any",
-      "anchor": {
-        "path": "Makefile",
-        "range": [
-          66,
-          72
-        ]
-      },
-      "text": "Extend Makefile cross-platform stamp to cover /opt/playwright-browsers (mismatched Playwright browser revisions cause harness crashes — 1208 expected, 1223 installed). CLAUDE.md flags node_modules drift but not browser binaries.",
-      "created_at": "2026-05-18"
-    },
     {
       "slug": "playwright-retries-zero-after-baseline",
       "scope": "any",
@@ -129,19 +121,6 @@
         "path": "playwright.config.ts:retries"
       },
       "text": "Drop playwright.config.ts retries to 0 unconditionally after epic-mls-live-delivery-race's 50-run baseline",
-      "created_at": "2026-05-18"
-    },
-    {
-      "slug": "mls-trace-event-schema-parity-test",
-      "scope": "any",
-      "anchor": {
-        "path": "e2e/fixtures/mls-trace-classify.ts",
-        "range": [
-          25,
-          103
-        ]
-      },
-      "text": "Add schema-parity regression test for mls-trace TraceEvent union (src/marmot/mls-trace.ts vs e2e/fixtures/mls-trace-classify.ts copy). Filter field drift already present (Filter vs unknown) but harmless today; no test catches future divergence.",
       "created_at": "2026-05-18"
     },
     {

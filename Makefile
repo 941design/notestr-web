@@ -137,6 +137,15 @@ ensure-platform:
 		rm -rf node_modules; \
 		$(MAKE) node_modules; \
 	fi
+	@# Check that the Playwright chromium binary used by this node_modules matches
+	@# what is actually installed under PLAYWRIGHT_BROWSERS_PATH
+	@# (/opt/playwright-browsers on this host). A mismatch (e.g. node_modules expects
+	@# revision 1208 but /opt has 1223) causes harness crashes at test-run time.
+	@if ! node -e "require('playwright-core').chromium.executablePath()" >/dev/null 2>&1; then \
+		echo "[make] Playwright chromium binary missing — run 'make e2e-install' to install browser binaries"; \
+	elif ! test -x "$$(node -e "require('playwright-core').chromium.executablePath()" 2>/dev/null)"; then \
+		echo "[make] Playwright chromium binary not found at expected revision — run 'make e2e-install'"; \
+	fi
 
 build: ensure-platform ## Build for production
 	npm run build
