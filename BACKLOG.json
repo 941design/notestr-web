@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-05-25T17:12:10Z",
+  "updated_at": "2026-06-01T17:08:36Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -276,20 +276,6 @@
       "created_at": "2026-05-19"
     },
     {
-      "slug": "sibling-forget-same-pubkey-siblings-silently",
-      "scope": "project-specific",
-      "anchor": {
-        "path": "src/marmot/forget-device.ts",
-        "line": 130
-      },
-      "text": "Sibling-forget on same-pubkey siblings silently no-ops after MIP-00 KP change",
-      "created_at": "2026-05-21",
-      "motivation": "AC-E2E-2/AC-E2E-11/AC-E2E-12 are broken for the two-device-same-pubkey flow: a user cannot decommission their other device when both belong to the same Nostr pubkey. This is the same protocol guarantee the self-forget fix (bug-self-forget-no-mls-propagation) just restored, but for the sibling code path.",
-      "behavior": "Spec e2e/tests/forget-device-sibling.spec.ts:181 hangs the 30s poll: A1 calls sibling-forget on A2 (same pubkey), but A2 leaf stays in A1 ratchet tree (length 2 instead of 1). siblingLeafIndexesForEvents matches relay-fetched KP events to leaves via compareKeyPackageToLeafNode (signaturePublicKey equality). Suspected cause: commit 13297ec (MIP-00 kind-30443 compliance) changed the serialization round-trip such that the decoded relay KP no longer matches the in-tree leaf signature key for siblings. No commit issued; no error surfaced; UI silently does nothing. Same family as the joingroupfromwelcome-throws-no-matching learning.",
-      "approach": "Two candidates: (1) move sibling-forget to credential-based leaf resolution (mirror self-forget) and disambiguate device-within-pubkey via a new per-slot marker on the leaf (requires protocol amendment because credentials currently carry only the pubkey); (2) repair the KP-shape round-trip drift so compareKeyPackageToLeafNode keeps working — smaller blast radius if a single field-encoding tweak in marmot-ts groups-manager or key-package-event closes it. Investigate (2) first.",
-      "success_signal": "e2e/tests/forget-device-sibling.spec.ts main test passes (5/5 incl. setup) with A2 leaf gone from A1 view within 30s and A2 slot appearing in __notestrTestForgottenSlots."
-    },
-    {
       "slug": "e2e-harness-spawns-bunkers-before-port",
       "scope": "any",
       "anchor": {
@@ -424,7 +410,10 @@
       "scope": "any",
       "anchor": {
         "path": "specs/epic-property-tests-l3-three-party/spec.md",
-        "range": [231, 231]
+        "range": [
+          231,
+          231
+        ]
       },
       "text": "spec.md writes the Fd arbitrary as per-actor `new FdCommand3P(a)`, which contradicts the normative AC-3P-FD-1 (forget-device is admin-only and actor-free). The implementation correctly follows the AC; the spec snippet should be reconciled to match.",
       "created_at": "2026-05-26",
@@ -437,7 +426,10 @@
       "scope": "any",
       "anchor": {
         "path": "e2e/tests/multi-user.property.spec.ts",
-        "range": [495, 495]
+        "range": [
+          495,
+          495
+        ]
       },
       "text": "CtCommand task.created payload omits `updatedBy` (TS2741), identical in BOTH the 2-party (multi-user.property.spec.ts:495) and 3-party command bodies. Harmless under esbuild transpile but a boy-scout fix for a future story that owns those command bodies.",
       "created_at": "2026-05-26",
@@ -446,11 +438,14 @@
       "approach": "Add the `updatedBy` field to the task.created payload in both the 2-party and 3-party CtCommand bodies when a future story owns them."
     },
     {
-      "slug": "asserts5-3p-anchors-membership-to-a-and-dead-degraded-branch",
+      "slug": "asserts5-3p-membership-anchor-and-dead-branch",
       "scope": "e2e",
       "anchor": {
         "path": "e2e/tests/multi-user-3p.property.spec.ts",
-        "range": [1207, 1242]
+        "range": [
+          1207,
+          1242
+        ]
       },
       "text": "Pre-commit codex review of the 3-party property spec surfaced two test-quality items in assertS5_3P (member<=>leafCount biconditional). (P2, :1218) It reads membership solely from A's page and returns early on membersA===null, so any settled state where A has left but B/C still share the group skips the S5 biconditional entirely (under-asserts; can only skip, never false-RED). This mirrors assertC0_3P's all-three-members guard (line 1109), so it is consistent with the epic's settled-full-group philosophy, but it does dilute S5 coverage on A-absent chains. (P3, :1226) The dormant degraded-form branch calls getPubkeyLeafCountHook before the !leafOk guard and then uses leafCount inside the branch it claims runs without the hook — internally inconsistent and unreachable while STRICT_FORM_AVAILABLE holds.",
       "created_at": "2026-05-26",
