@@ -1,0 +1,24 @@
+{
+  "epic_name": "mls-trace-event-schema-parity-test",
+  "status": "done",
+  "phase": "COMPLETE",
+  "created_at": "2026-06-01T00:00:00Z",
+  "updated_at": "2026-06-01T00:00:00Z",
+  "pre_existing_dirty_files": [],
+  "completed_stories": ["01"],
+  "escalated_stories": [],
+  "phase_history": [
+    {
+      "phase": "SPEC_VALIDATED",
+      "timestamp": "2026-06-01T00:00:00Z",
+      "trigger": "validation_passed"
+    }
+  ],
+  "plugin_sha": "f5e4524c7b9618d99914da272f8e8e9745ed9057",
+  "consumer_sha": "5c89e037ba9c261e6513a26f41deb00aa37cb2fc",
+  "models": {
+    "lead": "sonnet",
+    "examiner": "sonnet",
+    "implementer": "sonnet"
+  }
+}

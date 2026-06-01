@@ -1,0 +1,14 @@
+{
+  "stories": [
+    {
+      "id": "01",
+      "name": "schema-parity-test",
+      "title": "Schema parity regression test",
+      "status": "done",
+      "lighter_path": true,
+      "acceptance_criteria": ["AC-STRUCT-1", "AC-STRUCT-2", "AC-DEP-1", "AC-DEP-2"]
+    }
+  ],
+  "story_order": ["01"],
+  "epic_name": "mls-trace-event-schema-parity-test"
+}

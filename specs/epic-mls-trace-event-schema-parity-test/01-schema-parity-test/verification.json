@@ -1,0 +1,37 @@
+{
+  "pre_impl_questions": [
+    {
+      "id": "SPEC-1",
+      "ac_id": "AC-STRUCT-1",
+      "question": "Does src/marmot/mls-trace.test.ts exist and does it import both TraceEvent types (SourceTraceEvent from ./mls-trace, FixtureTraceEvent from ../../e2e/fixtures/mls-trace-classify)?",
+      "kind": "spec",
+      "severity": 5,
+      "confidence": 1.0
+    },
+    {
+      "id": "STRUCT-1",
+      "ac_id": "AC-STRUCT-2",
+      "question": "Does the parity assignment cover all 18 TraceEvent variants? List each variant explicitly in the verification.",
+      "kind": "structural",
+      "severity": 7,
+      "confidence": 1.0
+    },
+    {
+      "id": "DEP-1",
+      "ac_id": "AC-DEP-1",
+      "question": "Does 'vitest src/marmot/mls-trace.test.ts' exit with code 0?",
+      "kind": "dependency",
+      "severity": 5,
+      "confidence": 1.0
+    },
+    {
+      "id": "DEP-2",
+      "ac_id": "AC-DEP-2",
+      "question": "Does 'npx tsc --noEmit' exit with code 0 and report no errors in src/marmot/mls-trace.test.ts?",
+      "kind": "dependency",
+      "severity": 5,
+      "confidence": 1.0
+    }
+  ],
+  "post_impl_answers": []
+}

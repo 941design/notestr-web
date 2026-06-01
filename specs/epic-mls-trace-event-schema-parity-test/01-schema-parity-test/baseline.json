@@ -1,0 +1,4 @@
+{
+  "test_snapshot": "skipped",
+  "reason": "schema-parity-test: compile-time type assertions only; no test behavior to snapshot"
+}

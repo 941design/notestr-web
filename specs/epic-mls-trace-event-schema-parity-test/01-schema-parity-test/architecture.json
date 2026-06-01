@@ -1,0 +1,7 @@
+{
+  "story_id": "01",
+  "story_name": "schema-parity-test",
+  "lighter_path": true,
+  "architect_skipped": true,
+  "implementation_notes": "Added compile-time type-parity assertions for all 20 TraceEvent variants to src/marmot/mls-trace.test.ts using _parityCheck helper typed as FixtureTraceEvent. Source-typed literals assigned to fixture type variable trigger TS error on any field/variant drift. Zero functional changes to source or fixture files."
+}

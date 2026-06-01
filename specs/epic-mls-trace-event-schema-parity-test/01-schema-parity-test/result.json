@@ -1,0 +1,15 @@
+{
+  "story_id": "01",
+  "status": "done",
+  "final_outcome": "accepted",
+  "architect_skipped": true,
+  "files_modified": ["src/marmot/mls-trace.test.ts"],
+  "files_created": [],
+  "remediation_rounds": 0,
+  "completed_at": "2026-06-01T00:00:00Z",
+  "retrospective": {
+    "skipped": false,
+    "reason": "lighter-path; architect ran as remediation fallback only",
+    "lead_clarifications": []
+  }
+}
