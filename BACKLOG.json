@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-06-01T20:20:27Z",
+  "updated_at": "2026-06-01T20:42:17Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -253,20 +253,6 @@
       },
       "text": "E2E tests cannot use IDB notestr-failed-welcomes count as a pass/fail assertion: the ephemeral relay accumulates Welcome events from prior runs that produce unrelated no_matching_kp records on fresh contexts; sidebar visibility is the correct gate for KP-freshness regressions.",
       "created_at": "2026-05-19"
-    },
-    {
-      "slug": "e2e-harness-spawns-bunkers-before-port",
-      "scope": "any",
-      "anchor": {
-        "path": "e2e/global-setup.ts",
-        "line": 196
-      },
-      "text": "e2e harness spawns bunkers before port check and leaks serve worker across runs",
-      "created_at": "2026-05-21",
-      "motivation": "8 manual process reaps were needed across this bug run. Every subsequent e2e run that hits a port conflict will orphan the 3 bunker children already spawned before assertPortFree fires (line 240); serve's npx parent-child split means killing the recorded servePid does not kill the actual HTTP worker, so port 3100 stays occupied across sessions and the next run fails loud before any test runs. Cost of inaction: every e2e run becomes fragile on port collision and requires manual operator cleanup.",
-      "behavior": "globalSetup spawns bunkerA, bunkerB, bunkerC (lines 197-236) and only then calls assertPortFree(3100) — if the port is busy the three bunker children are already alive and untracked in .state.json. serve is spawned with detached:false but npx forks a child worker; teardown kills serveProc.pid (the npx parent) but not the child serve process, which survives and holds port 3100 into the next session. No process-group kill is used anywhere in teardown.",
-      "approach": "Move assertPortFree(3100) to before bunker spawns (before line 196). Change serve spawn to detached:true and record process.pid of the serve child directly, or use kill -- -<pgid> in teardown. Write bunker PIDs to .state.json only after all three are live so a setup abort leaves .state.json absent rather than partially written.",
-      "success_signal": "A deliberate port-3100 collision test leaves zero orphan processes and teardown exits cleanly with no manual intervention."
     },
     {
       "slug": "device-store-defaultdevicename-format-has-no",

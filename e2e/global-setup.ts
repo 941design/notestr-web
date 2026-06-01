@@ -37,7 +37,7 @@ function generateBunkerKey(relayUrl: string): BunkerKey {
   };
 }
 
-async function spawnAndWaitForOutput(
+export async function spawnAndWaitForOutput(
   cmd: string,
   args: string[],
   waitFor: string,
@@ -128,7 +128,7 @@ async function waitForHttp(url: string, timeoutMs: number): Promise<void> {
 // where the port happened to be held by something else (a system service, an
 // unrelated dev process) would tear that down without warning. Fail loud
 // instead so the human can pick what to do.
-async function assertPortFree(port: number): Promise<void> {
+export async function assertPortFree(port: number): Promise<void> {
   try {
     const { execSync } = await import('child_process');
     const pids = execSync(`lsof -ti:${port}`, { encoding: 'utf-8' }).trim();
@@ -177,6 +177,158 @@ async function cleanupOrphans(): Promise<void> {
       // pkill returns non-zero when no match — happy path.
     }
   }
+}
+
+interface PreparedServers {
+  bunkerPid?: number;
+  bunkerBPid?: number;
+  bunkerCPid?: number;
+  servePid?: number;
+}
+
+// Only the slice of the serve child process that prepareServers touches.
+type ServeProc = Pick<ChildProcess, 'pid' | 'unref' | 'on'>;
+
+interface PrepareDeps {
+  spawnBunker: typeof spawnAndWaitForOutput;
+  spawnServe: (...args: Parameters<typeof spawn>) => ServeProc;
+  assertPortFree: typeof assertPortFree;
+  waitForHttp: typeof waitForHttp;
+  writeState: (state: PreparedServers) => void;
+  writeKeys: (payload: string) => void;
+}
+
+const defaultPrepareDeps: PrepareDeps = {
+  spawnBunker: spawnAndWaitForOutput,
+  spawnServe: spawn,
+  assertPortFree,
+  waitForHttp,
+  writeState: (state) => writeFileSync(STATE_FILE, JSON.stringify(state)),
+  writeKeys: (payload) => writeFileSync(KEYS_FILE, payload),
+};
+
+/**
+ * Generate keys, then stand up the three bunkers and the static server.
+ *
+ * Ordering is load-bearing: `assertPortFree(3100)` runs FIRST, before any
+ * bunker is spawned. If the port is held, this throws and NOTHING has been
+ * spawned — so there are no orphaned bunker children to leak and `.state.json`
+ * is never written (teardown then finds no PIDs to clean up). The previous
+ * ordering spawned all three bunkers before the port check, so a busy port
+ * left three live, untracked `bunker.mjs` processes holding NIP-46
+ * subscriptions on the relay (see cleanupOrphans for the failure mode).
+ *
+ * `.state.json` is written only after all four processes are live, so a
+ * mid-setup abort leaves the file absent rather than partially populated.
+ */
+export async function prepareServers(deps: PrepareDeps = defaultPrepareDeps): Promise<PreparedServers> {
+  // Generate fresh per-session bunker keypairs. Writing them to KEYS_FILE
+  // BEFORE spawning bunkers (and before any test file is imported) means the
+  // auth-helper modules can synchronously load this file at import time and
+  // expose the per-session bunker URLs / npubs as ordinary constants.
+  // Rationale: prior sessions accumulate kind-30443 key packages on the
+  // relay under whatever pubkey they used; using fresh pubkeys per session
+  // structurally isolates this run from that historical state, so the
+  // auto-invite scan never picks up phantom "sibling" devices belonging to
+  // a defunct browser. See docs commit message accompanying this change.
+  const RELAY_URL = 'ws://localhost:7777';
+  const bunkerAKey = generateBunkerKey(RELAY_URL);
+  const bunkerBKey = generateBunkerKey(RELAY_URL);
+  const bunkerCKey = generateBunkerKey(RELAY_URL);
+  deps.writeKeys(JSON.stringify({ A: bunkerAKey, B: bunkerBKey, C: bunkerCKey }, null, 2));
+
+  // Refuse to start if port 3100 is already held by something. This runs
+  // BEFORE any bunker spawn so an occupied port aborts with zero side effects.
+  // We do not kill discovered processes — see assertPortFree for rationale.
+  await deps.assertPortFree(3100);
+
+  console.log('[setup] Starting bunker A...');
+  const bunkerProc = await deps.spawnBunker(
+    'node',
+    [path.join(PROJECT_ROOT, 'e2e', 'fixtures', 'bunker.mjs')],
+    'Ready',
+    10000,
+    PROJECT_ROOT,
+    { BUNKER_PRIVATE_KEY: bunkerAKey.privkeyHex, BUNKER_LABEL: 'bunker-A' },
+  );
+  console.log('[setup] Bunker A ready.');
+
+  console.log('[setup] Starting bunker B...');
+  const bunkerBProc = await deps.spawnBunker(
+    'node',
+    [path.join(PROJECT_ROOT, 'e2e', 'fixtures', 'bunker.mjs')],
+    'Ready',
+    10000,
+    PROJECT_ROOT,
+    { BUNKER_PRIVATE_KEY: bunkerBKey.privkeyHex, BUNKER_LABEL: 'bunker-B' },
+  );
+  console.log('[setup] Bunker B ready.');
+
+  console.log('[setup] Starting bunker C...');
+  const bunkerCProc = await deps.spawnBunker(
+    'node',
+    [path.join(PROJECT_ROOT, 'e2e', 'fixtures', 'bunker.mjs')],
+    'Ready',
+    10000,
+    PROJECT_ROOT,
+    { BUNKER_PRIVATE_KEY: bunkerCKey.privkeyHex, BUNKER_LABEL: 'bunker-C' },
+  );
+  console.log('[setup] Bunker C ready.');
+
+  // Start the static file server. Two structural rules:
+  //
+  // a) `stdio: 'ignore'` — do NOT pipe `serve`'s stdout/stderr into this
+  //    process. `serve` logs one line per HTTP request and a full Playwright
+  //    run makes hundreds. If the pipes aren't drained faster than they're
+  //    written (or any listener pauses the stream), the ~64KB kernel pipe
+  //    buffer fills, `serve` blocks forever on `process.stdout.write`, and
+  //    every subsequent test fails with `ERR_CONNECTION_REFUSED`. Readiness
+  //    is detected via the HTTP health-check below instead of stdout scraping.
+  //
+  // b) Spawn the serve binary DIRECTLY from `node_modules/.bin`, not via
+  //    `npx`. `npx serve` produces a 3-process chain (npx → `sh -c serve` →
+  //    `node serve`), and SIGTERM on the recorded npx PID does not propagate
+  //    to the actual port-holding node listener — it gets reparented to init
+  //    and keeps holding port 3100 across runs. Spawning the bin directly
+  //    means the recorded PID IS the listener. `detached: true` puts it in
+  //    its own process group so teardown can SIGTERM the group as a belt-and-
+  //    suspenders against future binaries that fork helpers of their own.
+  console.log('[setup] Starting serve on port 3100...');
+  const serveProc = deps.spawnServe(
+    path.join(PROJECT_ROOT, 'node_modules', '.bin', 'serve'),
+    ['out', '-l', '3100', '--no-clipboard'],
+    {
+      cwd: PROJECT_ROOT,
+      stdio: 'ignore',
+      env: process.env,
+      detached: true,
+    },
+  );
+  // Allow the parent (this Node process) to exit without waiting on serve.
+  // We still control its lifetime explicitly via the teardown SIGTERM.
+  serveProc.unref();
+  serveProc.on('error', (err) => {
+    console.error('[setup] serve spawn error:', err);
+  });
+  serveProc.on('exit', (code, signal) => {
+    console.error(`[setup] serve exited unexpectedly (code=${code}, signal=${signal})`);
+  });
+
+  // Wait for the HTTP endpoint to become reachable — that's the real
+  // readiness signal now that stdout is no longer available.
+  await deps.waitForHttp('http://localhost:3100', 20000);
+  console.log('[setup] HTTP health check passed.');
+
+  // Save PIDs for teardown ONLY after every process is live, so a mid-setup
+  // abort leaves `.state.json` absent rather than partially written.
+  const state: PreparedServers = {
+    bunkerPid: bunkerProc.pid,
+    bunkerBPid: bunkerBProc.pid,
+    bunkerCPid: bunkerCProc.pid,
+    servePid: serveProc.pid,
+  };
+  deps.writeState(state);
+  return state;
 }
 
 export default async function globalSetup() {
@@ -236,122 +388,7 @@ export default async function globalSetup() {
   });
   console.log('[setup] Build complete.');
 
-  // 2. Generate fresh per-session bunker keypairs. Writing them to KEYS_FILE
-  //    BEFORE spawning bunkers (and before any test file is imported) means the
-  //    auth-helper modules can synchronously load this file at import time and
-  //    expose the per-session bunker URLs / npubs as ordinary constants.
-  //    Rationale: prior sessions accumulate kind-30443 key packages on the
-  //    relay under whatever pubkey they used; using fresh pubkeys per session
-  //    structurally isolates this run from that historical state, so the
-  //    auto-invite scan never picks up phantom "sibling" devices belonging to
-  //    a defunct browser. See docs commit message accompanying this change.
-  const RELAY_URL = 'ws://localhost:7777';
-  const bunkerAKey = generateBunkerKey(RELAY_URL);
-  const bunkerBKey = generateBunkerKey(RELAY_URL);
-  const bunkerCKey = generateBunkerKey(RELAY_URL);
-  writeFileSync(
-    KEYS_FILE,
-    JSON.stringify({ A: bunkerAKey, B: bunkerBKey, C: bunkerCKey }, null, 2),
-  );
-
-  console.log('[setup] Starting bunker A...');
-  const bunkerProc = await spawnAndWaitForOutput(
-    'node',
-    [path.join(PROJECT_ROOT, 'e2e', 'fixtures', 'bunker.mjs')],
-    'Ready',
-    10000,
-    PROJECT_ROOT,
-    {
-      BUNKER_PRIVATE_KEY: bunkerAKey.privkeyHex,
-      BUNKER_LABEL: 'bunker-A',
-    },
-  );
-  console.log('[setup] Bunker A ready.');
-
-  console.log('[setup] Starting bunker B...');
-  const bunkerBProc = await spawnAndWaitForOutput(
-    'node',
-    [path.join(PROJECT_ROOT, 'e2e', 'fixtures', 'bunker.mjs')],
-    'Ready',
-    10000,
-    PROJECT_ROOT,
-    {
-      BUNKER_PRIVATE_KEY: bunkerBKey.privkeyHex,
-      BUNKER_LABEL: 'bunker-B',
-    },
-  );
-  console.log('[setup] Bunker B ready.');
-
-  console.log('[setup] Starting bunker C...');
-  const bunkerCProc = await spawnAndWaitForOutput(
-    'node',
-    [path.join(PROJECT_ROOT, 'e2e', 'fixtures', 'bunker.mjs')],
-    'Ready',
-    10000,
-    PROJECT_ROOT,
-    {
-      BUNKER_PRIVATE_KEY: bunkerCKey.privkeyHex,
-      BUNKER_LABEL: 'bunker-C',
-    },
-  );
-  console.log('[setup] Bunker C ready.');
-
-  // 3. Refuse to start if port 3100 is already held by something. We do not
-  //    kill discovered processes — see assertPortFree for rationale.
-  await assertPortFree(3100);
-
-  // 4. Start the static file server. Two structural rules:
-  //
-  // a) `stdio: 'ignore'` — do NOT pipe `serve`'s stdout/stderr into this
-  //    process. `serve` logs one line per HTTP request and a full Playwright
-  //    run makes hundreds. If the pipes aren't drained faster than they're
-  //    written (or any listener pauses the stream), the ~64KB kernel pipe
-  //    buffer fills, `serve` blocks forever on `process.stdout.write`, and
-  //    every subsequent test fails with `ERR_CONNECTION_REFUSED`. Readiness
-  //    is detected via the HTTP health-check below instead of stdout scraping.
-  //
-  // b) Spawn the serve binary DIRECTLY from `node_modules/.bin`, not via
-  //    `npx`. `npx serve` produces a 3-process chain (npx → `sh -c serve` →
-  //    `node serve`), and SIGTERM on the recorded npx PID does not propagate
-  //    to the actual port-holding node listener — it gets reparented to init
-  //    and keeps holding port 3100 across runs. Spawning the bin directly
-  //    means the recorded PID IS the listener. `detached: true` puts it in
-  //    its own process group so teardown can SIGTERM the group as a belt-and-
-  //    suspenders against future binaries that fork helpers of their own.
-  console.log('[setup] Starting serve on port 3100...');
-  const serveProc = spawn(
-    path.join(PROJECT_ROOT, 'node_modules', '.bin', 'serve'),
-    ['out', '-l', '3100', '--no-clipboard'],
-    {
-      cwd: PROJECT_ROOT,
-      stdio: 'ignore',
-      env: process.env,
-      detached: true,
-    },
-  );
-  // Allow the parent (this Node process) to exit without waiting on serve.
-  // We still control its lifetime explicitly via the teardown SIGTERM.
-  serveProc.unref();
-  serveProc.on('error', (err) => {
-    console.error('[setup] serve spawn error:', err);
-  });
-  serveProc.on('exit', (code, signal) => {
-    console.error(`[setup] serve exited unexpectedly (code=${code}, signal=${signal})`);
-  });
-
-  // 5. Wait for the HTTP endpoint to become reachable — that's the real
-  // readiness signal now that stdout is no longer available.
-  await waitForHttp('http://localhost:3100', 20000);
-  console.log('[setup] HTTP health check passed.');
-
-  // 5. Save PIDs for teardown
-  writeFileSync(
-    STATE_FILE,
-    JSON.stringify({
-      bunkerPid: bunkerProc.pid,
-      bunkerBPid: bunkerBProc.pid,
-      bunkerCPid: bunkerCProc.pid,
-      servePid: serveProc.pid,
-    }),
-  );
+  // 2-5. Generate keys, port-check FIRST, then spawn bunkers + serve, then
+  //      write `.state.json`. See prepareServers for the ordering rationale.
+  await prepareServers();
 }

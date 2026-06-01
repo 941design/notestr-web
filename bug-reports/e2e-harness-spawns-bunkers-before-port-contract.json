@@ -1,0 +1,32 @@
+{
+  "slug": "e2e-harness-spawns-bunkers-before-port",
+  "title": "e2e harness spawns bunkers before port check; serve worker leaks across runs",
+  "scope": {
+    "in_scope": [
+      "Reorder e2e/global-setup.ts so assertPortFree(3100) runs before any bunker or serve spawn",
+      "Ensure a busy-port abort spawns zero children and writes no .state.json",
+      "Make the spawn/port-check/state-write region unit-testable via dependency injection",
+      "Regression test that fails under the old ordering and passes under the fix"
+    ],
+    "out_of_scope": [
+      "The serve spawn shape (direct-from-.bin + detached:true + process-group teardown) — already fixed in commits a334194 and 86dea56; left unchanged",
+      "cleanupOrphans() orphan sweep, the bunker.mjs PPID watchdog, and assertPortFree's no-kill policy — pre-existing and correct",
+      "The next build / make ensure-platform steps in globalSetup"
+    ]
+  },
+  "files": [
+    "e2e/global-setup.ts",
+    "e2e/fixtures/global-setup-port-order.test.ts"
+  ],
+  "constraints": [
+    "assertPortFree must NOT kill discovered processes (feedback: never kill discovered processes; a past kill on port 3100 took down the VM)",
+    "Do not change e2e port to dodge conflicts",
+    "Build must remain green under npx tsc --noEmit / make build (vitest passing alone does not prove the typecheck)",
+    "Tests must be relay-state-independent — the reproduction injects fakes and starts no real process or relay"
+  ],
+  "non_goals": [
+    "Refactoring teardown logic",
+    "Changing how readiness (HTTP health check) is detected",
+    "Touching unrelated bunker key rotation logic"
+  ]
+}

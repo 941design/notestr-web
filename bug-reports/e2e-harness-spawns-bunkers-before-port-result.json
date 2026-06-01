@@ -1,0 +1,40 @@
+{
+  "slug": "e2e-harness-spawns-bunkers-before-port",
+  "story_id": "S0",
+  "status": "done",
+  "remediation_rounds": 0,
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The BACKLOG finding framed both halves (bunker-before-port ordering AND serve-worker leak) as open, but the serve half had already shipped in commits a334194/86dea56. The fixer spent verification effort confirming a no-op. Findings promoted from old reports should be re-validated against current HEAD before dispatch.",
+    "scope": "project_specific",
+    "outcome": "merged"
+  },
+  "root_cause": "In e2e/global-setup.ts, assertPortFree(3100) was called at step 3 (former line 301), AFTER bunkers A, B, and C were already spawned at steps 257-296. When port 3100 was held, setup threw on the port check, but three live bunker.mjs children had already started and were untracked: .state.json had not yet been written (it was written last, at the end), so globalTeardown had no PIDs to clean up. The three bunkers were re-parented to init and kept holding NIP-46 subscriptions on the test relay, starving subsequent runs (the same failure mode cleanupOrphans was built to mop up). The serve-worker-leak half of the report was ALREADY fixed before this task: serve is spawned directly from node_modules/.bin (not via npx), with detached:true, and teardown kills the process group (commits a334194 'kill serve via process group' and 86dea56). That half was verified as already-correct and left unchanged.",
+  "fix": "Extracted the orderable region (generate keys -> port check -> spawn 3 bunkers -> spawn serve -> HTTP health check -> write .state.json) into an exported prepareServers(deps) function with injectable dependencies (spawnBunker, spawnServe, assertPortFree, waitForHttp, writeState, writeKeys). Moved assertPortFree(3100) to the FRONT of that sequence, before any bunker spawn, so a busy port aborts with zero spawned children. .state.json is still written only after all four processes are live, so a mid-setup abort leaves the file absent. globalSetup now calls prepareServers() with production defaults; its build/platform steps are unchanged.",
+  "files_changed": [
+    "e2e/global-setup.ts — exported spawnAndWaitForOutput and assertPortFree; added prepareServers(deps) with the port-check-first ordering; globalSetup delegates steps 2-5 to it",
+    "e2e/fixtures/global-setup-port-order.test.ts — new vitest regression test (3 cases) with injected fakes; no real process or relay"
+  ],
+  "tests_added": [
+    "aborts with ZERO bunker spawns and no state write when port 3100 is busy",
+    "port check runs before any bunker spawn on the happy path",
+    "writes .state.json only after all four processes are live"
+  ],
+  "baseline_vs_final": {
+    "vitest_baseline": "20 files / 277 tests passing",
+    "vitest_final": "21 files / 280 tests passing (+1 file, +3 tests)",
+    "build_baseline": "make build green; npx tsc --noEmit clean",
+    "build_final": "make build green; npx tsc --noEmit clean"
+  },
+  "verification": {
+    "V1": "PASS — the busy-port test asserts spawnBunker, spawnServe, and writeState were never called when assertPortFree throws; i.e. a port-3100 collision leaves zero orphan children and nothing for teardown to do. (Verified via injected fakes; no real process spawned, keeping the test relay-state-independent.)",
+    "V2": "PASS — temporarily restored the old ordering (port check after bunker C) in a scratch copy: the new test FAILED (2 of 3 cases — 3 bunker spawns + 1 serve spawn observed, and 'bunker' recorded before 'portCheck'). Reverted to the fix: all 3 PASS. The third case is ordering-independent by design (it checks state-write-after-all-live) and correctly stays green either way.",
+    "V3": "PASS — assertPortFree(3100) is the first awaited side-effecting call in prepareServers, before deps.spawnBunker and deps.spawnServe. The happy-path test asserts order[0] === 'portCheck' and indexOf('portCheck') < indexOf('bunker').",
+    "V4": "PASS (pre-existing) — serve is spawned from path.join(PROJECT_ROOT,'node_modules','.bin','serve') with detached:true, and serveProc.pid (the actual listener, since the bin is spawned directly rather than through npx) is recorded in .state.json. Teardown SIGTERMs the process group (-pid). Unchanged by this task.",
+    "V5": "PASS — .state.json is written only after all four processes are live (last line of prepareServers). On a port-occupied abort the throw happens before any spawn, so .state.json is absent; the 'writes .state.json only after all four are live' test confirms writeState is not called when a later bunker fails to start."
+  },
+  "notes": "The serve-leak half of the original report was already resolved in git history; this task's net new fix is the bunker-before-port-check ordering. The dependency-injection seam (PrepareDeps) was the minimal change needed to make the ordering unit-testable without running next build, make ensure-platform, a relay, or real child processes.",
+  "caveats": [
+    "ACCEPTED over a Codex `high` adjacent-hardening finding (adjudicated by Decider, opus). The finding flags (a) TOCTOU between assertPortFree and spawnServe and (b) no try/catch around the bunker B/C/serve spawn sequence. Both describe leaks bounded to ~1s and self-healing via bunker.mjs's PPID watchdog + cleanupOrphans sweep — categorically different from the original indefinite 3-bunker leak this contract fixes. Out of contract scope (single-host/single-run model per CLAUDE.md). Recommended as a separate low/medium 'e2e harness hardening' follow-up finding (synchronous spawn-sequence cleanup; port reservation only if the concurrent-run model ever changes)."
+  ]
+}
