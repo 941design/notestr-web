@@ -448,22 +448,34 @@ if (!state.has(event.task.id)) {
 ### task.updated / task.status_changed / task.assigned / task.deleted — LWW with deterministic tie-breaker
 
 The four mutation event types use **Last-Write-Wins (LWW)** on `updatedAt`,
-with a deterministic tie-breaker for equal timestamps:
+with a three-level deterministic tie-breaker for equal timestamps:
 
 ```
 event wins iff:
   event.updatedAt > existing.updatedAt
-  || (event.updatedAt === existing.updatedAt && event.updatedBy < existing.updatedBy)
+  || (event.updatedAt === existing.updatedAt
+      && event.updatedBy < existing.updatedBy)
+  || (event.updatedAt === existing.updatedAt
+      && event.updatedBy === existing.updatedBy
+      && (event.updatedByDevice ?? "") < (existing.updatedByDevice ?? ""))
 ```
 
-When two events share the same `updatedAt`, the one with the **lexicographically
-lower `updatedBy` pubkey** (hex string) wins. This ensures that applying
-`[eventA, eventB]` and `[eventB, eventA]` produces identical state, making
-the reducer commutative and convergent under any delivery order.
+The three levels are: newer `updatedAt` wins; on tie, lexicographically lower
+`updatedBy` pubkey wins; on tie at both, lexicographically lower
+`updatedByDevice` (MLS clientId) wins. The third level resolves
+sibling-device concurrent edits where two devices share a pubkey — see
+[Sibling-device tie-break: three-level LWW gate](#sibling-device-tie-break-three-level-lww-gate)
+below for the full rationale. Missing/undefined `updatedByDevice` is
+treated as `""` (sorts lowest) for backward compatibility with persisted
+events written before this field existed.
 
-Every accepted mutation event writes `updatedBy: event.updatedBy` into the
-stored `Task` record so that future tie-breaking has access to the last winner's
-pubkey.
+This three-level compare ensures that applying `[eventA, eventB]` and
+`[eventB, eventA]` produces identical state, making the reducer
+commutative and convergent under any delivery order.
+
+Every accepted mutation event writes both `updatedBy: event.updatedBy` and
+`updatedByDevice: event.updatedByDevice` into the stored `Task` record so
+that future tie-breaking has access to the last winner's pubkey and device.
 
 ### Sender-side monotonic timestamp (sequential same-actor edits)
 

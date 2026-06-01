@@ -277,11 +277,19 @@ export const TaskStoreProvider: React.FC<TaskStoreProviderProps> = ({
       // Both the optimistic apply and the published rumor carry this field,
       // so the reducer's three-level gate (updatedAt → updatedBy → updatedByDevice)
       // resolves sibling-device same-second edits deterministically.
-      if (taskEvent.type !== "task.created") {
+      //
+      // task.created embeds a full Task object; stamp the device on the nested
+      // task so the resulting record honors the "device that last wrote this
+      // task" contract from day one (otherwise bootstrap snapshots serialize
+      // created-only tasks with an empty deviceId forever).
+      const deviceId = client?.keyPackages.clientId ?? "";
+      if (taskEvent.type === "task.created") {
         taskEvent = {
           ...taskEvent,
-          updatedByDevice: client?.keyPackages.clientId ?? "",
+          task: { ...taskEvent.task, updatedByDevice: deviceId },
         };
+      } else {
+        taskEvent = { ...taskEvent, updatedByDevice: deviceId };
       }
 
       // Apply optimistically
