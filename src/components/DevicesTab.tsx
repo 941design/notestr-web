@@ -22,14 +22,14 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import {
-  keyPackageFilters,
-  getKeyPackageIdentifier,
-} from "@internet-privacy/marmot-ts";
-import type { NostrEvent } from "applesauce-core/helpers/event";
 
 import { useMarmot } from "@/marmot/client";
 import { forgetSelfDevice, forgetSiblingDevice } from "@/marmot/forget-device";
+import {
+  loadDevices,
+  type DeviceEntry,
+  type DeviceLoaderClient,
+} from "@/components/DevicesTab.loadDevices";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -49,36 +49,13 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
-type DeviceEntry = {
-  /** Slot identifier (d-tag value of the kind-30443 event). */
-  slot: string;
-  /** Earliest published event's created_at, or 0 if unknown. */
-  createdAt: number;
-  /** True when this is the current device. */
-  isLocal: boolean;
-};
-
 interface DevicesTabProps {
   onSignOut: () => void;
 }
 
 // ---------------------------------------------------------------------------
-// Slot extraction helper (mirrors device-sync.ts keyPackageSlot)
-//
-// marmot-ts v0.5 has a runtime/type mismatch: the static type says
-// `identifier` but the runtime emits `d`. We read both.
+// Render helpers
 // ---------------------------------------------------------------------------
-
-function extractSlot(kp: { identifier?: string } & Record<string, unknown>): string | undefined {
-  if (typeof kp.identifier === "string" && kp.identifier.length > 0) {
-    return kp.identifier;
-  }
-  const d = (kp as { d?: unknown }).d;
-  if (typeof d === "string" && d.length > 0) {
-    return d;
-  }
-  return undefined;
-}
 
 function formatDate(unixSecs: number): string {
   if (unixSecs === 0) return "unknown";
@@ -103,6 +80,9 @@ export function DevicesTab({ onSignOut }: DevicesTabProps) {
   const [devices, setDevices] = useState<DeviceEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Non-fatal relay-fetch failure: local devices still render, but the list
+  // may be incomplete, so we surface a visible warning.
+  const [relayFetchError, setRelayFetchError] = useState<string | null>(null);
 
   // Per-slot operation state — only one forget can run at a time.
   const [inFlight, setInFlight] = useState(false);
@@ -130,69 +110,24 @@ export function DevicesTab({ onSignOut }: DevicesTabProps) {
     const load = async () => {
       setLoading(true);
       setLoadError(null);
+      setRelayFetchError(null);
 
       try {
-        // (a) Local key packages from IDB.
-        const localKps = await client.keyPackages.list();
-
-        // Build a map of slot → createdAt from local KPs.
-        const slotMap = new Map<string, number>();
-
-        for (const kp of localKps) {
-          const slot = extractSlot(kp as Parameters<typeof extractSlot>[0]);
-          if (!slot) continue;
-          // Use the earliest published event's created_at as the "registered" time.
-          const earliest = (kp.published ?? []).reduce(
-            (min: number, ev: NostrEvent) =>
-              ev.created_at < min ? ev.created_at : min,
-            Infinity,
-          );
-          slotMap.set(slot, earliest === Infinity ? 0 : earliest);
-        }
-
-        // Always ensure our own clientId appears even if not yet in IDB
-        // (e.g. client just initialised but not yet published).
-        if (clientId && !slotMap.has(clientId)) {
-          slotMap.set(clientId, 0);
-        }
-
-        // (b) Relay-fetched kind-30443 events authored by our pubkey.
-        if (relays.length > 0) {
-          try {
-            const relayEvents = await client.network.request(
-              relays,
-              keyPackageFilters([pubkey]),
-            );
-            for (const event of relayEvents) {
-              const slot = getKeyPackageIdentifier(event) ?? (event.tags.find((t) => t[0] === "d")?.[1]);
-              if (!slot) continue;
-              if (!slotMap.has(slot) || slotMap.get(slot) === 0) {
-                slotMap.set(slot, event.created_at ?? 0);
-              }
-            }
-          } catch {
-            // Relay fetch failure is non-fatal — we still show local devices.
-          }
-        }
+        const { entries, relayFetchError: relayFailed } = await loadDevices(
+          client as unknown as DeviceLoaderClient,
+          pubkey,
+          clientId,
+          relays,
+        );
 
         if (cancelled) return;
 
-        const entries: DeviceEntry[] = Array.from(slotMap.entries()).map(
-          ([slot, createdAt]) => ({
-            slot,
-            createdAt,
-            isLocal: slot === clientId,
-          }),
-        );
-
-        // Sort: local device first, then by createdAt descending.
-        entries.sort((a, b) => {
-          if (a.isLocal && !b.isLocal) return -1;
-          if (!a.isLocal && b.isLocal) return 1;
-          return b.createdAt - a.createdAt;
-        });
-
         setDevices(entries);
+        if (relayFailed) {
+          setRelayFetchError(
+            "Could not reach relay — device list may be incomplete.",
+          );
+        }
       } catch (err) {
         if (!cancelled) {
           setLoadError(err instanceof Error ? err.message : "Failed to load devices.");
@@ -274,6 +209,15 @@ export function DevicesTab({ onSignOut }: DevicesTabProps) {
       {actionError && (
         <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {actionError}
+        </div>
+      )}
+
+      {relayFetchError && (
+        <div
+          className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          data-testid="device-relay-error"
+        >
+          {relayFetchError}
         </div>
       )}
 

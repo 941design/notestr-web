@@ -1,0 +1,23 @@
+{
+  "bug": "DevicesTab relay-fetch failure degrades silently",
+  "anchor": "src/components/DevicesTab.tsx:173",
+  "root_cause": "The bare `catch {}` inside the device-load useEffect swallows relay fetch errors. The slotMap silently falls back to local-only devices and the UI renders with no indication that the relay was unreachable, so the user may believe an incomplete device list is complete.",
+  "fix_summary": "Capture the relay-fetch failure into component state and render it using the existing inline `bg-destructive/10 text-destructive` error-box pattern (same as actionError). Keep the non-fatal policy: local devices still render.",
+  "allowed_changes": [
+    "src/components/DevicesTab.tsx — extract the pure load logic into a testable helper that returns { entries, relayFetchError }; add relayFetchError state; set it in the (formerly bare) catch; render it with the existing inline destructive error-box pattern, guarded so local devices still show.",
+    "src/components/DevicesTab.loadDevices.ts (new) — pure, dependency-free load helper extracted from the useEffect, so it can be unit-tested in the repo's existing node/vitest idiom.",
+    "src/components/DevicesTab.loadDevices.test.ts (new) — reproduction + regression unit test."
+  ],
+  "constraints": [
+    "Do NOT add a toast library.",
+    "Do NOT add jsdom / @testing-library/react or any component-rendering stack — the repo tests pure logic in node/vitest; match that idiom by extracting the load logic.",
+    "Do NOT change the non-fatal policy: a relay failure must still render local devices.",
+    "Minimal surface: no refactors beyond what the fix requires.",
+    "Preserve the existing loadError (fatal) vs relay-fetch (non-fatal) distinction."
+  ],
+  "non_goals": [
+    "IdentityPanel.tsx:198 may have the same bare-catch pattern — observe and report, do NOT fix (out of scope).",
+    "No change to forget-device flows or the slot extraction helpers.",
+    "No change to the relay request shape or marmot-ts calls."
+  ]
+}

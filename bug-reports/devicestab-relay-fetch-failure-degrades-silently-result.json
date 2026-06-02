@@ -1,0 +1,49 @@
+{
+  "bug": "DevicesTab relay-fetch failure degrades silently",
+  "anchor": "src/components/DevicesTab.tsx:173",
+  "status": "done",
+  "root_cause": "The inner relay-fetch `try` block in DevicesTab's device-load effect ended in a bare `catch {}` that discarded the error. On a relay failure the slotMap silently fell back to local-only key packages and the UI rendered with no signal, so the user could believe an incomplete device list was complete (relay-only devices, e.g. siblings not in local IDB, would be missing).",
+  "fix_description": "Extracted the device-load logic into a pure, testable helper (src/components/DevicesTab.loadDevices.ts) that returns { entries, relayFetchError }. The formerly-bare catch now sets relayFetchError = true (still non-fatal: local devices are still returned). DevicesTab consumes the flag into a new `relayFetchError` state and renders a visible warning ('Could not reach relay — device list may be incomplete.') using the project's existing inline `bg-destructive/10 text-destructive` error-box pattern (same as actionError), placed at the top of the device list. The cancelled-effect guard already in place prevents setState after unmount. No toast library was added; the non-fatal policy is unchanged.",
+  "files_changed": [
+    "src/components/DevicesTab.tsx — added relayFetchError state; replaced the inlined load logic (incl. the bug's bare catch) with a call to loadDevices(); removed the now-duplicated DeviceEntry type and extractSlot helper (moved into the new module); render the relay-fetch warning via the existing inline destructive error-box pattern.",
+    "src/components/DevicesTab.loadDevices.ts (new) — pure load helper holding the extracted slot-mapping + relay-fetch logic; the relay catch now reports a relayFetchError flag instead of swallowing.",
+    "src/components/DevicesTab.loadDevices.test.ts (new) — reproduction + regression tests."
+  ],
+  "tests_added": [
+    "loadDevices flags relayFetchError when the relay request rejects (the reproduction test — fails against the old silent bare-catch with 'expected false to be true', passes with the fix; also asserts local devices still render).",
+    "loadDevices does not flag relayFetchError on a successful relay fetch (and unions remote slots).",
+    "loadDevices does not flag relayFetchError when there are no relays to query."
+  ],
+  "baseline": {
+    "unit_tests": "280 passed (21 files)",
+    "typecheck": "clean",
+    "build_export": "clean",
+    "lint": "NO_LINT (no lint script in package.json)"
+  },
+  "final": {
+    "unit_tests": "283 passed (22 files)",
+    "typecheck": "clean",
+    "build_export": "clean (make test exit 0)",
+    "lint": "NO_LINT"
+  },
+  "verification_questions": {
+    "does_the_reproduction_test_fail_without_the_fix": "Yes. With the catch reverted to the old silent bare-catch (no flag set), the reproduction test fails with AssertionError: expected false to be true on relayFetchError, while the success-path and no-relays tests still pass — confirming the test isolates the bug, not a syntax/assertion error.",
+    "does_the_fix_make_the_reproduction_test_pass": "Yes. After restoring the flag, all 3 new tests pass and the full suite is 283/283.",
+    "is_the_failure_now_user_visible": "Yes. A relay-fetch failure sets relayFetchError state, rendered as an inline destructive warning box (data-testid='device-relay-error') above the device list. The message tells the user the list may be incomplete.",
+    "is_the_non_fatal_policy_preserved": "Yes. loadDevices still returns the locally-known devices on relay failure; the component still renders them. Only an additional warning is shown. A fatal (outer) load error still uses the existing full-pane loadError path, distinct from the relay warning.",
+    "any_regressions": "No. Unit suite 280→283 (only the 3 new tests added), typecheck clean, make test (build + static export) exits 0.",
+    "scope_adherence": "No toast library added; no jsdom/RTL component-stack added (matched the repo's pure-logic node/vitest test idiom via extraction); IdentityPanel.tsx:198 left unchanged (see observation)."
+  },
+  "out_of_scope_observation": {
+    "location": "src/components/IdentityPanel.tsx:198",
+    "finding": "IdentityPanel has the identical bare `catch {}` pattern when loading sibling slots from the relay — on relay failure it silently degrades to current-device-only info with no user-visible warning. Same class of bug as this one. NOT fixed here (out of scope for this bug report). A follow-up backlog finding is warranted if the product wants relay-fetch failures surfaced consistently across Settings panels."
+  },
+  "story_id": "S0",
+  "remediation_rounds": 0,
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The brief assumed a component-level unit test of DevicesTab, but the repo has NO component-rendering test stack — vitest runs in the node environment with no jsdom/happy-dom and no @testing-library/react; all existing unit tests are pure-logic .test.ts. The load logic was also inlined inside a useEffect, untestable in isolation. Resolution: extract the load logic into a pure helper and unit-test the error path there — matched the repo idiom but a slightly larger surface (a new module) than 'add a useState + set it in the catch' implied.",
+    "scope": "project_specific",
+    "outcome": "merged"
+  }
+}

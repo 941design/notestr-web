@@ -1,0 +1,95 @@
+{
+  "bug_name": "devicestab-relay-fetch-failure-degrades-silently",
+  "bug_report_file": "bug-reports/devicestab-relay-fetch-failure-degrades-silently-report.md",
+  "created_at": "2026-06-01T00:00:00Z",
+  "updated_at": "2026-06-02T06:45:00Z",
+  "phase": "ACCEPTED",
+  "complexity": "low",
+  "verification_questions": [
+    {
+      "id": "vq-1",
+      "category": "TEST",
+      "question": "Is there an existing test for the DevicesTab relay-fetch error path? If not, does the reproduction test cover the catch block execution?"
+    },
+    {
+      "id": "vq-2",
+      "category": "TEST",
+      "question": "Does the reproduction test assert on the correct behavior — that an error indicator appears when the relay fetch fails?"
+    },
+    {
+      "id": "vq-3",
+      "category": "QUALITY",
+      "question": "Is the fix minimal — does it only add the user-visible error signal without changing unrelated behavior?"
+    },
+    {
+      "id": "vq-4",
+      "category": "SPEC",
+      "question": "Does the fix define a consistent error-handling pattern that could be applied to other relay-fetch calls in the codebase?"
+    },
+    {
+      "id": "vq-5",
+      "category": "QUALITY",
+      "question": "Does the fix introduce any new TypeScript or lint errors?"
+    }
+  ],
+  "pre_existing_dirty_files": [
+    "package-lock.json",
+    ".claude/scheduled_tasks.lock",
+    ".claude/skills/e2e-triage/SKILL.md",
+    ".claude/skills/e2e-triage/learnings.md",
+    ".claude/skills/mls-leaf-debug/SKILL.md",
+    ".claude/verification-results.csv",
+    ".claude/verification-results.jsonl",
+    ".clauded.yaml",
+    ".npmrc",
+    "bug-reports/cross-client-cli-created-group-no-live-tasks-report.md",
+    "bug-reports/e2e-assert-port-free-swallows-errors-report.md",
+    "bug-reports/self-forget-sole-admin-no-propagation-report.md",
+    "e2e-findings.md",
+    "e2e/.triage-phase-a.log",
+    "e2e/.triage/forget-device-self.log",
+    "e2e/.triage/run.log",
+    "notestr-web-group-discovery-report.md",
+    "notestr-web-task-snapshot-divergence-prompt.md",
+    "pnpm-lock.yaml",
+    "scripts/debug-prod.mjs",
+    "stryker.device-sync.conf.json",
+    "stryker.ingest-queue.conf.json",
+    "stryker.task-reducer.conf.json"
+  ],
+  "plugin_sha": "f5e4524c7b9618d99914da272f8e8e9745ed9057",
+  "consumer_sha": "f2f0cf92a27a6d437f2525b8d0081cce42b26f7a",
+  "models": {
+    "lead": "sonnet",
+    "examiner": "unknown",
+    "implementer": "unknown"
+  },
+  "baseline": {
+    "unit_tests": "280 passed (21 files)",
+    "typecheck": "clean",
+    "lint": "NO_LINT"
+  },
+  "fix": {
+    "files_changed": [
+      "src/components/DevicesTab.tsx",
+      "src/components/DevicesTab.loadDevices.ts",
+      "src/components/DevicesTab.loadDevices.test.ts"
+    ],
+    "final_unit_tests": "283 passed (22 files)",
+    "typecheck": "clean"
+  },
+  "review_rounds": [
+    {"round": 0, "verdict": "ACCEPTED", "reviewer": "independent", "examiners_all_yes": true}
+  ],
+  "remediation_round": 0,
+  "e2e_gate_result": {
+    "outcome": "passed_with_known_flake",
+    "detail": "Full suite run (402 tests, 1 worker). Only red was cross-author-tasks.spec.ts:69 setup auth-race (timed out 55.8s) which PASSED on retry #1 (9.7s) — documented known-flaky NIP-46 multi-context authenticate race, unrelated to this fix. All device-touching tests (forget-device family, multi-device-cross-npub) passed. Run was stopped after confirming the failure was pre-existing flakiness."
+  },
+  "phase_history": [
+    {"phase": "INITIALIZED", "timestamp": "2026-06-01T00:00:00Z", "trigger": "workflow_start"},
+    {"phase": "FIX_READY", "timestamp": "2026-06-02T06:10:00Z", "trigger": "fixer_complete"},
+    {"phase": "REVIEWING", "timestamp": "2026-06-02T06:12:00Z", "trigger": "examiners_and_reviewer"},
+    {"phase": "ACCEPTED", "timestamp": "2026-06-02T06:45:00Z", "trigger": "reviewer_accepted_e2e_gate_passed"}
+  ]
+}

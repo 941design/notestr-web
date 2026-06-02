@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-06-01T20:42:17Z",
+  "updated_at": "2026-06-02T04:47:48Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -134,16 +134,6 @@
         ]
       },
       "text": "Board.tsx renders data-column={status} in both the mobile panel (line 264) and the desktop grid (line 305), so every e2e [data-column=\"...\"] selector matches two elements. Specs work around this with .first() across ~13 files; the workaround relies on (a) mobile-first DOM ordering and (b) Playwright toContainText reading hidden DOM. Triage 2026-04-30 treated each match-failure as a separate test bug rather than fixing the structural duplication. Consider scoping the column marker to a viewport-stable attribute or hoisting the assertion onto a single Board-level element.",
-      "created_at": "2026-05-18"
-    },
-    {
-      "slug": "devicestab-relay-fetch-failure-degrades-silently",
-      "scope": "any",
-      "anchor": {
-        "path": "src/components/DevicesTab.tsx",
-        "line": 173
-      },
-      "text": "DevicesTab relay-fetch failure degrades silently to local-only device list without user warning — the catch block at DevicesTab.tsx:173-174 swallows relay errors with no visible feedback",
       "created_at": "2026-05-18"
     },
     {
