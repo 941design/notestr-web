@@ -155,7 +155,11 @@ test: ensure-platform ## Run unit and export verification tests
 	npm test
 
 test-property: ensure-platform ## Run property-based tests with high numRuns (FAST_CHECK_NUM_RUNS=10000)
-	FAST_CHECK_NUM_RUNS=10000 npx vitest run --passWithNoTests src/store/task-reducer.property.test.ts src/store/multi-client.property.test.ts
+	# 10000-run properties can exceed vitest's default 5s per-test timeout under
+	# full-file contention (e.g. S8 isolation runs ~3.6s alone, tips over 5s when
+	# the heap is warm from prior 10k-run tests). Raise the per-test timeout for
+	# the high-run-count suite only — assertions and run-count are unchanged.
+	FAST_CHECK_NUM_RUNS=10000 npx vitest run --testTimeout=60000 --passWithNoTests src/store/task-reducer.property.test.ts src/store/multi-client.property.test.ts
 
 # =============================================================================
 # Mutation testing (Stryker + Vitest runner)
