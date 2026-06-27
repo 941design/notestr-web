@@ -2,7 +2,7 @@
 -include .env
 export
 
-.PHONY: help build test test-property dev relay-up relay-down clean deploy deploy-check deploy-dryrun e2e-up e2e-down e2e-install e2e ssl-cert mutation-fast mutation-cohesive mutation-deep mutation-baseline ensure-platform
+.PHONY: help build test test-property dev relay-up relay-down clean deploy deploy-check deploy-dryrun e2e-up e2e-down e2e-install e2e ssl-cert mutation-fast mutation-cohesive mutation-deep mutation-baseline mutation-task-reducer ensure-platform
 
 # Default target
 .DEFAULT_GOAL := help
@@ -184,6 +184,9 @@ mutation-deep: ensure-platform ## Mutation pass on Marmot/MLS modules (~2 min)
 
 mutation-baseline: ensure-platform ## Mutation pass on every tested non-React TS module (~2 min)
 	@npm run mutation:baseline
+
+mutation-task-reducer: ensure-platform ## Focused mutation audit of the task-reducer CRDT engine
+	@npm run mutation:task-reducer
 
 dev: ensure-platform relay-up clean ## Start development server
 	@npx next dev --port 3000 --hostname 0.0.0.0

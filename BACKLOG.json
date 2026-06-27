@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-06-02T04:47:48Z",
+  "updated_at": "2026-06-27T23:23:32Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -15,7 +15,7 @@
     {
       "path": "specs/epic-event-sourced-receive-engine/",
       "status": "PLANNED",
-      "next_action": "seeded by /base:backlog init 2026-05-12"
+      "next_action": "ESCALATE: read-only assessment (loop 2026-06-27) confirms genuine large architectural refactor — 9-phase strangler migration, high behavioral-change risk (UI sync timing, recovery, dedupe semantics). Building blocks exist (ingestLock, ingest-queue, task-reducer) but no ReceiveEngine owner. Needs human arch review (/base:arch-debate) before any autonomous execution."
     },
     {
       "path": "specs/epic-forget-this-device/",
@@ -39,13 +39,13 @@
     },
     {
       "path": "specs/epic-multi-device-sync/",
-      "status": "PLANNED",
-      "next_action": "seeded by /base:backlog init 2026-05-12"
+      "status": "DONE",
+      "next_action": "Feature implemented (device-sync/device-store/DeviceList/per-leaf-remove present; leaf-slot fallback unneeded) and verified by passing multi-user-md.property convergence + multi-device-cross-npub TP-80/81/82 + sibling-auto-invite. Dedicated smoke multi-device-sync.spec.ts:60 remains test.fixme (test-design debt, tracked as finding multi-device-sync-spec-...). Reconciled by /loop 2026-06-27."
     },
     {
       "path": "specs/epic-property-based-invariants/",
-      "status": "IN_PROGRESS",
-      "next_action": "seeded by /base:backlog init 2026-05-12"
+      "status": "DONE",
+      "next_action": "epic-state.json COMPLETE: all 7 stories (S1-S7) verified 2026-04-29; backlog drift reconciled by /loop"
     },
     {
       "path": "specs/epic-property-tests-l3-completion/",
@@ -64,8 +64,8 @@
     },
     {
       "path": "specs/epic-rename-device-cross-context-coverage/",
-      "status": "PLANNED",
-      "next_action": "seeded by /base:backlog init 2026-05-12"
+      "status": "DONE",
+      "next_action": "Behavioral intent covered (loop 2026-06-27): TP-60 rename+reload round-trip, TP-61 self-pubkey-only DeviceList surface, TP-62 negative-property (epoch + sent-rumor invariance proves no MLS commit/message), matrix doc reconciled. Literal AC-RC-3/4/6 (data-local count assertion, ts-mls extensions hook, verify-once regression) and AC-RC-1 distinct-bunker 3-context form were intentionally SUPERSEDED by the stronger epoch/rumor-invariance proof — content string-match is impossible (NIP-44 ciphertext) and 'rename publishes nothing' dominates 'B sees nothing'. No follow-up needed."
     },
     {
       "path": "specs/epic-responsive-layout/",
@@ -74,8 +74,8 @@
     },
     {
       "path": "specs/epic-task-sync-publish-contract/",
-      "status": "PLANNED",
-      "next_action": "seeded by /base:backlog init 2026-05-12"
+      "status": "DONE",
+      "next_action": "Observable deliverable complete: e2e/tests/task-publish-contract.spec.ts (21 tests, all ACs S1-S5) green across chromium+Mobile Chrome+Mobile Safari after updatedByDevice expectation fix 87a9eaf. Fixture + test hooks + publish-failure error path all present. Implemented directly (no /base:feature run); reconciled by /loop 2026-06-27."
     },
     {
       "path": "specs/epic-nip42-relay-auth/",
@@ -115,15 +115,6 @@
   ],
   "findings": [
     {
-      "slug": "playwright-retries-zero-after-baseline",
-      "scope": "any",
-      "anchor": {
-        "path": "playwright.config.ts:retries"
-      },
-      "text": "Drop playwright.config.ts retries to 0 unconditionally after epic-mls-live-delivery-race's 50-run baseline",
-      "created_at": "2026-05-18"
-    },
-    {
       "slug": "board-data-column-dual-render",
       "scope": "any",
       "anchor": {
@@ -156,23 +147,15 @@
       "created_at": "2026-05-18"
     },
     {
-      "slug": "forget-device-test-ts-has-2",
-      "scope": "any",
-      "anchor": {
-        "path": "src/marmot/forget-device.test.ts",
-        "line": 388
-      },
-      "text": "forget-device.test.ts has 2 pre-existing TypeScript errors (line 388: publish mock type mismatch; line 552: isAdmin mock type mismatch) that vitest ignores but tsc --noEmit surfaces — easy cleanup to fix the mock narrowness",
-      "created_at": "2026-05-18"
-    },
-    {
       "slug": "deferred-l3-deliberate-regression-verifications-ac",
       "scope": "any",
       "anchor": {
         "path": "e2e/tests/multi-user.property.spec.ts"
       },
       "text": "Deferred L3 deliberate-regression verifications (AC-S5-4, AC-A14-6, AC-C0-5, AC-S6-4, AC-S10-4) remain unexercised — make test-property runs only L1/L2; the L3 behavioral checks require a live Playwright run with relay container up",
-      "created_at": "2026-05-18"
+      "created_at": "2026-05-18",
+      "approach": "Add a 'make test-property-l3' target (or wire the deferred L3 ACs into a Playwright-against-relay CI job) so AC-S5-4, AC-A14-6, AC-C0-5, AC-S6-4, AC-S10-4 are actually exercised rather than compile-only.",
+      "success_signal": "The five deferred L3 deliberate-regression ACs run green in CI against a live relay container."
     },
     {
       "slug": "deferred-live-relay-acs-md-property",
@@ -181,7 +164,9 @@
         "path": "e2e/tests/multi-user-md.property.spec.ts"
       },
       "text": "Deferred live-relay ACs in MD property spec (AC-MD-ATTACH-6, AC-MD-RUN-5, AC-MD-WC-1/2/3, AC-VAL-MD-1/2) require a live relay container and were only compilation-verified — full runtime counterexample observation and wall-clock validation remain unexercised post-merge",
-      "created_at": "2026-05-19"
+      "created_at": "2026-05-19",
+      "approach": "Introduce a reusable 'live-relay-required' AC tag in the spec template so offline implementation sessions stop inventing per-story ad-hoc deferrals. Tagged ACs are compile-verified offline and collected into one live-relay verification pass (Playwright + relay container) in CI or post-merge.",
+      "success_signal": "A single tag marks every AC needing a live relay; one CI job exercises all of them; no story-local deferral prose recurs in retros."
     },
     {
       "slug": "authenticate-page-url-slot-slot-param",
@@ -191,26 +176,6 @@
         "line": 64
       },
       "text": "authenticate(page, url, slot?) slot param is a silent correctness requirement when two contexts share the same bunker URL — omitting slot causes both contexts to derive the same KP slot from the bunker pubkey, so A2 never appears as a separate leaf; this is not visible from the optional type signature alone",
-      "created_at": "2026-05-19"
-    },
-    {
-      "slug": "dead-ndkprivatekeysigner-import-src-lib-nostr",
-      "scope": "any",
-      "anchor": {
-        "path": "src/lib/nostr.ts",
-        "line": 3
-      },
-      "text": "Dead NDKPrivateKeySigner import in src/lib/nostr.ts — imported but never referenced; only NDKNip46Signer is live; a future architect may mistake it for an intentional internal-key-management fixture",
-      "created_at": "2026-05-19"
-    },
-    {
-      "slug": "eventsignerndkadapter-constructor-does-not",
-      "scope": "any",
-      "anchor": {
-        "path": "src/marmot/event-signer-ndk-adapter.ts",
-        "line": 21
-      },
-      "text": "EventSignerNdkAdapter constructor does not validate signer arg is truthy — safe today via TypeScript non-nullable type and if(signer) guard at only call site (client.tsx:158), but if adapter's call surface ever widens beyond MarmotProvider the guard should be added: if (!signer) throw new Error('EventSignerNdkAdapter: signer is required')",
       "created_at": "2026-05-19"
     },
     {
@@ -337,18 +302,6 @@
       "kind": "spec-gap"
     },
     {
-      "slug": "fetch-task-bootstrap-no-mls-author-check",
-      "scope": "any",
-      "anchor": {
-        "path": "src/marmot/device-sync.ts"
-      },
-      "text": "fetchAndApplyTaskBootstrap: no MLS-membership check on relay event author — any Nostr key can send a task-sync payload and have it CRDT-merged",
-      "created_at": "2026-05-24",
-      "motivation": "Author validation requires React context (MLS group membership state) which is unavailable in the stateless fetchAndApplyTaskBootstrap helper. The CRDT gate prevents data corruption but does not prevent a crafted payload from injecting arbitrary tasks. Attacker must know the d-tag format and the invitee pubkey. Exploitability is low but this is a deliberate architectural tradeoff deserving explicit tracking.",
-      "behavior": "fetchAndApplyTaskBootstrap accepts any kind-30078 relay event from any Nostr key and CRDT-merges its task payload into the new member's state, with no check that the author is a current MLS group member.",
-      "approach": "Pass MLS member pubkeys into fetchAndApplyTaskBootstrap and filter relay events to only authors present in the group membership list. Requires decoupling from React context or threading membership state through the call site."
-    },
-    {
       "slug": "e2e-error-state-selector-ambiguity",
       "scope": "e2e",
       "anchor": {
@@ -359,38 +312,6 @@
       "motivation": "AC-3 ('no error is shown') requires an E2E assertion on error state, but there is no stable data-testid on the app's error display components. The test initially used a non-existent data-testid selector, which could make future error-state assertions brittle or invisible (a missing element reads as no error, masking real failures).",
       "behavior": "Error display components in the app do not carry a data-testid attribute; E2E tests that assert on 'no error shown' cannot reliably distinguish a hidden error state from a missing DOM node.",
       "approach": "Add data-testid='error-banner' (or equivalent) to the app's top-level error display components so E2E assertions on error state are unambiguous. Document the canonical selector in the E2E README."
-    },
-    {
-      "slug": "spec-fd-arbitrary-contradicts-admin-only-ac",
-      "scope": "any",
-      "anchor": {
-        "path": "specs/epic-property-tests-l3-three-party/spec.md",
-        "range": [
-          231,
-          231
-        ]
-      },
-      "text": "spec.md writes the Fd arbitrary as per-actor `new FdCommand3P(a)`, which contradicts the normative AC-3P-FD-1 (forget-device is admin-only and actor-free). The implementation correctly follows the AC; the spec snippet should be reconciled to match.",
-      "created_at": "2026-05-26",
-      "motivation": "A future story or maintainer reading spec.md could re-introduce the per-actor Fd shape believing it normative, diverging from the admin-only invariant the implementation and AC-3P-FD-1 enforce.",
-      "behavior": "No product-behavior impact; the shipped 3-party property spec already follows the admin-only AC. This is a documentation/spec-source consistency fix only.",
-      "approach": "Edit spec.md:231 so the Fd arbitrary matches AC-3P-FD-1 (admin-only, actor-free)."
-    },
-    {
-      "slug": "ctcommand-task-created-omits-updatedby",
-      "scope": "any",
-      "anchor": {
-        "path": "e2e/tests/multi-user.property.spec.ts",
-        "range": [
-          495,
-          495
-        ]
-      },
-      "text": "CtCommand task.created payload omits `updatedBy` (TS2741), identical in BOTH the 2-party (multi-user.property.spec.ts:495) and 3-party command bodies. Harmless under esbuild transpile but a boy-scout fix for a future story that owns those command bodies.",
-      "created_at": "2026-05-26",
-      "motivation": "Latent type gap shared across both property specs; surfacing it so the next story touching these command bodies closes it rather than copying the omission forward.",
-      "behavior": "No runtime/product-behavior impact — esbuild transpiles the test regardless; this is a TypeScript type-completeness gap only.",
-      "approach": "Add the `updatedBy` field to the task.created payload in both the 2-party and 3-party CtCommand bodies when a future story owns them."
     },
     {
       "slug": "asserts5-3p-membership-anchor-and-dead-branch",
@@ -407,6 +328,101 @@
       "motivation": "Surfaced by the base:feature review gate (codex, read-only). No P1 issues; recorded as test-coverage-quality follow-ups for whatever story next owns the 3-party assertion bodies rather than re-opening a just-verified file in the wrap-up.",
       "behavior": "No product-behavior impact (test-only). The biconditional check is skipped, not falsified, on A-absent states, and the degraded branch is dead while strict hooks are present.",
       "approach": "P2: source membership from whichever actor pages still have the group loaded (or each actor's own page) so S5 still validates B/C when A has left. P3: move the getPubkeyLeafCountHook call after the !leafOk guard and make the degraded branch genuinely hook-free (positive direction via member-set only), or delete the dead branch once the l3-completion hook story lands."
+    },
+    {
+      "slug": "no-component-test-layer-jsdom-rtl",
+      "scope": "any",
+      "anchor": {
+        "path": "vitest.config.ts",
+        "line": 6
+      },
+      "text": "No jsdom/RTL component test layer — vitest is node-only (vitest.config.ts:6) so React component rendering and UI behavior is never unit-tested; UI fixes can only cover extracted pure helpers",
+      "created_at": "2026-06-18",
+      "motivation": "UI regressions (silent error degradation, disabled-button propagation, async setState races) are caught only by e2e or not at all; the node-only constraint forces every testable bit of logic out of components into .ts sidecars, and anything that genuinely needs a rendered component stays untested.",
+      "behavior": "vitest runs in the node environment with no jsdom and no React Testing Library. .tsx and NEXT_PUBLIC-bearing modules cannot be imported in unit tests. The DevicesTab relay-fetch fix (commit 8814292) could only unit-test a pure extracted function; the rendered component path was verified manually.",
+      "approach": "Decide between (a) adding a jsdom + React Testing Library project to vitest for component-level tests, or (b) a Playwright component-testing layer. Either lets UI behavior be asserted directly instead of only via pure-helper extraction.",
+      "success_signal": "A representative component (e.g. DevicesTab) has a rendering/interaction test that fails when its UI degradation path regresses.",
+      "evidence": [
+        {
+          "retro_path": "/home/mrother.linux/.claude/plugins/data/base-941design/retros/notestr-web/devicestab-relay-fetch-failure-degrades-silently-2026-06-01-0000.md",
+          "finding_anchor": "Fix execution",
+          "captured_at": "2026-06-02"
+        },
+        {
+          "retro_path": "/home/mrother.linux/.claude/plugins/data/base-941design/retros/notestr-web/mls-leaf-identity-ux-2026-05-19.md",
+          "finding_anchor": "Vitest node env cannot import .tsx — extract pure helpers",
+          "captured_at": "2026-06-02"
+        }
+      ]
+    },
+    {
+      "slug": "marmot-ts-fork-types-lag-runtime-shape",
+      "scope": "any",
+      "anchor": {
+        "path": "src/marmot/device-sync.ts",
+        "range": [
+          343,
+          353
+        ]
+      },
+      "text": "marmot-ts fork public types don't reflect runtime: identifier/d-tag mismatch is guarded locally (device-sync.ts extractSlot) but absent from the fork's .d.ts — a future fork update could silently break device loading with no tsc error",
+      "created_at": "2026-06-18",
+      "motivation": "We control the marmot-ts fork (CLAUDE.md), so type/runtime drift is fixable at the source instead of being papered over with consumer-side casts. Today the mismatch is caught only by a hand-written extractSlot guard + a local comment; nothing makes the contract type-checked, so a fork bump that changes d-tag extraction breaks device loading silently.",
+      "behavior": "marmot-ts KeyPackageManager.list returns objects whose slot field is runtime 'identifier' while the public type calls it 'd' (or vice-versa); device-sync.ts:343-353 defensively reads it. Separately, marmot-client adoptClientState emits 'updated' before 'joined', an ordering the .d.ts (which only references 'joined') does not expose — confirmed only by tracing compiled dist.",
+      "approach": "Fix the fork's type declarations to match runtime (identifier/d), and document the adoptClientState emit ordering in the fork types or a consumer comment. Add a type-level regression so a future fork bump that changes the shape fails tsc rather than runtime device loading.",
+      "success_signal": "A marmot-ts version bump that changes d-tag extraction or event ordering produces a tsc error in notestr-web, not a silent device-loading failure.",
+      "evidence": [
+        {
+          "retro_path": "/home/mrother.linux/.claude/plugins/data/base-941design/retros/notestr-web/devicestab-relay-fetch-failure-degrades-silently-2026-06-01-0000.md",
+          "finding_anchor": "From code-explorer (focus: marmot-ts d-tag extraction)",
+          "captured_at": "2026-06-02"
+        },
+        {
+          "retro_path": "/home/mrother.linux/.claude/plugins/data/base-941design/retros/notestr-web/self-forget-no-mls-propagation-2026-05-20-2200.md",
+          "finding_anchor": "From code-explorer (focus: ingest-side mapping)",
+          "captured_at": "2026-06-02"
+        }
+      ]
+    },
+    {
+      "slug": "playwright-retries-zero-after-baseline",
+      "scope": "any",
+      "anchor": {
+        "path": "playwright.config.ts:retries"
+      },
+      "text": "Drop playwright.config.ts retries to 0 unconditionally after epic-mls-live-delivery-race's 50-run baseline",
+      "created_at": "2026-05-18",
+      "motivation": "Gated on the epic-mls-live-delivery-race 50-run baseline confirming the MLS live-delivery e2e tests are stable without a retry crutch; only then is dropping the default retry safe.",
+      "behavior": "playwright.config.ts:7 sets retries to (NEXT_PUBLIC_E2E_TRACE_MLS === '1' ? 0 : 1) — normal e2e runs still get one retry, which can mask flaky-but-real failures.",
+      "approach": "Once the baseline run confirms stability, change line 7 to 'retries: 0' unconditionally."
+    },
+    {
+      "slug": "multi-device-sync-spec-ts-60",
+      "scope": "e2e",
+      "anchor": {
+        "path": "e2e/tests/multi-device-sync.spec.ts",
+        "range": [
+          60,
+          88
+        ]
+      },
+      "text": "multi-device-sync.spec.ts:60 smoke is test.fixme(true) — needs redesign: (1) relay-state pollution from prior tests (violates relay-independence), (2) asserts pageB data-local count==1 AFTER pageB's leaf is removed (logically impossible)",
+      "created_at": "2026-06-27",
+      "motivation": "The multi-device-sync feature is verified by other passing tests (multi-user-md.property convergence, multi-device-cross-npub TP-80/81/82, sibling-auto-invite), but this dedicated smoke remains disabled, leaving a named coverage gap and a misleading fixme in the suite",
+      "behavior": "test.fixme(true) unconditionally skips; inline comment documents both blockers as test-design (not feature) issues",
+      "approach": "Redesign per the relay-independence principle: within-test isolation instead of relying on clean relay; and forget a THIRD sibling (or stop asserting pageB's own count after removal) so the final assertion is satisfiable"
+    },
+    {
+      "slug": "event-side-updatedbydevice-normalization-has-no",
+      "scope": "any",
+      "anchor": {
+        "path": "src/store/task-reducer.ts:25,46,67,88"
+      },
+      "text": "event-side updatedByDevice ?? '' normalization has no AC in any epic",
+      "created_at": "2026-06-28",
+      "motivation": "The LWW guard normalizes absent device IDs on both sides of (event.updatedByDevice ?? '') < (existing.updatedByDevice ?? ''). The existing-side ?? '' is covered by existing tests ('loses to a legacy existing task whose updatedByDevice is absent'). The event-side ?? '' had no test, discovered by Stryker mutation testing — a StringLiteral mutation replacing '' with 'Stryker was here!' survived because all test device IDs use lowercase a-z (ASCII >= 100), which sort after 'S' (83), making the mutation undetectable. The invariant to spec: when an event omits updatedByDevice, it normalizes to '' (lexicographic minimum), so it wins over any existing task with a non-empty device ID under a timestamp+pubkey tie. This matters for CRDT convergence when legacy events (no device field) arrive after sibling-device events.",
+      "behavior": "An event with undefined updatedByDevice normalizes to '' on the left side of the device-level tie-break comparison, winning over any existing task whose updatedByDevice is a non-empty string. Pinned by four new example-based tests using device IDs 'A', 'B', 'Q', '9' (all ASCII <= 82, below 'S').",
+      "kind": "spec-gap"
     }
   ],
   "archive": [

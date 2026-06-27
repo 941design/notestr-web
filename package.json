@@ -14,7 +14,8 @@
     "mutation:deep": "stryker run stryker.deep.conf.json",
     "mutation:baseline": "stryker run stryker.baseline.conf.json",
     "relay:up": "docker compose up -d",
-    "relay:down": "docker compose down"
+    "relay:down": "docker compose down",
+    "mutation:task-reducer": "stryker run stryker.task-reducer.conf.json"
   },
   "keywords": [
     "nostr",
@@ -28,9 +29,9 @@
     "@internet-privacy/marmot-ts": "file:/tmp/marmot-ts/marmot-ts.tgz",
     "@nostr-dev-kit/ndk": "^3.0.3",
     "@tailwindcss/postcss": "^4.2.1",
-    "applesauce-accounts": "^6.0.0",
-    "applesauce-common": "^6.1.0",
-    "applesauce-core": "^6.1.0",
+    "applesauce-accounts": "^6.2.0",
+    "applesauce-common": "^6.2.0",
+    "applesauce-core": "^6.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "idb-keyval": "^6.2.2",

@@ -558,3 +558,103 @@ describe("LWW tie-break holds for every mutating variant", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Event-side `?? ""` normalization — omitted updatedByDevice is lexicographic
+// minimum.
+//
+// The LWW guard normalizes absent device IDs on BOTH sides of the comparison:
+//   (event.updatedByDevice ?? "") < (existing.updatedByDevice ?? "")
+//
+// The existing-side `?? ""` is pinned by the "legacy existing task" tests above.
+// These four tests pin the EVENT-side `?? ""` by using existing device IDs that
+// start with uppercase letters or digits (ASCII ≤ 82, i.e. below 'S'=83).
+//
+// Choice of upper-bound device strings ("A", "B", "Q", "9"):
+//   "" < "A" → true  → event wins  (correct, ?? "" behaviour)
+//   "Stryker was here!" < "A" → 'S'(83) > 'A'(65) → false → event loses (mutation caught)
+//
+// Any device string in the ASCII range (∅, 'S') kills the mutation. Existing
+// tests use only lowercase a–z (≥ 'd'=100 > 83), which is why the mutant
+// survived — "Stryker was here!" < "dm" is also true.
+//
+// No matching AC in the existing specs; see BACKLOG spec-gap finding
+// (anchor: src/store/task-reducer.ts:25,46,67,88).
+// ---------------------------------------------------------------------------
+describe("event-side ?? '' normalization — omitted updatedByDevice is lexicographic minimum", () => {
+  // Shared baseline: all four tests share the same pubkey and timestamp so the
+  // only live variable in the gate is the device-ID comparison.
+  const T = 2000;
+  const PK = "pubkey-shared";
+
+  function taskWithDevice(device: string): Task {
+    return {
+      id: "task-1",
+      title: "original",
+      description: "desc",
+      status: "open" as const,
+      assignee: null,
+      createdBy: PK,
+      createdAt: T - 1,
+      updatedAt: T,
+      updatedBy: PK,
+      updatedByDevice: device,
+    };
+  }
+
+  // task.updated: existing device "A" (ASCII 65). "" < "A" → event wins.
+  it("task.updated: event with omitted device wins over existing with uppercase device 'A'", () => {
+    const pre = new Map([["task-1", taskWithDevice("A")]]);
+    const next = applyEvent(pre, {
+      type: "task.updated",
+      taskId: "task-1",
+      changes: { title: "updated" },
+      updatedAt: T,
+      updatedBy: PK,
+      // updatedByDevice omitted → normalised to ""
+    });
+    expect(next.get("task-1")!.title).toBe("updated");
+  });
+
+  // task.status_changed: existing device "B" (ASCII 66). "" < "B" → event wins.
+  it("task.status_changed: event with omitted device wins over existing with uppercase device 'B'", () => {
+    const pre = new Map([["task-1", taskWithDevice("B")]]);
+    const next = applyEvent(pre, {
+      type: "task.status_changed",
+      taskId: "task-1",
+      status: "done",
+      updatedAt: T,
+      updatedBy: PK,
+      // updatedByDevice omitted → normalised to ""
+    });
+    expect(next.get("task-1")!.status).toBe("done");
+  });
+
+  // task.assigned: existing device "Q" (ASCII 81, safely below 'S'=83). "" < "Q" → event wins.
+  it("task.assigned: event with omitted device wins over existing with uppercase device 'Q'", () => {
+    const pre = new Map([["task-1", taskWithDevice("Q")]]);
+    const next = applyEvent(pre, {
+      type: "task.assigned",
+      taskId: "task-1",
+      assignee: "pubkey-bob",
+      updatedAt: T,
+      updatedBy: PK,
+      // updatedByDevice omitted → normalised to ""
+    });
+    expect(next.get("task-1")!.assignee).toBe("pubkey-bob");
+  });
+
+  // task.deleted: existing device "9" (ASCII 57, digits sort before uppercase).
+  // "" < "9" → event wins → task is removed.
+  it("task.deleted: event with omitted device wins over existing with digit device '9'", () => {
+    const pre = new Map([["task-1", taskWithDevice("9")]]);
+    const next = applyEvent(pre, {
+      type: "task.deleted",
+      taskId: "task-1",
+      updatedAt: T,
+      updatedBy: PK,
+      // updatedByDevice omitted → normalised to ""
+    });
+    expect(next.has("task-1")).toBe(false);
+  });
+});
