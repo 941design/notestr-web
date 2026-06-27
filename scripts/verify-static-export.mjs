@@ -2,7 +2,7 @@
 
 import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, rmSync } from "node:fs";
+import { readFileSync, readdirSync, rmSync, mkdirSync, statSync } from "node:fs";
 import path from "node:path";
 
 const rootDir = process.cwd();
@@ -12,6 +12,49 @@ const cases = [
   { basePath: "", expectedBasePath: "" },
   { basePath: "/notestr/", expectedBasePath: "/notestr" },
 ];
+
+// Concurrent `make test` invocations share rootDir's build artifacts
+// (.next, out, public/sw.js). Without serialization, one run's
+// cleanBuildArtifacts() rm -rf's .next/out mid-flight under another's
+// `next build`, producing spurious "pages-manifest.json not found" failures.
+// A directory-based mutex (atomic mkdir) serializes invocations; the normal
+// single-invocation path acquires immediately and is unaffected.
+const lockDir = path.join(rootDir, ".next-verify-export.lock");
+const LOCK_STALE_MS = 10 * 60 * 1000; // a full two-case build is well under this
+const LOCK_POLL_MS = 1000;
+const LOCK_TIMEOUT_MS = 20 * 60 * 1000;
+
+function sleepSync(ms) {
+  // Block the process without busy-spinning.
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function acquireLock() {
+  const start = Date.now();
+  for (;;) {
+    try {
+      mkdirSync(lockDir);
+      return;
+    } catch (err) {
+      if (err.code !== "EEXIST") throw err;
+      // Lock held. Take it over if it is stale (a crashed run left it behind).
+      try {
+        if (Date.now() - statSync(lockDir).mtimeMs > LOCK_STALE_MS) {
+          rmSync(lockDir, { force: true, recursive: true });
+          continue;
+        }
+      } catch {
+        continue; // Lock vanished between EEXIST and stat — retry immediately.
+      }
+      if (Date.now() - start > LOCK_TIMEOUT_MS) {
+        throw new Error(
+          `verify-static-export: timed out waiting for build lock ${lockDir}`,
+        );
+      }
+      sleepSync(LOCK_POLL_MS);
+    }
+  }
+}
 
 function cleanBuildArtifacts() {
   rmSync(path.join(rootDir, "out"), { force: true, recursive: true });
@@ -30,6 +73,8 @@ function withBasePath(basePath, suffix) {
   return `${prefix}${suffix}`;
 }
 
+acquireLock();
+try {
 for (const { basePath, expectedBasePath } of cases) {
   cleanBuildArtifacts();
 
@@ -95,5 +140,8 @@ for (const { basePath, expectedBasePath } of cases) {
     new RegExp(withBasePath(expectedBasePath, "/icon\\.svg")),
     `sw.js should precache the expected icon path for ${basePath || "root build"}`,
   );
+}
+} finally {
+  rmSync(lockDir, { force: true, recursive: true });
 }
 

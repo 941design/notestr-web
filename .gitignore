@@ -22,3 +22,6 @@ screenshot.png
 # Mutation testing (Stryker)
 reports/mutation/
 .stryker-tmp/
+
+# verify-static-export build mutex (auto-removed; left only on crash)
+.next-verify-export.lock/
