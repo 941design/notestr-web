@@ -228,7 +228,9 @@ test.describe.serial("[C0,S5,S6,S7,S10,A7-A12,A14] 3-party multi-user property",
       // Admin-only invite: inviter is always A, invitee is B or C
       fc.constantFrom("B", "C" as const).map((invitee) => new InCommand3P(invitee)),
       arbActor.map((actor) => new LgCommand3P(actor)),
-      arbActor.map((actor) => new FdCommand3P(actor)),
+      // Admin-only, actor-free per AC-3P-FD-1: forget-device is always issued
+      // by the admin (A) over its own sibling leaves — not parameterised by actor.
+      fc.constant(new FdCommand3P()),
       // ... CtCommand3P, UtCommand3P, ScCommand3P, AsCommand3P, UnCommand3P, DtCommand3P, RlCommand3P
       fc.constant(new SwCommand3P()), // switches A only, A↔B
     ];
