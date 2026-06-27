@@ -29,6 +29,15 @@ describe("applyEvent", () => {
     expect(state.get("task-1")).toEqual(task);
   });
 
+  it("task.created is first-write-wins: a duplicate id does not overwrite", () => {
+    const original = sampleTask();
+    const duplicate = { ...original, title: "Should be ignored" };
+    let state = applyEvent(emptyState(), { type: "task.created", task: original });
+    state = applyEvent(state, { type: "task.created", task: duplicate });
+    // FWW: the existing task is kept and the duplicate's content is dropped.
+    expect(state.get("task-1")).toEqual(original);
+  });
+
   it("task.updated merges changes", () => {
     const task = sampleTask();
     let state: TaskState = new Map([["task-1", task]]);
@@ -442,5 +451,110 @@ describe("sibling-device same-second concurrent edit: three-level tie-break reso
     // This is the correct backward-compat behavior: old tasks sort as "" (lowest).
     const state = applyEvent(pre, newEvent);
     expect(state.get("task-1")!.status).toBe("open"); // unchanged — new event loses
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LWW three-level tie-break, exercised across ALL FOUR mutating variants.
+//
+// applyEvent has four near-identical guards (task.updated, task.status_changed,
+// task.assigned, task.deleted), each gating on the same comparison:
+//   updatedAt >  ||  (updatedAt == && (updatedBy <
+//                  || (updatedBy == && (updatedByDevice ?? "") < (existing ?? ""))))
+// The sibling-device block above pins this for status_changed; these
+// parameterized cases pin the identical gate for the other three variants too,
+// so a regression in any guard's ordering, equality, logical structure, or ""
+// fallback is caught regardless of which event type carries it.
+// ---------------------------------------------------------------------------
+describe("LWW tie-break holds for every mutating variant", () => {
+  const TID = "task-1";
+  const BASE = 1000;
+  const PK_A = "pk-a", PK_M = "pk-m", PK_Z = "pk-z"; // PK_A < PK_M < PK_Z
+  const DEV_A = "da", DEV_M = "dm", DEV_Z = "dz"; // DEV_A < DEV_M < DEV_Z
+
+  type Stamp = { updatedAt: number; updatedBy: string; updatedByDevice?: string };
+
+  function baseTask(): Task {
+    return {
+      id: TID,
+      title: "base",
+      description: "base-desc",
+      status: "open",
+      assignee: null,
+      createdBy: PK_M,
+      createdAt: BASE - 10,
+      updatedAt: BASE,
+      updatedBy: PK_M,
+      updatedByDevice: DEV_M,
+    };
+  }
+
+  const VARIANTS: {
+    name: string;
+    build: (s: Stamp) => TaskEvent;
+    won: (t: Task | undefined) => boolean;
+  }[] = [
+    {
+      name: "task.updated",
+      build: (s) => ({ type: "task.updated", taskId: TID, changes: { title: "WON" }, ...s }),
+      won: (t) => t?.title === "WON",
+    },
+    {
+      name: "task.status_changed",
+      build: (s) => ({ type: "task.status_changed", taskId: TID, status: "done", ...s }),
+      won: (t) => t?.status === "done",
+    },
+    {
+      name: "task.assigned",
+      build: (s) => ({ type: "task.assigned", taskId: TID, assignee: "WON", ...s }),
+      won: (t) => t?.assignee === "WON",
+    },
+    {
+      name: "task.deleted",
+      build: (s) => ({ type: "task.deleted", taskId: TID, ...s }),
+      won: (t) => t === undefined,
+    },
+  ];
+
+  // win=true → the incoming event beats the baseline (updatedAt=BASE,
+  // updatedBy=PK_M, updatedByDevice=DEV_M); win=false → it is rejected.
+  const CASES: { desc: string; stamp: Stamp; win: boolean }[] = [
+    { desc: "newer updatedAt wins despite higher pubkey+device", stamp: { updatedAt: BASE + 1, updatedBy: PK_Z, updatedByDevice: DEV_Z }, win: true },
+    { desc: "older updatedAt loses despite lower pubkey+device", stamp: { updatedAt: BASE - 1, updatedBy: PK_A, updatedByDevice: DEV_A }, win: false },
+    { desc: "equal updatedAt, lower updatedBy wins", stamp: { updatedAt: BASE, updatedBy: PK_A, updatedByDevice: DEV_Z }, win: true },
+    { desc: "equal updatedAt, higher updatedBy loses", stamp: { updatedAt: BASE, updatedBy: PK_Z, updatedByDevice: DEV_A }, win: false },
+    { desc: "equal updatedAt+updatedBy, lower device wins", stamp: { updatedAt: BASE, updatedBy: PK_M, updatedByDevice: DEV_A }, win: true },
+    { desc: "equal updatedAt+updatedBy, higher device loses", stamp: { updatedAt: BASE, updatedBy: PK_M, updatedByDevice: DEV_Z }, win: false },
+    { desc: "fully equal updatedAt+updatedBy+device loses (idempotent)", stamp: { updatedAt: BASE, updatedBy: PK_M, updatedByDevice: DEV_M }, win: false },
+    { desc: "equal updatedAt+updatedBy, omitted event device ('') beats defined device", stamp: { updatedAt: BASE, updatedBy: PK_M }, win: true },
+  ];
+
+  describe.each(VARIANTS)("$name", (variant) => {
+    it.each(CASES)("$desc", ({ stamp, win }) => {
+      const pre = new Map([[TID, baseTask()]]);
+      const next = applyEvent(pre, variant.build(stamp));
+      const t = next.get(TID);
+      expect(variant.won(t)).toBe(win);
+      // When a non-delete event wins, the stored updatedByDevice must be the
+      // event's clientId, or "" when the event omitted it. Pins the set-body
+      // `updatedByDevice: event.updatedByDevice ?? ""` assignment.
+      if (win && variant.name !== "task.deleted") {
+        expect(t!.updatedByDevice).toBe(stamp.updatedByDevice ?? "");
+      }
+    });
+
+    // Existing-side `(existing.updatedByDevice ?? "")` fallback: a legacy task
+    // persisted without updatedByDevice sorts as "" (lowest), so a same-(ts,pk)
+    // event carrying a non-empty device loses to it.
+    it("loses to a legacy existing task whose updatedByDevice is absent ('')", () => {
+      const { updatedByDevice: _omit, ...legacy } = baseTask();
+      const pre = new Map([[TID, legacy as Task]]);
+      // Digit-leading device ("0…", below ASCII 'S') so the existing-side
+      // `?? ""` cannot be silently mutated to a non-empty literal without
+      // flipping this loss into a win: "0a" < "" is false (event loses), but
+      // "0a" < "<any uppercase-led literal>" would be true (event wins).
+      const next = applyEvent(pre, variant.build({ updatedAt: BASE, updatedBy: PK_M, updatedByDevice: "0a" }));
+      expect(variant.won(next.get(TID))).toBe(false);
+    });
   });
 });
