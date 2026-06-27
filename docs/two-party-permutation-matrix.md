@@ -204,14 +204,16 @@ removing the last leaf.
 `TP-61` and `TP-62` reduce to **n/a-by-design**: `DeviceList` only renders
 the local identity's own leaves, and `setDeviceName` writes to a per-context
 IndexedDB store (`deviceNamesStore`). There is no cross-identity surface to
-rename through and no broadcast channel. The `rename-device` spec contains
-a single-context smoke confirming this reduction.
+rename through and no broadcast channel. The `rename-device` spec confirms
+this with a single-context surface check (TP-61) and a negative-property
+assertion (TP-62) that a rename advances neither the MLS epoch nor the
+sent-application-rumor count — i.e. it emits no commit and no message.
 
 | ID    | Scenario (DSL)                                                          | Spec          |
 | ----- | ----------------------------------------------------------------------- | ------------- |
 | TP-60 | `A1.Cg → A1.Rd(A2,"Laptop") → A1.Rl ⇒ A1⟂device(A2).name="Laptop"`      | rename-device |
-| TP-61 | `A.Rd(B1,…)` — UI affordance does not exist                             | rename-device (n/a-by-design) |
-| TP-62 | `B⊥device.rename` — no cross-identity surface, holds trivially          | rename-device (n/a-by-design) |
+| TP-61 | `A.Rd(B1,…)` — UI affordance does not exist (DeviceList renders only self-pubkey leaves) | rename-device |
+| TP-62 | `A1.Rd(A2,…) ⇒ Δepoch=0 ∧ Δsent-rumors=0` — rename is local-only, leaks no MLS commit/message | rename-device |
 
 ### Three-party invite chain
 

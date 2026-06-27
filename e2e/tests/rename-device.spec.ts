@@ -111,6 +111,57 @@ test.describe.serial("TP-60: rename a sibling device, persist across reload", ()
       { timeout: 15000 },
     );
   });
+
+  test("TP-62: renaming a sibling device is local-only — no MLS commit or app message", async () => {
+    test.skip(skipMobile, SKIP_MOBILE_REASON);
+    // Negative property (AC-RC-2): a device rename is a purely local IndexedDB
+    // write — it must NOT mutate MLS group state or publish anything. The ACs'
+    // literal "no event content references the rename string" is unverifiable
+    // by inspection (kind-445/30078 payloads are NIP-44 ciphertext) and a
+    // blanket "no events from A" check is flaky against background auto-invite/
+    // KP churn. Epoch invariance (no commit) + sent-rumor invariance (no
+    // application message) across the rename is the robust proxy for
+    // "rename did not leak to the group or the network".
+    const groups = await pageA1.evaluate(() => window.__notestrTestGroups?.() ?? []);
+    expect(groups.length).toBeGreaterThan(0);
+    const groupIdStr = groups[groups.length - 1]!.idStr;
+
+    // Let any in-flight auto-invite / KP-rotation churn settle so the epoch is
+    // stable before we measure the rename's (non-)effect.
+    await settle(pageA1, 3000);
+    const epochBefore = await pageA1.evaluate(
+      (id) => window.__notestrTestGroupEpoch?.(id) ?? null,
+      groupIdStr,
+    );
+    const sentBefore = await pageA1.evaluate(
+      (id) => (window.__notestrTestSentRumors?.(id) ?? []).length,
+      groupIdStr,
+    );
+    expect(epochBefore).not.toBeNull();
+
+    const RENAMED2 = `Desktop ${Date.now()}`;
+    const remoteRow = pageA1
+      .locator('[data-testid="device-row"][data-local="false"]')
+      .first();
+    const input = remoteRow.getByRole("textbox");
+    await input.fill(RENAMED2);
+    await input.blur();
+    await expect(remoteRow).toContainText(RENAMED2, { timeout: 5000 });
+
+    // Give any erroneous publish/commit a chance to land, then assert none did.
+    await settle(pageA1, 3000);
+    const epochAfter = await pageA1.evaluate(
+      (id) => window.__notestrTestGroupEpoch?.(id) ?? null,
+      groupIdStr,
+    );
+    const sentAfter = await pageA1.evaluate(
+      (id) => (window.__notestrTestSentRumors?.(id) ?? []).length,
+      groupIdStr,
+    );
+
+    expect(epochAfter).toBe(epochBefore); // no MLS commit
+    expect(sentAfter).toBe(sentBefore); // no MLS application message
+  });
 });
 
 // ---------------------------------------------------------------------------
