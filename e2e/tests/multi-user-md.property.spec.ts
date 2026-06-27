@@ -246,14 +246,18 @@ class AttachA2Command_MD implements fc.AsyncCommand<ModelStateMD, RealSystemMD> 
     //    flight when this command returns. assertA15_MD reads A2's view of
     //    the member set immediately after the chain, so without this poll
     //    the chain can pass while leaving membersA2 = [] on the side A1
-    //    thinks just joined. Same idiom as awaitDeviceJoin (poll + 30 s cap).
+    //    thinks just joined. Poll cap is 60 s to match the proven imperative
+    //    sibling-join wait (multi-device-cross-npub's selectGroup, 60 s): A2's
+    //    own welcome receipt + React state propagation can race past 30 s under
+    //    accumulated property-run pressure even though A1 already saw the leaf
+    //    land (awaitDeviceJoin's separate 30 s cap covers only the A1 side).
     await expect
       .poll(
         async () => {
           const members = await getGroupMembersHook(r.pageA2, m.groupId!);
           return members?.length ?? 0;
         },
-        { timeout: 30000 },
+        { timeout: 60000 },
       )
       .toBeGreaterThanOrEqual(1);
 
