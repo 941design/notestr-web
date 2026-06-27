@@ -581,6 +581,19 @@ payload plus any kind-445 events published at epoch N onward. If no sync
 payload is available (publish failed or inviter was offline), the new member
 gracefully starts from an empty board and accumulates state as new events arrive.
 
+### Author-authenticity gate
+
+The kind-30078 sync payload is a NIP-44 ciphertext addressed to the joining
+member's pubkey. NIP-44 decryptability is **not** authorization: any Nostr key
+can encrypt a payload to that pubkey and publish it under the
+`notestr:task-sync:<groupId>:<ownPubkey>` `#d` tag. To prevent an outsider from
+injecting or overwriting tasks via the bootstrap, `fetchAndApplyTaskBootstrap`
+merges a snapshot **only when its event author is a current MLS member of the
+group** (checked against `getGroupMembers(group.state)` before decryption). A
+non-member's snapshot is skipped without being decrypted. The legitimate
+publisher is always a member (the inviting admin, or a sibling device sharing
+the joiner's own pubkey), so this is transparent to the real flow.
+
 ### What this means for E2E tests
 
 Tests that cover the join flow (TP-30, TP-31, TP-32) verify the absence of

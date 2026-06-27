@@ -1360,6 +1360,25 @@ export async function fetchAndApplyTaskBootstrap(
       { kinds: [TASK_STATE_SYNC_KIND], "#d": [dTag], limit: 10 },
     ]);
 
+    // Author-authenticity gate. NIP-44 decryptability is NOT authorization —
+    // any Nostr key can encrypt a task-sync payload to our pubkey and publish
+    // it under this #d tag, so the membership of the *author* is what
+    // authorizes a merge. `memberPubkeys` is the current MLS member set; each
+    // relay event is filtered against it below. The production call path
+    // (task-store load for a welcome-joined group) always has the group loaded,
+    // so this is the security-relevant fail-closed path. If the group cannot be
+    // resolved (only reachable by an uninitialised/bare client, never by an
+    // attacker who cannot touch our own client state) we log and leave
+    // `memberPubkeys` null, which disables only the filter — not the rest of
+    // the merge — preserving behaviour for that unreachable-in-prod case.
+    const group = client.groups?.loaded?.find((g) => g.idStr === groupId);
+    const memberPubkeys = group?.state ? getGroupMembers(group.state) : null;
+    if (!memberPubkeys) {
+      console.warn(
+        "[task-sync] bootstrap: group unavailable; cannot verify snapshot author membership",
+      );
+    }
+
     // `accepted` tracks the per-task winner across ALL relay events in this
     // fetch, seeded from the caller-supplied currentState. Updating it on every
     // win (rather than only comparing against the seed) ensures that a second
@@ -1378,6 +1397,13 @@ export async function fetchAndApplyTaskBootstrap(
     const wonFromBootstrap = new Map<string, Task>();
 
     for (const event of events) {
+      // Reject snapshots whose author is not a current group member (checked
+      // before decryption — author membership, not decryptability, authorizes
+      // the merge). Skipped only when membership is unverifiable (see above).
+      if (memberPubkeys && !memberPubkeys.includes(event.pubkey)) {
+        console.debug("[task-sync] skipping bootstrap snapshot from non-member author");
+        continue;
+      }
       let payload: TaskStateSyncPayload;
       try {
         const plaintext = await signer.nip44.decrypt(event.pubkey, event.content);

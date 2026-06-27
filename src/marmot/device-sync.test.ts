@@ -17,6 +17,9 @@ vi.mock("../store/task-reducer", () => ({
 vi.mock("@internet-privacy/marmot-ts", () => ({
   getKeyPackage: vi.fn((event: any) => event.keyPackage),
   getKeyPackageIdentifier: vi.fn((event: any) => event._slot as string | undefined),
+  // Bootstrap author-membership gate reads the member set off the group state.
+  // The mock returns whatever `_members` the test stamped on the mock state.
+  getGroupMembers: vi.fn((state: any) => state?._members ?? []),
 }));
 
 vi.mock("ts-mls", () => ({
@@ -750,6 +753,66 @@ describe("fetchAndApplyTaskBootstrap (S3 — AC-2/4/5/6/7/8/12)", () => {
   const GROUP_ID = "group1";
   const OWN_PUBKEY = "ownpubkey";
   const INVITER_PUBKEY = "inviterpubkey";
+
+  // A client whose group resolves to a member set — exercises the production
+  // (fail-closed) author-authenticity gate path, unlike the bare-client tests
+  // below which leave membership unverifiable (filter disabled).
+  function clientWithMembers(
+    events: unknown[],
+    members: string[],
+  ): { network: { request: ReturnType<typeof vi.fn> }; groups: { loaded: unknown[] } } {
+    return {
+      network: { request: vi.fn().mockResolvedValue(events) },
+      groups: { loaded: [{ idStr: GROUP_ID, state: { _members: members } }] },
+    };
+  }
+
+  // SECURITY: author-membership gate (finding fetch-task-bootstrap-no-mls-author-check)
+  it("merges a snapshot authored by a current group member", async () => {
+    const signer = {
+      nip44: {
+        decrypt: vi
+          .fn()
+          .mockResolvedValue(JSON.stringify(makeValidPayload(GROUP_ID, [makeTask()]))),
+      },
+    };
+    const event = makeRelayEvent(INVITER_PUBKEY, "enc");
+    const client = clientWithMembers([event], [INVITER_PUBKEY, OWN_PUBKEY]);
+
+    const result = await fetchAndApplyTaskBootstrap(
+      GROUP_ID,
+      OWN_PUBKEY,
+      signer as any,
+      client as any,
+      [],
+      new Map(),
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ type: "task.created" });
+  });
+
+  it("rejects a snapshot authored by a non-member without decrypting it", async () => {
+    const signer = { nip44: { decrypt: vi.fn() } };
+    // Author is NOT in the member set — an attacker who NIP-44-encrypted a
+    // payload to our pubkey and published it under the #d tag.
+    const event = makeRelayEvent("attackerpubkey", "enc");
+    const client = clientWithMembers([event], [INVITER_PUBKEY, OWN_PUBKEY]);
+
+    const result = await fetchAndApplyTaskBootstrap(
+      GROUP_ID,
+      OWN_PUBKEY,
+      signer as any,
+      client as any,
+      [],
+      new Map(),
+    );
+
+    expect(result).toEqual([]);
+    // Membership is checked before decryption — the untrusted payload is never
+    // even decrypted, let alone merged.
+    expect(signer.nip44.decrypt).not.toHaveBeenCalled();
+  });
 
   // Test 1: client=null → returns [] immediately (AC-12 guard)
   it("returns [] immediately when client is null", async () => {
