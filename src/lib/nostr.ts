@@ -1,6 +1,6 @@
 import type { EventSigner } from "applesauce-core";
 import { decode, npubEncode } from "nostr-tools/nip19";
-import NDK, { NDKNip46Signer, NDKPrivateKeySigner, NDKUser } from "@nostr-dev-kit/ndk";
+import NDK, { NDKNip46Signer, NDKUser } from "@nostr-dev-kit/ndk";
 import { getEventHash } from "nostr-tools/pure";
 import { NDK_CONNECT_TIMEOUT_MS } from "@/config/relays";
 
