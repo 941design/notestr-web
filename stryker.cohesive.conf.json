@@ -23,5 +23,15 @@
   "tempDirName": ".stryker-tmp/cohesive",
   "timeoutMS": 120000,
   "disableTypeChecks": "src/**/*.{ts,tsx}",
-  "checkers": []
+  "checkers": [],
+  "_ignore_comment": "Stryker copies the project into each sandbox and does NOT honor .gitignore. Exclude large generated/cache dirs — especially the 34k-file pnpm content store, which otherwise bloats every sandbox copy and can trip ENFILE (system file-table overflow) under FD load. None are needed to run the vitest unit suite.",
+  "ignorePatterns": [
+    "**/.pnpm-store/**",
+    "**/.stryker-tmp/**",
+    "**/reports/**",
+    "**/out/**",
+    "**/.next/**",
+    "**/test-results/**",
+    "**/playwright-report/**"
+  ]
 }
