@@ -64,4 +64,10 @@ describe("EventSignerNdkAdapter", () => {
     const adapter = new EventSignerNdkAdapter(makeSigner(HEX_PUBKEY), HEX_PUBKEY);
     await expect(adapter.decrypt()).rejects.toThrow("not implemented");
   });
+
+  it("constructor throws when signer is missing", () => {
+    expect(() => new EventSignerNdkAdapter(undefined as never, HEX_PUBKEY)).toThrow(
+      "signer is required",
+    );
+  });
 });

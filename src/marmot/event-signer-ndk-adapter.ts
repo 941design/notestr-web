@@ -19,6 +19,10 @@ export class EventSignerNdkAdapter implements NDKSigner {
   private readonly _user: NDKUser;
 
   constructor(signer: EventSigner, pubkey: string) {
+    // Defensive: the sole call site (client.tsx) guards with `if (signer)`,
+    // but this adapter must fail loudly rather than silently produce a broken
+    // signer should its call surface ever widen beyond MarmotProvider.
+    if (!signer) throw new Error("EventSignerNdkAdapter: signer is required");
     this.wrapped = signer;
     this._pubkey = pubkey;
     this._user = new NDKUser({ pubkey });
