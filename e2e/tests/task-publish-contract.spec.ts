@@ -10,6 +10,13 @@ import type { TaskEvent } from "../../src/store/task-events.ts";
 const RELAY_URL = "ws://localhost:7777";
 const KIND_GROUP_MESSAGE = 445 as NDKKind;
 
+// E2E device identity pinned so the publish path's `updatedByDevice` stamp
+// (task-store dispatch — the MLS clientId third LWW tie-break level) is
+// deterministic and can be asserted byte-for-byte in the round-trip
+// deep-equals below. 64-hex per getOrCreateClientId()'s CLIENT_ID_RE;
+// honored only under NEXT_PUBLIC_E2E, applied via addInitScript before boot.
+const TEST_CLIENT_ID = "feedface".repeat(8);
+
 function uniqueName(prefix: string): string {
   return `${prefix} ${Date.now()} ${Math.random().toString(16).slice(2, 8)}`;
 }
@@ -179,6 +186,13 @@ async function readPublishFailures(page: Page): Promise<unknown[]> {
 
 test.describe("task publish contract", () => {
   test.beforeEach(async ({ page }) => {
+    // Pin the device clientId before the app boots so every published
+    // TaskEvent carries a known `updatedByDevice`; addInitScript re-applies
+    // on each navigation, so it survives the reload in the failure-recovery
+    // test below.
+    await page.addInitScript((clientId) => {
+      (window as { __notestrTestClientId?: string }).__notestrTestClientId = clientId;
+    }, TEST_CLIENT_ID);
     await page.goto("/");
     await clearAppState(page);
     await authenticateViaBunker(page);
@@ -228,6 +242,7 @@ test.describe("task publish contract", () => {
       createdAt: Math.floor(Date.now() / 1000),
       updatedAt: Math.floor(Date.now() / 1000),
       updatedBy: userPk,
+      updatedByDevice: TEST_CLIENT_ID,
     };
 
     try {
@@ -331,6 +346,7 @@ test.describe("task publish contract", () => {
         changes: { title: "After update" },
         updatedAt: now + 1,
         updatedBy: userPk,
+        updatedByDevice: TEST_CLIENT_ID,
       };
       const dispatchedAt = Math.floor(Date.now() / 1000);
       await dispatchTaskEvent(page, updateEvent);
@@ -390,6 +406,7 @@ test.describe("task publish contract", () => {
           status,
           updatedAt: baseTime + index + 1,
           updatedBy: userPk,
+          updatedByDevice: TEST_CLIENT_ID,
         };
         await dispatchTaskEvent(page, dispatchedEvent);
         const rawEvent = (await eventPromise).rawEvent() as PublishedEventShape;
@@ -450,6 +467,7 @@ test.describe("task publish contract", () => {
         assignee,
         updatedAt: now + 1,
         updatedBy: userPk,
+        updatedByDevice: TEST_CLIENT_ID,
       };
       await dispatchTaskEvent(page, assignEvent);
       const assignedEvent = (await assignPromise).rawEvent() as PublishedEventShape;
@@ -479,6 +497,7 @@ test.describe("task publish contract", () => {
         assignee: null,
         updatedAt: now + 2,
         updatedBy: userPk,
+        updatedByDevice: TEST_CLIENT_ID,
       };
       await dispatchTaskEvent(page, unassignEvent);
       const unassignedEvent = (await unassignPromise).rawEvent() as PublishedEventShape;
@@ -542,6 +561,7 @@ test.describe("task publish contract", () => {
         taskId,
         updatedAt: now + 1,
         updatedBy: userPk,
+        updatedByDevice: TEST_CLIENT_ID,
       };
       await dispatchTaskEvent(page, deleteEvent);
       const rawEvent = (await deletePromise).rawEvent() as PublishedEventShape;
@@ -566,6 +586,7 @@ test.describe("task publish contract", () => {
         taskId,
         updatedAt: now + 1,
         updatedBy: userPk,
+        updatedByDevice: TEST_CLIENT_ID,
       });
     } finally {
       await subscriber.close();
@@ -599,6 +620,7 @@ test.describe("task publish contract", () => {
         createdAt: now,
         updatedAt: now,
         updatedBy: userPk,
+        updatedByDevice: TEST_CLIENT_ID,
       },
     };
 
@@ -660,6 +682,7 @@ test.describe("task publish contract", () => {
           createdAt: Math.floor(Date.now() / 1000),
           updatedAt: Math.floor(Date.now() / 1000),
           updatedBy: userPk,
+          updatedByDevice: TEST_CLIENT_ID,
         },
       };
       await dispatchTaskEvent(page, recoveryEvent);
