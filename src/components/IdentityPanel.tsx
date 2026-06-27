@@ -101,6 +101,10 @@ export function IdentityPanel() {
   const [siblingSlots, setSiblingSlots] = useState<SiblingSlot[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Non-fatal: the sibling-slot relay fetch can fail while the local identity
+  // still renders. Surface it as a visible warning instead of swallowing it
+  // (mirrors DevicesTab's relayFetchError; see commit 8814292).
+  const [siblingFetchError, setSiblingFetchError] = useState<string | null>(null);
 
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -122,6 +126,7 @@ export function IdentityPanel() {
     const load = async () => {
       setLoading(true);
       setLoadError(null);
+      setSiblingFetchError(null);
 
       try {
         // (a) Local KPs — find the current device's published event info.
@@ -195,8 +200,17 @@ export function IdentityPanel() {
             siblings.sort((a, b) => b.latest_created_at - a.latest_created_at);
 
             if (mountedRef.current) setSiblingSlots(siblings);
-          } catch {
-            // Relay fetch failure is non-fatal — show current-device info only.
+          } catch (relayErr) {
+            // Relay fetch failure is non-fatal — local identity still renders,
+            // but the sibling list may be incomplete, so surface a warning
+            // rather than silently showing current-device info only.
+            if (mountedRef.current && !cancelled) {
+              setSiblingFetchError(
+                relayErr instanceof Error
+                  ? relayErr.message
+                  : "Could not reach relays to list other devices.",
+              );
+            }
           }
         }
       } catch (err) {
@@ -344,6 +358,15 @@ export function IdentityPanel() {
         >
           Other devices
         </h3>
+
+        {siblingFetchError && (
+          <div
+            data-testid="identity-sibling-fetch-error"
+            className="mb-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive"
+          >
+            Couldn’t load other devices from the relay: {siblingFetchError}
+          </div>
+        )}
 
         {loading ? (
           <div className="py-4 text-center text-sm text-muted-foreground">
