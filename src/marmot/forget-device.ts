@@ -23,25 +23,28 @@
  *   D2 (kind-5 publish): client.network.publish(relays, signedEvent).
  *   D3 (epoch race): retry-once wrapper before bubbling.
  *
- * Mutation-test residuals (Stryker 9.6.1, 2026-06-28 — score 0.94, 9 residuals).
- * All survivors are classified equivalent — do not chase further:
- *   - L100 StringLiteral fallback `""` (no coverage): only reached when firstErr
+ * Mutation-test residuals (Stryker 9.6.1, 2026-06-29 — score 0.94, 9 residuals).
+ * Re-audited after the per-pubkey IDB partition change (Step 3b): that change
+ * added 2 mutants, both killed — the partitioned deleteDatabase block is fully
+ * covered. The 9 survivors below are unchanged and all classified equivalent —
+ * do not chase further:
+ *   - L102 StringLiteral fallback `""` (no coverage): only reached when firstErr
  *     is not an Error instance; any non-epoch string is observably identical.
- *   - L111 `if (recomputeLeafIndex)`: the no-callback branch is dead at every
+ *   - L113 `if (recomputeLeafIndex)`: the no-callback branch is dead at every
  *     production call site (only forgetSiblingDevice uses removeLeafWithRetry,
  *     always with a callback).
- *   - L160 / L205 `<` off-by-one: index past length yields `undefined` node,
+ *   - L162 / L207 `<` off-by-one: index past length yields `undefined` node,
  *     filtered by the `!node` guard.
- *   - L210 `sig.length === ownSigKey.length`: MLS signaturePublicKey arrays
+ *   - L212 `sig.length === ownSigKey.length`: MLS signaturePublicKey arrays
  *     are fixed-length (ed25519 / 32B); the guard is defensive against an
  *     MLS-impossible state.
- *   - L250 `own !== null ? filter : raw`: when null, `idx !== null` is always
+ *   - L252 `own !== null ? filter : raw`: when null, `idx !== null` is always
  *     true for number indexes — the filter is a no-op.
- *   - L338 `kp.published ?? []` (no coverage): nullish branch still hits the
+ *   - L340 `kp.published ?? []` (no coverage): nullish branch still hits the
  *     falsy-id guard and emits nothing.
- *   - L408 `let kpEvents = []`: only observed on the empty-relays branch;
+ *   - L413 `let kpEvents = []`: only observed on the empty-relays branch;
  *     downstream slot-filter yields [] for any seed value.
- *   - L418 `catch { continue }`: redundant with the trailing
+ *   - L423 `catch { continue }`: redundant with the trailing
  *     `if (siblingEvents.length === 0) continue`.
  */
 
