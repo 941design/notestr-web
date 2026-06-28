@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-06-27T23:23:32Z",
+  "updated_at": "2026-06-28T01:02:09Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -422,6 +422,19 @@
       "created_at": "2026-06-28",
       "motivation": "The LWW guard normalizes absent device IDs on both sides of (event.updatedByDevice ?? '') < (existing.updatedByDevice ?? ''). The existing-side ?? '' is covered by existing tests ('loses to a legacy existing task whose updatedByDevice is absent'). The event-side ?? '' had no test, discovered by Stryker mutation testing — a StringLiteral mutation replacing '' with 'Stryker was here!' survived because all test device IDs use lowercase a-z (ASCII >= 100), which sort after 'S' (83), making the mutation undetectable. The invariant to spec: when an event omits updatedByDevice, it normalizes to '' (lexicographic minimum), so it wins over any existing task with a non-empty device ID under a timestamp+pubkey tie. This matters for CRDT convergence when legacy events (no device field) arrive after sibling-device events.",
       "behavior": "An event with undefined updatedByDevice normalizes to '' on the left side of the device-level tie-break comparison, winning over any existing task whose updatedByDevice is a non-empty string. Pinned by four new example-based tests using device IDs 'A', 'B', 'Q', '9' (all ASCII <= 82, below 'S').",
+      "kind": "spec-gap"
+    },
+    {
+      "slug": "joinfromwelcomeinvite-failure-classification-no",
+      "scope": "any",
+      "anchor": {
+        "path": "src/marmot/device-sync.ts",
+        "line": 440
+      },
+      "text": "joinFromWelcomeInvite failure classification (no_matching_kp / ciphersuite_mismatch / unknown) has no AC in any epic",
+      "created_at": "2026-06-28",
+      "motivation": "When an MLS welcome invite fails, the function classifies the error into one of three reasons (no_matching_kp, ciphersuite_mismatch, unknown) and records it for user-facing diagnostic display. This behaviour affects what the user sees in the failed-welcome log. No acceptance criterion in any epic specifies the classification rules or their user-visible outcome.",
+      "behavior": "joinFromWelcomeInvite classifies errors by regex match against err.message: /[Nn]o matching/ → no_matching_kp; /ciphersuite/ → ciphersuite_mismatch; anything else → unknown. The failureReason is persisted via appendFailedWelcome and surfaces in the UI as invite diagnostics.",
       "kind": "spec-gap"
     }
   ],

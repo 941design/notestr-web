@@ -1,0 +1,45 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Focused audit of src/marmot/device-sync.ts only \u2014 device-sync engine (bootstrap, publish bridge, retry budget, forgotten-slot skip).",
+  "packageManager": "npm",
+  "testRunner": "vitest",
+  "vitest": {
+    "configFile": "vitest.config.ts"
+  },
+  "coverageAnalysis": "perTest",
+  "concurrency": 4,
+  "mutate": [
+    "src/marmot/device-sync.ts"
+  ],
+  "reporters": [
+    "html",
+    "json",
+    "progress",
+    "clear-text"
+  ],
+  "htmlReporter": {
+    "fileName": "reports/mutation/device-sync/index.html"
+  },
+  "jsonReporter": {
+    "fileName": "reports/mutation/device-sync/mutation.json"
+  },
+  "tempDirName": ".stryker-tmp/device-sync",
+  "timeoutMS": 180000,
+  "disableTypeChecks": "src/**/*.{ts,tsx}",
+  "checkers": [],
+  "_ignore_comment": "Stryker copies the project into each sandbox and does NOT honor .gitignore. Exclude large generated/cache dirs \u2014 especially the 34k-file pnpm content store.",
+  "ignorePatterns": [
+    "**/.pnpm-store/**",
+    "**/.stryker-tmp/**",
+    "**/reports/**",
+    "**/out/**",
+    "**/.next/**",
+    "**/test-results/**",
+    "**/playwright-report/**",
+    "**/dist/**",
+    "**/bug-reports/**",
+    "**/e2e/.triage/**",
+    "**/.claude/**",
+    "**/e2e/**"
+  ]
+}

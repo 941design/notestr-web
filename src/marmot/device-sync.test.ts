@@ -1477,3 +1477,541 @@ describe("fetchAndApplyTaskBootstrap (S3 — AC-2/4/5/6/7/8/12)", () => {
     expect(events.every((e) => (e as any).task.updatedAt === 100)).toBe(true);
   });
 });
+import fc from "fast-check";
+import { appendFailedWelcome } from "./failed-welcomes";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GAP-A: removeExpectedPublishByRumorId — FIFO queue semantics
+//
+// Root cause: existing tests only ever have a single entry in the FIFO when
+// remove is called, so the "no-op on non-existent hTag / idx===-1 guard /
+// queue-empty cleanup" branches were unexercised.
+//
+// User story: when a dispatch fails before its publish reaches the network,
+// the failed rumor's FIFO entry is cleaned up so the NEXT dispatch's publish
+// is correctly attributed — never to a stale entry from a prior failure.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("removeExpectedPublishByRumorId — FIFO queue semantics (GAP-A)", () => {
+  beforeEach(() => {
+    mockRecordedEvents.length = 0;
+  });
+
+  it("is a no-op when called for an hTag that was never registered (missing-hTag guard)", () => {
+    const hTag = crypto.randomUUID();
+    // Never enqueued — must not throw and must leave unrelated state intact.
+    expect(() => removeExpectedPublishByRumorId(hTag, "rumor-x")).not.toThrow();
+  });
+
+  it("is a no-op when the rumorId is absent from the queue (idx === -1 guard), leaving existing entries intact", () => {
+    const hTag = crypto.randomUUID();
+    enqueueExpectedPublish(hTag, "rumor-present", "group-1", "rumor-present");
+
+    // Remove a rumorId that was never enqueued — the "present" entry must survive.
+    removeExpectedPublishByRumorId(hTag, "rumor-not-here");
+
+    // The surviving entry should still match in the next dispatch window.
+    beginDispatchPublishWindow(hTag);
+    consumeExpectedPublishForKind445(makeKind445Event("event-A", hTag));
+    endDispatchPublishWindow(hTag);
+
+    const publishTaskRecords = mockRecordedEvents.filter((e) => e.kind === "publish-task");
+    expect(publishTaskRecords).toHaveLength(1);
+    expect(publishTaskRecords[0]).toMatchObject({ rumorId: "rumor-present" });
+  });
+
+  it("removes a specific entry from a multi-entry FIFO, leaving the remaining entry as head", () => {
+    // Simulate two back-to-back dispatches queuing up before either window closes.
+    const hTag = crypto.randomUUID();
+    enqueueExpectedPublish(hTag, "rumor-first", "group-1", "rumor-first");
+    enqueueExpectedPublish(hTag, "rumor-second", "group-1", "rumor-second");
+
+    // The first dispatch fails before publish — remove its entry.
+    removeExpectedPublishByRumorId(hTag, "rumor-first");
+
+    // Second dispatch succeeds: one kind-445 fires → must match rumor-second.
+    beginDispatchPublishWindow(hTag);
+    consumeExpectedPublishForKind445(makeKind445Event("event-B", hTag));
+    endDispatchPublishWindow(hTag);
+
+    const publishTaskRecords = mockRecordedEvents.filter((e) => e.kind === "publish-task");
+    expect(publishTaskRecords).toHaveLength(1);
+    expect(publishTaskRecords[0]).toMatchObject({
+      rumorId: "rumor-second",
+      eventId: "event-B",
+    });
+  });
+
+  it("cleans up the hTag map entry after removing the sole queued rumor (queue-empty cleanup guard)", () => {
+    const hTag = crypto.randomUUID();
+    enqueueExpectedPublish(hTag, "rumor-only", "group-1", "rumor-only");
+
+    // Remove the only entry — map should be empty / cleaned up.
+    removeExpectedPublishByRumorId(hTag, "rumor-only");
+
+    // A subsequent window with a kind-445 fires into an empty FIFO → no emit.
+    beginDispatchPublishWindow(hTag);
+    consumeExpectedPublishForKind445(makeKind445Event("event-X", hTag));
+    endDispatchPublishWindow(hTag);
+
+    const publishTaskRecords = mockRecordedEvents.filter((e) => e.kind === "publish-task");
+    expect(publishTaskRecords).toHaveLength(0);
+  });
+
+  it("does NOT clean up the hTag entry when FIFO still has remaining entries after removal", () => {
+    // Two entries; remove the first; the second must still be serviceable.
+    const hTag = crypto.randomUUID();
+    enqueueExpectedPublish(hTag, "rumor-a", "group-1", "rumor-a");
+    enqueueExpectedPublish(hTag, "rumor-b", "group-1", "rumor-b");
+
+    removeExpectedPublishByRumorId(hTag, "rumor-a");
+
+    // Open window, fire one event → the remaining head (rumor-b) must match.
+    beginDispatchPublishWindow(hTag);
+    consumeExpectedPublishForKind445(makeKind445Event("event-C", hTag));
+    endDispatchPublishWindow(hTag);
+
+    const publishTaskRecords = mockRecordedEvents.filter((e) => e.kind === "publish-task");
+    expect(publishTaskRecords).toHaveLength(1);
+    expect(publishTaskRecords[0]).toMatchObject({ rumorId: "rumor-b" });
+  });
+
+  it("FIFO ordering: second enqueue appends to existing queue (not overwrite) — first-in first-out attribution", () => {
+    // Verifies the 'if (existing) existing.push(entry)' branch at line 156 of
+    // device-sync.ts. If push were replaced by set (overwrite), the first
+    // rumor would be lost and the second would steal its publish attribution.
+    const hTag = crypto.randomUUID();
+    enqueueExpectedPublish(hTag, "rumor-A", "group-1", "rumor-A");
+    enqueueExpectedPublish(hTag, "rumor-B", "group-1", "rumor-B"); // must APPEND, not overwrite
+
+    // First dispatch window: the first enqueued rumor is the head of the FIFO.
+    beginDispatchPublishWindow(hTag);
+    consumeExpectedPublishForKind445(makeKind445Event("event-1", hTag));
+    endDispatchPublishWindow(hTag);
+
+    const firstBatch = mockRecordedEvents.filter((e) => e.kind === "publish-task");
+    expect(firstBatch).toHaveLength(1);
+    expect(firstBatch[0]).toMatchObject({ rumorId: "rumor-A", eventId: "event-1" });
+
+    mockRecordedEvents.length = 0;
+
+    // Second dispatch window: rumor-B is now the head (rumor-A was dequeued).
+    beginDispatchPublishWindow(hTag);
+    consumeExpectedPublishForKind445(makeKind445Event("event-2", hTag));
+    endDispatchPublishWindow(hTag);
+
+    const secondBatch = mockRecordedEvents.filter((e) => e.kind === "publish-task");
+    expect(secondBatch).toHaveLength(1);
+    expect(secondBatch[0]).toMatchObject({ rumorId: "rumor-B", eventId: "event-2" });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GAP-B: consumeExpectedPublishForKind445 — event filter validation
+//
+// Root cause: all existing test events are well-formed kind-445 events with
+// valid #h tags. The kind-check and tag-structure filter were unexercised
+// destructively. Tests below verify that non-445 and malformed-tag events
+// are silently ignored and do NOT count as a publish-window observation.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("consumeExpectedPublishForKind445 — event filter validation (GAP-B)", () => {
+  beforeEach(() => {
+    mockRecordedEvents.length = 0;
+  });
+
+  it("ignores events whose kind is not 445 — no publish-task emitted from the window", () => {
+    const hTag = crypto.randomUUID();
+    enqueueExpectedPublish(hTag, "rumor-1", "group-1", "rumor-1");
+    beginDispatchPublishWindow(hTag);
+
+    // A non-445 event with a valid-looking #h tag must be treated as invisible.
+    consumeExpectedPublishForKind445({
+      id: "note-event",
+      kind: 1,
+      pubkey: "deadbeef",
+      created_at: 1000,
+      tags: [["h", hTag]],
+      content: "",
+      sig: "",
+    } as any);
+
+    // Close without a real kind-445 — count === 0 → no publish-task, entry left parked.
+    endDispatchPublishWindow(hTag);
+
+    const publishTaskRecords = mockRecordedEvents.filter((e) => e.kind === "publish-task");
+    expect(publishTaskRecords).toHaveLength(0);
+  });
+
+  it("ignores kind-445 events with no tags (tag filter: no #h present)", () => {
+    const hTag = crypto.randomUUID();
+    enqueueExpectedPublish(hTag, "rumor-1", "group-1", "rumor-1");
+    beginDispatchPublishWindow(hTag);
+
+    consumeExpectedPublishForKind445({
+      id: "no-tags-event",
+      kind: 445,
+      pubkey: "deadbeef",
+      created_at: 1000,
+      tags: [],
+      content: "",
+      sig: "",
+    } as any);
+
+    endDispatchPublishWindow(hTag);
+
+    expect(mockRecordedEvents.filter((e) => e.kind === "publish-task")).toHaveLength(0);
+  });
+
+  it("ignores kind-445 events where tags are present but no tag has key 'h'", () => {
+    const hTag = crypto.randomUUID();
+    enqueueExpectedPublish(hTag, "rumor-1", "group-1", "rumor-1");
+    beginDispatchPublishWindow(hTag);
+
+    consumeExpectedPublishForKind445({
+      id: "wrong-tag-key",
+      kind: 445,
+      pubkey: "deadbeef",
+      created_at: 1000,
+      tags: [["e", hTag], ["p", "somepubkey"]],  // 'e' and 'p', no 'h'
+      content: "",
+      sig: "",
+    } as any);
+
+    endDispatchPublishWindow(hTag);
+
+    expect(mockRecordedEvents.filter((e) => e.kind === "publish-task")).toHaveLength(0);
+  });
+
+  it("ignores kind-445 events where #h tag value is not a string", () => {
+    const hTag = crypto.randomUUID();
+    enqueueExpectedPublish(hTag, "rumor-1", "group-1", "rumor-1");
+    beginDispatchPublishWindow(hTag);
+
+    consumeExpectedPublishForKind445({
+      id: "non-string-h-tag",
+      kind: 445,
+      pubkey: "deadbeef",
+      created_at: 1000,
+      tags: [["h"]],  // tag[1] is undefined
+      content: "",
+      sig: "",
+    } as any);
+
+    endDispatchPublishWindow(hTag);
+
+    expect(mockRecordedEvents.filter((e) => e.kind === "publish-task")).toHaveLength(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GAP-C: joinFromWelcomeInvite — failure reason classification
+//
+// Root cause: only one error scenario existed; failureReason was never
+// asserted. The ciphersuite_mismatch and unknown branches were unexercised.
+// Tests below verify the three classification paths and that
+// appendFailedWelcome is called with the correct failureReason.
+// (no AC in the specs — spec-gap; the behavior is observable and matters for
+// diagnostics surfaced to the user in the failed-welcome log.)
+// ─────────────────────────────────────────────────────────────────────────────
+describe("joinFromWelcomeInvite — failure reason classification (GAP-C)", () => {
+  const mockAppendFailedWelcome = appendFailedWelcome as ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("classifies errors matching /[Nn]o matching/i as no_matching_kp", async () => {
+    const client = {
+      joinGroupFromWelcome: vi.fn().mockRejectedValue(
+        new Error("No matching KeyPackage found in local store."),
+      ),
+    } as any;
+    const inviteReader = { markAsRead: vi.fn().mockResolvedValue(undefined) } as any;
+
+    await joinFromWelcomeInvite(client, inviteReader, { id: "invite-nm" } as any);
+
+    expect(mockAppendFailedWelcome).toHaveBeenCalledWith(
+      expect.objectContaining({ failureReason: "no_matching_kp" }),
+    );
+  });
+
+  it("classifies errors matching /ciphersuite/i as ciphersuite_mismatch", async () => {
+    const client = {
+      joinGroupFromWelcome: vi.fn().mockRejectedValue(
+        new Error("Unsupported ciphersuite MLS_128_DHKEMP256_AES128GCM_SHA256_P256"),
+      ),
+    } as any;
+    const inviteReader = { markAsRead: vi.fn().mockResolvedValue(undefined) } as any;
+
+    await joinFromWelcomeInvite(client, inviteReader, { id: "invite-cs" } as any);
+
+    expect(mockAppendFailedWelcome).toHaveBeenCalledWith(
+      expect.objectContaining({ failureReason: "ciphersuite_mismatch" }),
+    );
+  });
+
+  it("classifies errors matching neither pattern as unknown", async () => {
+    const client = {
+      joinGroupFromWelcome: vi.fn().mockRejectedValue(
+        new Error("Internal epoch mismatch — cannot advance"),
+      ),
+    } as any;
+    const inviteReader = { markAsRead: vi.fn().mockResolvedValue(undefined) } as any;
+
+    await joinFromWelcomeInvite(client, inviteReader, { id: "invite-unk" } as any);
+
+    expect(mockAppendFailedWelcome).toHaveBeenCalledWith(
+      expect.objectContaining({ failureReason: "unknown" }),
+    );
+  });
+
+  it("records the failing invite's gift-wrap event id in the failure record", async () => {
+    const client = {
+      joinGroupFromWelcome: vi.fn().mockRejectedValue(new Error("No matching key")),
+    } as any;
+    const inviteReader = { markAsRead: vi.fn().mockResolvedValue(undefined) } as any;
+
+    await joinFromWelcomeInvite(
+      client,
+      inviteReader,
+      { id: "gift-wrap-abc123" } as any,
+    );
+
+    expect(mockAppendFailedWelcome).toHaveBeenCalledWith(
+      expect.objectContaining({ giftWrapEventId: "gift-wrap-abc123" }),
+    );
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GAP-D: fetchAndApplyTaskBootstrap — payload validation with non-empty tasks
+//
+// Root cause: the existing "wrong version" test uses tasks:[], so a mutant that
+// bypasses the version check still returns [] (no tasks to process). The
+// individual OR-chain validation clauses needed tests with non-empty task
+// arrays to make bypasses detectable.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("fetchAndApplyTaskBootstrap — payload validation clauses with non-empty tasks (GAP-D)", () => {
+  const GID = "group-gapd";
+  const OPK = "ownpubkey-gapd";
+  const IPK = "inviterpubkey-gapd";
+
+  function makeClientD(events: unknown[]) {
+    return { network: { request: vi.fn().mockResolvedValue(events) } };
+  }
+
+  it("rejects wrong-version payload even when tasks are non-empty (version check not bypassed)", async () => {
+    const nonEmptyTask = makeTask({ id: "t-version", updatedAt: 100 });
+    const badPayload = { version: 2, type: "task.state_sync", groupId: GID, tasks: [nonEmptyTask] };
+    const signer = { nip44: { decrypt: vi.fn().mockResolvedValue(JSON.stringify(badPayload)) } };
+    const event = { ...makeRelayEvent(IPK, "enc"), id: "ev-ver" };
+    const client = makeClientD([event]);
+
+    const result = await fetchAndApplyTaskBootstrap(GID, OPK, signer as any, client as any, [], new Map());
+
+    expect(result).toEqual([]);
+  });
+
+  it("rejects wrong-type payload even when tasks are non-empty (type field check)", async () => {
+    const nonEmptyTask = makeTask({ id: "t-type", updatedAt: 100 });
+    const badPayload = { version: 1, type: "task.created", groupId: GID, tasks: [nonEmptyTask] };
+    const signer = { nip44: { decrypt: vi.fn().mockResolvedValue(JSON.stringify(badPayload)) } };
+    const event = { ...makeRelayEvent(IPK, "enc"), id: "ev-type" };
+    const client = makeClientD([event]);
+
+    const result = await fetchAndApplyTaskBootstrap(GID, OPK, signer as any, client as any, [], new Map());
+
+    expect(result).toEqual([]);
+  });
+
+  it("rejects a decrypted JSON null payload (null check: typeof null === 'object')", async () => {
+    // JSON.parse("null") === null; typeof null === "object" so the null guard is required.
+    const signer = { nip44: { decrypt: vi.fn().mockResolvedValue("null") } };
+    const event = { ...makeRelayEvent(IPK, "enc"), id: "ev-null" };
+    const client = makeClientD([event]);
+
+    const result = await fetchAndApplyTaskBootstrap(GID, OPK, signer as any, client as any, [], new Map());
+
+    expect(result).toEqual([]);
+  });
+
+  it("rejects a decrypted JSON primitive (string) payload (typeof !== 'object' check)", async () => {
+    // JSON.parse('"hello"') === "hello"; typeof "hello" === "string", not "object".
+    const signer = { nip44: { decrypt: vi.fn().mockResolvedValue('"hello"') } };
+    const event = { ...makeRelayEvent(IPK, "enc"), id: "ev-str" };
+    const client = makeClientD([event]);
+
+    const result = await fetchAndApplyTaskBootstrap(GID, OPK, signer as any, client as any, [], new Map());
+
+    expect(result).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GAP-E: CRDT updatedByDevice tie-break (third level)
+//        epic-new-member-task-state-sync:AC-2 (CRDT convergence) /
+//        AC-8 (multi-inviter convergence)
+//
+// Root cause: no test had equal updatedAt AND equal updatedBy with differing
+// updatedByDevice values. The third tie-break level and its ??"" defaulting
+// for undefined were uncovered.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("fetchAndApplyTaskBootstrap — CRDT updatedByDevice tie-break (GAP-E / AC-2, AC-8)", () => {
+  const GID_E = "group-gape";
+  const OPK_E = "ownpubkey-gape";
+  const IPK_E = "inviterpubkey-gape";
+
+  function makeSignerE(tasks: Task[]) {
+    const payload: TaskStateSyncPayload = {
+      version: 1,
+      type: "task.state_sync",
+      groupId: GID_E,
+      tasks,
+      syncedAt: 1000,
+      inviterPubkey: IPK_E,
+    };
+    return { nip44: { decrypt: vi.fn().mockResolvedValue(JSON.stringify(payload)) } };
+  }
+
+  function makeClientE() {
+    return { network: { request: vi.fn().mockResolvedValue([makeRelayEvent(IPK_E, "enc")]) } };
+  }
+
+  it("incoming wins when updatedByDevice is strictly less (third tie-break win — AC-2)", async () => {
+    const existing = { ...makeTask({ id: "t1", updatedAt: 100, updatedBy: "same" }), updatedByDevice: "device-b" } as Task;
+    const incoming = { ...makeTask({ id: "t1", updatedAt: 100, updatedBy: "same" }), updatedByDevice: "device-a" } as Task; // "a" < "b"
+    const currentState = new Map([["t1", existing]]);
+
+    const result = await fetchAndApplyTaskBootstrap(
+      GID_E, OPK_E, makeSignerE([incoming]) as any, makeClientE() as any, [], currentState,
+    );
+
+    expect(result).toHaveLength(1);
+    expect((result[0] as any).task.updatedByDevice).toBe("device-a");
+  });
+
+  it("existing wins when incoming updatedByDevice is strictly greater (third tie-break loss — AC-2)", async () => {
+    const existing = { ...makeTask({ id: "t1", updatedAt: 100, updatedBy: "same" }), updatedByDevice: "device-a" } as Task;
+    const incoming = { ...makeTask({ id: "t1", updatedAt: 100, updatedBy: "same" }), updatedByDevice: "device-b" } as Task; // "b" > "a"
+    const currentState = new Map([["t1", existing]]);
+
+    const result = await fetchAndApplyTaskBootstrap(
+      GID_E, OPK_E, makeSignerE([incoming]) as any, makeClientE() as any, [], currentState,
+    );
+
+    expect(result).toEqual([]);
+  });
+
+  it("existing wins on complete tie (equal updatedByDevice values → no override)", async () => {
+    const existing = { ...makeTask({ id: "t1", updatedAt: 100, updatedBy: "same" }), updatedByDevice: "device-x" } as Task;
+    const incoming = { ...makeTask({ id: "t1", updatedAt: 100, updatedBy: "same" }), updatedByDevice: "device-x" } as Task;
+    const currentState = new Map([["t1", existing]]);
+
+    const result = await fetchAndApplyTaskBootstrap(
+      GID_E, OPK_E, makeSignerE([incoming]) as any, makeClientE() as any, [], currentState,
+    );
+
+    expect(result).toEqual([]);
+  });
+
+  it("treats undefined updatedByDevice as '' for tie-break purposes (?? '' defaulting)", async () => {
+    // existing has no updatedByDevice (undefined → ""); incoming also "".
+    // "" < "" is false → existing wins.
+    const existing = makeTask({ id: "t1", updatedAt: 100, updatedBy: "same" }); // no updatedByDevice
+    const incoming = { ...makeTask({ id: "t1", updatedAt: 100, updatedBy: "same" }), updatedByDevice: "" } as Task;
+    const currentState = new Map([["t1", existing]]);
+
+    const result = await fetchAndApplyTaskBootstrap(
+      GID_E, OPK_E, makeSignerE([incoming]) as any, makeClientE() as any, [], currentState,
+    );
+
+    expect(result).toEqual([]);
+  });
+
+  // Property (Family B — metamorphic: commutativity of the third tie-break).
+  // For any pair of distinct device IDs, the winner of the tie-break is the
+  // same regardless of which relay event is processed first.
+  // epic-new-member-task-state-sync:AC-8 (multi-inviter convergence)
+  it("third tie-break is deterministic regardless of relay-event delivery order (fast-check / AC-8)", async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.string({ minLength: 1, maxLength: 20 }),
+        fc.string({ minLength: 1, maxLength: 20 }),
+        async (deviceA, deviceB) => {
+          fc.pre(deviceA !== deviceB);
+
+          const winner = deviceA < deviceB ? deviceA : deviceB;
+          const loser = deviceA < deviceB ? deviceB : deviceA;
+
+          const taskWinner = { ...makeTask({ id: "T1", updatedAt: 50, updatedBy: "same" }), updatedByDevice: winner } as Task;
+          const taskLoser = { ...makeTask({ id: "T1", updatedAt: 50, updatedBy: "same" }), updatedByDevice: loser } as Task;
+
+          const payloadW: TaskStateSyncPayload = { version: 1, type: "task.state_sync", groupId: GID_E, tasks: [taskWinner], syncedAt: 1000, inviterPubkey: IPK_E };
+          const payloadL: TaskStateSyncPayload = { version: 1, type: "task.state_sync", groupId: GID_E, tasks: [taskLoser], syncedAt: 1000, inviterPubkey: IPK_E };
+
+          // Order 1: winner event arrives first
+          const signerWL = { nip44: { decrypt: vi.fn().mockResolvedValueOnce(JSON.stringify(payloadW)).mockResolvedValueOnce(JSON.stringify(payloadL)) } };
+          const clientWL = { network: { request: vi.fn().mockResolvedValue([makeRelayEvent(IPK_E, "enc-w"), makeRelayEvent(IPK_E, "enc-l")]) } };
+          const resultWL = await fetchAndApplyTaskBootstrap(GID_E, OPK_E, signerWL as any, clientWL as any, [], new Map());
+
+          // Order 2: loser event arrives first
+          const signerLW = { nip44: { decrypt: vi.fn().mockResolvedValueOnce(JSON.stringify(payloadL)).mockResolvedValueOnce(JSON.stringify(payloadW)) } };
+          const clientLW = { network: { request: vi.fn().mockResolvedValue([makeRelayEvent(IPK_E, "enc-l"), makeRelayEvent(IPK_E, "enc-w")]) } };
+          const resultLW = await fetchAndApplyTaskBootstrap(GID_E, OPK_E, signerLW as any, clientLW as any, [], new Map());
+
+          // Both orders must converge to exactly one task.created for the winner.
+          expect(resultWL).toHaveLength(1);
+          expect(resultLW).toHaveLength(1);
+          expect((resultWL[0] as any).task.updatedByDevice).toBe(winner);
+          expect((resultLW[0] as any).task.updatedByDevice).toBe(winner);
+        },
+      ),
+      { numRuns: 50 },
+    );
+  });
+});
+
+// Targeted test for the specific surviving mutant at line 1441:
+//   ConditionalExpression: `task.updatedBy === existing.updatedBy` → `true`
+//
+// All GAP-E tests above use updatedBy: "same" for both sides, making
+// the `=== "same"` check trivially true. The mutation replaces that check
+// with `true`, which is indistinguishable when both sides are equal.
+//
+// This test uses *different* updatedBy values so the level-3 tie-break
+// (updatedByDevice) should NEVER fire — the winner is determined solely
+// by updatedAt and updatedBy (level 2). The mutation would incorrectly
+// allow the device-ID tie-break to fire, producing a wrong winner.
+describe("fetchAndApplyTaskBootstrap — CRDT level-2 gate guards level-3 (line 1441 mutant)", () => {
+  const GID_M = "group-m1441";
+  const OPK_M = "ownpubkey-m1441";
+  const IPK_M = "inviterpubkey-m1441";
+
+  it("existing wins at level-2 (higher updatedBy); level-3 device tie-break must NOT fire", async () => {
+    // existing.updatedBy = "aaa" wins level-2 (lower pubkey wins), so
+    // existing is already the winner. The incoming task has a higher updatedBy
+    // ("bbb" > "aaa") and a lower updatedByDevice ("device-a" < "device-z").
+    // The mutation (`task.updatedBy === → true`) would incorrectly trigger the
+    // device tie-break and let incoming win via updatedByDevice, which is wrong.
+    const existing = {
+      ...makeTask({ id: "t2", updatedAt: 50, updatedBy: "aaa" }),
+      updatedByDevice: "device-z",
+    } as Task;
+    const incoming = {
+      ...makeTask({ id: "t2", updatedAt: 50, updatedBy: "bbb" }),
+      updatedByDevice: "device-a",  // lower device ID — MUST NOT win
+    } as Task;
+    const currentState = new Map([["t2", existing]]);
+
+    const payload: TaskStateSyncPayload = {
+      version: 1, type: "task.state_sync", groupId: GID_M,
+      tasks: [incoming], syncedAt: 1000, inviterPubkey: IPK_M,
+    };
+    const signer = { nip44: { decrypt: vi.fn().mockResolvedValue(JSON.stringify(payload)) } };
+    const client = { network: { request: vi.fn().mockResolvedValue([makeRelayEvent(IPK_M, "enc")]) } };
+
+    const result = await fetchAndApplyTaskBootstrap(GID_M, OPK_M, signer as any, client as any, [], currentState);
+
+    // existing wins (updatedBy "aaa" < "bbb"); result must be empty.
+    expect(result).toEqual([]);
+  });
+});
