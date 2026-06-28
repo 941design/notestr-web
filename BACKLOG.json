@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-06-28T22:05:15Z",
+  "updated_at": "2026-06-28T22:21:34Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -240,20 +240,6 @@
       "motivation": "The multi-device-sync feature is verified by other passing tests (multi-user-md.property convergence, multi-device-cross-npub TP-80/81/82, sibling-auto-invite), but this dedicated smoke remains disabled, leaving a named coverage gap and a misleading fixme in the suite",
       "behavior": "test.fixme(true) unconditionally skips; inline comment documents both blockers as test-design (not feature) issues",
       "approach": "Redesign per the relay-independence principle: within-test isolation instead of relying on clean relay; and forget a THIRD sibling (or stop asserting pageB's own count after removal) so the final assertion is satisfiable"
-    },
-    {
-      "slug": "mobile-e2e-group-create-create-button",
-      "scope": "e2e",
-      "anchor": {
-        "path": "e2e/fixtures/two-party.ts",
-        "line": 144
-      },
-      "text": "Mobile e2e: group-create 'Create' button is below the viewport fold, createGroup fixture click times out on Mobile Chrome/Safari",
-      "created_at": "2026-06-29",
-      "motivation": "On Mobile Chrome and Mobile Safari viewports the group-create 'Create' button renders outside the viewport and Playwright cannot scroll it into view; the shared createGroup fixture (two-party.ts:144) times out clicking it. This blocks the mobile variant of every e2e spec that creates a group (surfaced by idb-partition.spec.ts during the multi-user-idb epic gate, where desktop chromium passed but both mobile projects failed at createGroup).",
-      "behavior": "createGroup fills the group name successfully, then click('Create') retries ~31x with 'element is outside of the viewport' and fails after 30s. Desktop chromium is unaffected.",
-      "approach": "Either scope the assertion/scroll in the fixture (scrollIntoViewIfNeeded before click) OR fix the responsive layout so the Create button is reachable within the mobile viewport. Confirm whether real mobile users can reach Create — if not, this is a product responsive bug, not just a fixture issue.",
-      "success_signal": "idb-partition.spec.ts (and other createGroup specs) pass on Mobile Chrome + Mobile Safari"
     }
   ],
   "archive": [
