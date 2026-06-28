@@ -104,9 +104,17 @@ per-file without a whole-program typecheck), so green unit tests do **not** prov
 
 ## Documentation
 
-This project maintains a technical specification in ./docs/task-protocol.md describing the task management protocol over nostr MLS.
+The task management protocol over Nostr MLS is the **shared, cross-client
+contract** and is owned by the parent `notestr` repo at
+`../protocol/task-protocol.md` (governance: `../protocol/README.md`). This repo
+keeps only a redirect stub at `./docs/task-protocol.md`.
 
-- Whenever you work on task state, task datamodel or similar, check whether the protocol needs to be updated.
+- `notestr-web` is one implementation of that contract — it does not own it.
+- Whenever you work on task state, the task datamodel, or the wire format, check
+  whether the **parent** protocol needs updating. **Never change the wire format
+  or convergence rules in this repo alone** — protocol changes originate in the
+  parent (that unilateral drift is what diverged web from the CLI). If a change
+  here would alter the protocol, amend `../protocol/task-protocol.md` first.
 
 ## Project state
 Project orientation lives in `BACKLOG.md`. On a fresh session — or when
