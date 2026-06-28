@@ -346,8 +346,13 @@ const OVERLAP_SECONDS = 60;
  * type calls it `identifier`, but {@link KeyPackageManager.list} actually
  * emits the runtime field as `d`. We read both so we keep working past a
  * future upstream fix without churn here.
+ *
+ * Exported for the dual-read pinning test (device-sync.test.ts): the
+ * `d`-fallback is load-bearing against the marmot-ts runtime/type mismatch
+ * and must not be simplified away on the assumption the fork is "fixed" —
+ * a regression there would silently break device loading with no tsc error.
  */
-function keyPackageSlot(
+export function keyPackageSlot(
   kp: { identifier?: string } & Record<string, unknown>,
 ): string | undefined {
   const identifier = kp.identifier;

@@ -66,6 +66,7 @@ import {
   inviteAndPublishSnapshot,
   isSlotForgotten,
   joinFromWelcomeInvite,
+  keyPackageSlot,
   MAX_RETRIES_PER_EPOCH,
   publishTaskStateSync,
   removeExpectedPublishByRumorId,
@@ -2013,5 +2014,49 @@ describe("fetchAndApplyTaskBootstrap — CRDT level-2 gate guards level-3 (line 
 
     // existing wins (updatedBy "aaa" < "bbb"); result must be empty.
     expect(result).toEqual([]);
+  });
+});
+
+// keyPackageSlot — dual-read contract pinning (backlog: marmot-ts-fork-types-lag).
+//
+// marmot-ts v0.5 has a runtime/type mismatch: the static type calls the slot
+// field `identifier`, but KeyPackageManager.list() emits it at runtime as `d`.
+// keyPackageSlot reads BOTH. This guard is invisible to the type system, so a
+// future "the fork is fixed now" simplification that drops the `d` fallback —
+// or an upstream rename — would silently break device loading with no tsc
+// error. These tests fail loudly if the dual-read or its precedence regresses.
+describe("keyPackageSlot — dual-read slot resolution (fork runtime/type mismatch)", () => {
+  it("returns the typed `identifier` field when present", () => {
+    expect(keyPackageSlot({ identifier: "slot-A" })).toBe("slot-A");
+  });
+
+  it("falls back to the runtime `d` field when `identifier` is absent", () => {
+    expect(keyPackageSlot({ d: "slot-D" })).toBe("slot-D");
+  });
+
+  it("prefers `identifier` over `d` when both are present", () => {
+    // Precedence is load-bearing: once the fork ships the typed field, it must
+    // win so we don't read a stale duplicate `d`.
+    expect(keyPackageSlot({ identifier: "slot-A", d: "slot-D" })).toBe("slot-A");
+  });
+
+  it("treats an empty-string `identifier` as absent and falls back to `d`", () => {
+    // The `length > 0` guard, not mere presence, gates the fallback.
+    expect(keyPackageSlot({ identifier: "", d: "slot-D" })).toBe("slot-D");
+  });
+
+  it("returns undefined when neither field carries a non-empty string", () => {
+    expect(keyPackageSlot({})).toBeUndefined();
+    expect(keyPackageSlot({ identifier: "", d: "" })).toBeUndefined();
+    expect(keyPackageSlot({ identifier: undefined, d: undefined })).toBeUndefined();
+  });
+
+  it("ignores non-string field values rather than coercing them", () => {
+    // Defends the `typeof === "string"` guard: a numeric/object `d` must not
+    // be returned as a slot id.
+    expect(keyPackageSlot({ d: 123 as unknown as string })).toBeUndefined();
+    expect(
+      keyPackageSlot({ identifier: 0 as unknown as string, d: "slot-D" }),
+    ).toBe("slot-D");
   });
 });
