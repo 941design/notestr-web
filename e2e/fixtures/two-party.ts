@@ -58,6 +58,20 @@ export async function slotIdentifierFor(label: string): Promise<string> {
   return hashToHex64(`notestr-${label}`);
 }
 
+/**
+ * Pin the KP slot (clientId) for this browser context before authentication.
+ *
+ * ⚠️ The `slot` parameter is an *optional type with a non-optional correctness
+ * requirement* — the `slot?: string` signature does not encode it, so read this:
+ * when omitted, the slot label is **derived from the bunker pubkey**
+ * (`e2e-${bunkerPubkey.slice(0,8)}`). That is safe only for a *single* context
+ * per bunker. If two contexts share the same bunker URL and both omit `slot`,
+ * they derive the **same** clientId → the same KP slot, so the second device
+ * never appears as a separate MLS leaf (e.g. A2 collapses onto A1). Whenever one
+ * test spawns multiple contexts on the same bunker, pass an explicit, distinct
+ * `slot` to each (e.g. `"A1"`, `"A2"`). The same caveat applies transitively to
+ * `authenticate(page, url, slot?)`, which forwards `slot` here.
+ */
 export async function pinClientSlot(
   page: Page,
   bunkerUrl: string,
@@ -79,10 +93,12 @@ export async function pinClientSlot(
  * Clears app state first so each call yields a clean session in the given
  * browser context.
  *
- * `slot` (optional) labels this context's KP slot. When omitted, derived
+ * ⚠️ `slot` (optional) labels this context's KP slot. When omitted, derived
  * from the bunker pubkey so a single context per role gets a stable slot
  * across tests; pass an explicit value (e.g. `"A1"`, `"A2"`) when one
- * test spawns multiple contexts on the same bunker.
+ * test spawns multiple contexts on the same bunker — otherwise both contexts
+ * collide onto the same leaf. See `pinClientSlot` for the full hazard note;
+ * the optional type signature does NOT encode this requirement.
  */
 export async function authenticate(
   page: Page,
