@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-06-28T01:58:56Z",
+  "updated_at": "2026-06-28T02:00:22Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -293,18 +293,6 @@
       ]
     },
     {
-      "slug": "playwright-retries-zero-after-baseline",
-      "scope": "any",
-      "anchor": {
-        "path": "playwright.config.ts:retries"
-      },
-      "text": "Drop playwright.config.ts retries to 0 unconditionally after epic-mls-live-delivery-race's 50-run baseline",
-      "created_at": "2026-05-18",
-      "motivation": "Gated on the epic-mls-live-delivery-race 50-run baseline confirming the MLS live-delivery e2e tests are stable without a retry crutch; only then is dropping the default retry safe.",
-      "behavior": "playwright.config.ts:7 sets retries to (NEXT_PUBLIC_E2E_TRACE_MLS === '1' ? 0 : 1) — normal e2e runs still get one retry, which can mask flaky-but-real failures.",
-      "approach": "Once the baseline run confirms stability, change line 7 to 'retries: 0' unconditionally."
-    },
-    {
       "slug": "multi-device-sync-spec-ts-60",
       "scope": "e2e",
       "anchor": {
@@ -422,6 +410,12 @@
       "text": "device-store: joined-groups trio contract has no AC",
       "reason": "Tested-but-unspecced internal storage helper. device-store.ts is at 97.1% mutation score (verified 2026-06-28 via stryker.device-store.conf.json: 67 killed / 2 survived / 0 no-coverage); device-store.test.ts is the executable contract for this behavior. These are internal IDB-bookkeeping helpers (device-name defaulting/trim, firstSeen/lastSeen, listDevices sort/null-tolerance, invited-key prefix clearing, joined-groups flags) — formal prose ACs add maintenance burden without changing product behavior or test strength. Re-open against a device-management epic if/when this behavior becomes a product concern.",
       "source_slug": "device-store-joined-groups-trio-contract"
+    },
+    {
+      "date": "2026-06-28",
+      "text": "Drop playwright.config.ts retries to 0 unconditionally after epic-mls-live-delivery-race's 50-run baseline",
+      "reason": "Contraindicated by current evidence. The premise (post-baseline stability proven, so retries can go to 0) no longer holds: the full chromium e2e run on 2026-06-28 showed multi-user-md.property.spec.ts recovered ONLY on retry #1 (officially 'flaky'), and multi-user.property / multi-user-3p.property fail on the documented multi-context NIP-46 connect-race. retries=1 is load-bearing mitigation for that known harness flakiness; dropping to 0 would convert flaky-but-recovering runs into hard CI failures. The standing project policy treats multi-context red as harness flakiness (not a product bug), and retries=1 is its mitigation.",
+      "source_slug": "playwright-retries-zero-after-baseline"
     }
   ]
 }
