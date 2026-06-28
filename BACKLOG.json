@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-06-28T22:21:34Z",
+  "updated_at": "2026-06-28T22:32:03Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -130,7 +130,12 @@
         ]
       },
       "text": "Board.tsx renders data-column={status} in both the mobile panel (line 264) and the desktop grid (line 305), so every e2e [data-column=\"...\"] selector matches two elements. Specs work around this with .first() across ~13 files; the workaround relies on (a) mobile-first DOM ordering and (b) Playwright toContainText reading hidden DOM. Triage 2026-04-30 treated each match-failure as a separate test bug rather than fixing the structural duplication. Consider scoping the column marker to a viewport-stable attribute or hoisting the assertion onto a single Board-level element.",
-      "created_at": "2026-05-18"
+      "created_at": "2026-05-18",
+      "deferred": {
+        "reason": "spec-gap",
+        "detail": "marker disambiguation undetermined across 14 e2e specs",
+        "stamped_at": "2026-06-29"
+      }
     },
     {
       "slug": "forgetsiblingdevice-swallows-per-group-network",
