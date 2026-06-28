@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-06-28T22:32:03Z",
+  "updated_at": "2026-06-28T23:00:00Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -144,7 +144,12 @@
         "path": "src/marmot/forget-device.ts"
       },
       "text": "forgetSiblingDevice swallows per-group network failures and unconditionally calls markSlotForgotten — v2 should add a durable resume path so partial failures are retryable from where they left off",
-      "created_at": "2026-05-18"
+      "created_at": "2026-05-18",
+      "deferred": {
+        "reason": "spec-gap",
+        "detail": "v2 durable-resume design undetermined; forget-semantics contract",
+        "stamped_at": "2026-06-29"
+      }
     },
     {
       "slug": "marmotprovider-idb-stores-keypackagestore",
@@ -154,7 +159,12 @@
         "line": 162
       },
       "text": "MarmotProvider IDB stores keyPackageStore, groupStateStore, inviteStore are local vars inside init() closure at client.tsx:162-164 and not exported — forced S3 to use indexedDB.deleteDatabase by stable string name as a workaround; a MarmotClient.clearLocalState() upstream PR or lifted exports would remove the implicit name-coupling",
-      "created_at": "2026-05-18"
+      "created_at": "2026-05-18",
+      "deferred": {
+        "reason": "spec-gap",
+        "detail": "undetermined: lift-exports vs upstream clearLocalState PR; cleanup only",
+        "stamped_at": "2026-06-29"
+      }
     },
     {
       "slug": "deferred-l3-deliberate-regression-verifications-ac",
@@ -177,16 +187,6 @@
       "created_at": "2026-05-19",
       "approach": "Introduce a reusable 'live-relay-required' AC tag in the spec template so offline implementation sessions stop inventing per-story ad-hoc deferrals. Tagged ACs are compile-verified offline and collected into one live-relay verification pass (Playwright + relay container) in CI or post-merge.",
       "success_signal": "A single tag marks every AC needing a live relay; one CI job exercises all of them; no story-local deferral prose recurs in retros."
-    },
-    {
-      "slug": "authenticate-page-url-slot-slot-param",
-      "scope": "any",
-      "anchor": {
-        "path": "e2e/fixtures/two-party.ts",
-        "line": 64
-      },
-      "text": "authenticate(page, url, slot?) slot param is a silent correctness requirement when two contexts share the same bunker URL — omitting slot causes both contexts to derive the same KP slot from the bunker pubkey, so A2 never appears as a separate leaf; this is not visible from the optional type signature alone",
-      "created_at": "2026-05-19"
     },
     {
       "slug": "asserts5-3p-membership-anchor-and-dead-branch",
