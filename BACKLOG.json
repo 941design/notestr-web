@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-06-28T23:00:00Z",
+  "updated_at": "2026-06-28T23:07:18Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -175,7 +175,12 @@
       "text": "Deferred L3 deliberate-regression verifications (AC-S5-4, AC-A14-6, AC-C0-5, AC-S6-4, AC-S10-4) remain unexercised — make test-property runs only L1/L2; the L3 behavioral checks require a live Playwright run with relay container up",
       "created_at": "2026-05-18",
       "approach": "Add a 'make test-property-l3' target (or wire the deferred L3 ACs into a Playwright-against-relay CI job) so AC-S5-4, AC-A14-6, AC-C0-5, AC-S6-4, AC-S10-4 are actually exercised rather than compile-only.",
-      "success_signal": "The five deferred L3 deliberate-regression ACs run green in CI against a live relay container."
+      "success_signal": "The five deferred L3 deliberate-regression ACs run green in CI against a live relay container.",
+      "deferred": {
+        "reason": "spec-gap",
+        "detail": "L3 regression ACs need flaky live-relay property run",
+        "stamped_at": "2026-06-29"
+      }
     },
     {
       "slug": "deferred-live-relay-acs-md-property",
@@ -186,7 +191,12 @@
       "text": "Deferred live-relay ACs in MD property spec (AC-MD-ATTACH-6, AC-MD-RUN-5, AC-MD-WC-1/2/3, AC-VAL-MD-1/2) require a live relay container and were only compilation-verified — full runtime counterexample observation and wall-clock validation remain unexercised post-merge",
       "created_at": "2026-05-19",
       "approach": "Introduce a reusable 'live-relay-required' AC tag in the spec template so offline implementation sessions stop inventing per-story ad-hoc deferrals. Tagged ACs are compile-verified offline and collected into one live-relay verification pass (Playwright + relay container) in CI or post-merge.",
-      "success_signal": "A single tag marks every AC needing a live relay; one CI job exercises all of them; no story-local deferral prose recurs in retros."
+      "success_signal": "A single tag marks every AC needing a live relay; one CI job exercises all of them; no story-local deferral prose recurs in retros.",
+      "deferred": {
+        "reason": "spec-gap",
+        "detail": "MD live-relay ACs need runtime run; flaky multi-context",
+        "stamped_at": "2026-06-29"
+      }
     },
     {
       "slug": "asserts5-3p-membership-anchor-and-dead-branch",
@@ -202,7 +212,12 @@
       "created_at": "2026-05-26",
       "motivation": "Surfaced by the base:feature review gate (codex, read-only). No P1 issues; recorded as test-coverage-quality follow-ups for whatever story next owns the 3-party assertion bodies rather than re-opening a just-verified file in the wrap-up.",
       "behavior": "No product-behavior impact (test-only). The biconditional check is skipped, not falsified, on A-absent states, and the degraded branch is dead while strict hooks are present.",
-      "approach": "P2: source membership from whichever actor pages still have the group loaded (or each actor's own page) so S5 still validates B/C when A has left. P3: move the getPubkeyLeafCountHook call after the !leafOk guard and make the degraded branch genuinely hook-free (positive direction via member-set only), or delete the dead branch once the l3-completion hook story lands."
+      "approach": "P2: source membership from whichever actor pages still have the group loaded (or each actor's own page) so S5 still validates B/C when A has left. P3: move the getPubkeyLeafCountHook call after the !leafOk guard and make the degraded branch genuinely hook-free (positive direction via member-set only), or delete the dead branch once the l3-completion hook story lands.",
+      "deferred": {
+        "reason": "spec-gap",
+        "detail": "low-prio test polish; under-assert accepted; flaky spec",
+        "stamped_at": "2026-06-29"
+      }
     },
     {
       "slug": "no-component-test-layer-jsdom-rtl",
@@ -228,7 +243,12 @@
           "finding_anchor": "Vitest node env cannot import .tsx — extract pure helpers",
           "captured_at": "2026-06-02"
         }
-      ]
+      ],
+      "deferred": {
+        "reason": "spec-gap",
+        "detail": "jsdom/RTL component layer = test-arch decision + infra",
+        "stamped_at": "2026-06-29"
+      }
     },
     {
       "slug": "multi-device-sync-spec-ts-60",
@@ -244,7 +264,12 @@
       "created_at": "2026-06-27",
       "motivation": "The multi-device-sync feature is verified by other passing tests (multi-user-md.property convergence, multi-device-cross-npub TP-80/81/82, sibling-auto-invite), but this dedicated smoke remains disabled, leaving a named coverage gap and a misleading fixme in the suite",
       "behavior": "test.fixme(true) unconditionally skips; inline comment documents both blockers as test-design (not feature) issues",
-      "approach": "Redesign per the relay-independence principle: within-test isolation instead of relying on clean relay; and forget a THIRD sibling (or stop asserting pageB's own count after removal) so the final assertion is satisfiable"
+      "approach": "Redesign per the relay-independence principle: within-test isolation instead of relying on clean relay; and forget a THIRD sibling (or stop asserting pageB's own count after removal) so the final assertion is satisfiable",
+      "deferred": {
+        "reason": "spec-gap",
+        "detail": "fixme smoke needs redesign/delete decision; behavior covered",
+        "stamped_at": "2026-06-29"
+      }
     }
   ],
   "archive": [
