@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-06-28T01:02:09Z",
+  "updated_at": "2026-06-28T01:32:26Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -448,6 +448,36 @@
       "date": "2026-05-19",
       "text": "Including kinds 443, 444, 445, 0, 1059 in NIP-46 perms list because marmot-ts documentation implied they were user-signer kinds",
       "reason": "S5 implementation verified via marmot-ts dist/client/group/marmot-group.js and applesauce-common/dist/operations/gift-wrap.js: kind 443 is legacy and query-only; kind 444 is an unsigned NIP-59 rumor by design; kind 445 uses an ephemeral key via finalizeEvent; kind 1059 (gift wrap outer) also uses an ephemeral key; kind 0 is not exercised. The actual user-signer kind for sending MLS welcomes is kind 13 (NIP-59 Seal), which was absent from the original spec list. The spec's architecture context was based on marmot-ts kind numbers, not on which signing path the user signer was actually routed through."
+    },
+    {
+      "date": "2026-06-28",
+      "text": "nostr.ts: auth-method persistence contract has no AC",
+      "reason": "False survivor. src/lib/nostr.ts helper has 100% COVERED mutation score via nostr.pure.test.ts (verified 2026-06-28 by stryker.nostr-lib.conf.json: 43 killed / 0 survived among covered). The 45.74% total reflects 51 NoCoverage mutants in the NDK signer-bridge/connect functions (bridgeNip46ToEventSigner/connectBunker/restoreNip46Session/startNostrConnect), which are e2e-tested via the real bunker, NOT these helpers. The next-mutation walker run mislabeled killed mutants as survivors due to a restricted test scope that excluded nostr.pure.test.ts.",
+      "source_slug": "nostr-ts-auth-method-persistence-contract"
+    },
+    {
+      "date": "2026-06-28",
+      "text": "nostr.ts: NIP-46 session presence check (hasNip46Session) has no AC",
+      "reason": "False survivor. src/lib/nostr.ts helper has 100% COVERED mutation score via nostr.pure.test.ts (verified 2026-06-28 by stryker.nostr-lib.conf.json: 43 killed / 0 survived among covered). The 45.74% total reflects 51 NoCoverage mutants in the NDK signer-bridge/connect functions (bridgeNip46ToEventSigner/connectBunker/restoreNip46Session/startNostrConnect), which are e2e-tested via the real bunker, NOT these helpers. The next-mutation walker run mislabeled killed mutants as survivors due to a restricted test scope that excluded nostr.pure.test.ts.",
+      "source_slug": "nostr-ts-nip-46-session-presence"
+    },
+    {
+      "date": "2026-06-28",
+      "text": "nostr.ts: pubkey display format (shortenPubkey) has no AC",
+      "reason": "False survivor. src/lib/nostr.ts helper has 100% COVERED mutation score via nostr.pure.test.ts (verified 2026-06-28 by stryker.nostr-lib.conf.json: 43 killed / 0 survived among covered). The 45.74% total reflects 51 NoCoverage mutants in the NDK signer-bridge/connect functions (bridgeNip46ToEventSigner/connectBunker/restoreNip46Session/startNostrConnect), which are e2e-tested via the real bunker, NOT these helpers. The next-mutation walker run mislabeled killed mutants as survivors due to a restricted test scope that excluded nostr.pure.test.ts.",
+      "source_slug": "nostr-ts-pubkey-display-format-shortenpubkey"
+    },
+    {
+      "date": "2026-06-28",
+      "text": "nostr.ts: npub/hex encoding helpers have no AC",
+      "reason": "False survivor. src/lib/nostr.ts helper has 100% COVERED mutation score via nostr.pure.test.ts (verified 2026-06-28 by stryker.nostr-lib.conf.json: 43 killed / 0 survived among covered). The 45.74% total reflects 51 NoCoverage mutants in the NDK signer-bridge/connect functions (bridgeNip46ToEventSigner/connectBunker/restoreNip46Session/startNostrConnect), which are e2e-tested via the real bunker, NOT these helpers. The next-mutation walker run mislabeled killed mutants as survivors due to a restricted test scope that excluded nostr.pure.test.ts.",
+      "source_slug": "nostr-ts-npub-hex-encoding-helpers"
+    },
+    {
+      "date": "2026-06-28",
+      "text": "nostr.ts: NIP-07 browser extension detection (getNip07Signer) has no AC",
+      "reason": "False survivor. src/lib/nostr.ts helper has 100% COVERED mutation score via nostr.pure.test.ts (verified 2026-06-28 by stryker.nostr-lib.conf.json: 43 killed / 0 survived among covered). The 45.74% total reflects 51 NoCoverage mutants in the NDK signer-bridge/connect functions (bridgeNip46ToEventSigner/connectBunker/restoreNip46Session/startNostrConnect), which are e2e-tested via the real bunker, NOT these helpers. The next-mutation walker run mislabeled killed mutants as survivors due to a restricted test scope that excluded nostr.pure.test.ts.",
+      "source_slug": "nostr-ts-nip-07-browser-extension"
     }
   ]
 }
