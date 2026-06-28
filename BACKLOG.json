@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-06-28T02:00:22Z",
+  "updated_at": "2026-06-28T07:52:53Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -264,35 +264,6 @@
       ]
     },
     {
-      "slug": "marmot-ts-fork-types-lag-runtime-shape",
-      "scope": "any",
-      "anchor": {
-        "path": "src/marmot/device-sync.ts",
-        "range": [
-          343,
-          353
-        ]
-      },
-      "text": "marmot-ts fork public types don't reflect runtime: identifier/d-tag mismatch is guarded locally (device-sync.ts extractSlot) but absent from the fork's .d.ts — a future fork update could silently break device loading with no tsc error",
-      "created_at": "2026-06-18",
-      "motivation": "We control the marmot-ts fork (CLAUDE.md), so type/runtime drift is fixable at the source instead of being papered over with consumer-side casts. Today the mismatch is caught only by a hand-written extractSlot guard + a local comment; nothing makes the contract type-checked, so a fork bump that changes d-tag extraction breaks device loading silently.",
-      "behavior": "marmot-ts KeyPackageManager.list returns objects whose slot field is runtime 'identifier' while the public type calls it 'd' (or vice-versa); device-sync.ts:343-353 defensively reads it. Separately, marmot-client adoptClientState emits 'updated' before 'joined', an ordering the .d.ts (which only references 'joined') does not expose — confirmed only by tracing compiled dist.",
-      "approach": "Fix the fork's type declarations to match runtime (identifier/d), and document the adoptClientState emit ordering in the fork types or a consumer comment. Add a type-level regression so a future fork bump that changes the shape fails tsc rather than runtime device loading.",
-      "success_signal": "A marmot-ts version bump that changes d-tag extraction or event ordering produces a tsc error in notestr-web, not a silent device-loading failure.",
-      "evidence": [
-        {
-          "retro_path": "/home/mrother.linux/.claude/plugins/data/base-941design/retros/notestr-web/devicestab-relay-fetch-failure-degrades-silently-2026-06-01-0000.md",
-          "finding_anchor": "From code-explorer (focus: marmot-ts d-tag extraction)",
-          "captured_at": "2026-06-02"
-        },
-        {
-          "retro_path": "/home/mrother.linux/.claude/plugins/data/base-941design/retros/notestr-web/self-forget-no-mls-propagation-2026-05-20-2200.md",
-          "finding_anchor": "From code-explorer (focus: ingest-side mapping)",
-          "captured_at": "2026-06-02"
-        }
-      ]
-    },
-    {
       "slug": "multi-device-sync-spec-ts-60",
       "scope": "e2e",
       "anchor": {
@@ -307,31 +278,6 @@
       "motivation": "The multi-device-sync feature is verified by other passing tests (multi-user-md.property convergence, multi-device-cross-npub TP-80/81/82, sibling-auto-invite), but this dedicated smoke remains disabled, leaving a named coverage gap and a misleading fixme in the suite",
       "behavior": "test.fixme(true) unconditionally skips; inline comment documents both blockers as test-design (not feature) issues",
       "approach": "Redesign per the relay-independence principle: within-test isolation instead of relying on clean relay; and forget a THIRD sibling (or stop asserting pageB's own count after removal) so the final assertion is satisfiable"
-    },
-    {
-      "slug": "event-side-updatedbydevice-normalization-has-no",
-      "scope": "any",
-      "anchor": {
-        "path": "src/store/task-reducer.ts:25,46,67,88"
-      },
-      "text": "event-side updatedByDevice ?? '' normalization has no AC in any epic",
-      "created_at": "2026-06-28",
-      "motivation": "The LWW guard normalizes absent device IDs on both sides of (event.updatedByDevice ?? '') < (existing.updatedByDevice ?? ''). The existing-side ?? '' is covered by existing tests ('loses to a legacy existing task whose updatedByDevice is absent'). The event-side ?? '' had no test, discovered by Stryker mutation testing — a StringLiteral mutation replacing '' with 'Stryker was here!' survived because all test device IDs use lowercase a-z (ASCII >= 100), which sort after 'S' (83), making the mutation undetectable. The invariant to spec: when an event omits updatedByDevice, it normalizes to '' (lexicographic minimum), so it wins over any existing task with a non-empty device ID under a timestamp+pubkey tie. This matters for CRDT convergence when legacy events (no device field) arrive after sibling-device events.",
-      "behavior": "An event with undefined updatedByDevice normalizes to '' on the left side of the device-level tie-break comparison, winning over any existing task whose updatedByDevice is a non-empty string. Pinned by four new example-based tests using device IDs 'A', 'B', 'Q', '9' (all ASCII <= 82, below 'S').",
-      "kind": "spec-gap"
-    },
-    {
-      "slug": "joinfromwelcomeinvite-failure-classification-no",
-      "scope": "any",
-      "anchor": {
-        "path": "src/marmot/device-sync.ts",
-        "line": 440
-      },
-      "text": "joinFromWelcomeInvite failure classification (no_matching_kp / ciphersuite_mismatch / unknown) has no AC in any epic",
-      "created_at": "2026-06-28",
-      "motivation": "When an MLS welcome invite fails, the function classifies the error into one of three reasons (no_matching_kp, ciphersuite_mismatch, unknown) and records it for user-facing diagnostic display. This behaviour affects what the user sees in the failed-welcome log. No acceptance criterion in any epic specifies the classification rules or their user-visible outcome.",
-      "behavior": "joinFromWelcomeInvite classifies errors by regex match against err.message: /[Nn]o matching/ → no_matching_kp; /ciphersuite/ → ciphersuite_mismatch; anything else → unknown. The failureReason is persisted via appendFailedWelcome and surfaces in the UI as invite diagnostics.",
-      "kind": "spec-gap"
     }
   ],
   "archive": [
@@ -416,6 +362,18 @@
       "text": "Drop playwright.config.ts retries to 0 unconditionally after epic-mls-live-delivery-race's 50-run baseline",
       "reason": "Contraindicated by current evidence. The premise (post-baseline stability proven, so retries can go to 0) no longer holds: the full chromium e2e run on 2026-06-28 showed multi-user-md.property.spec.ts recovered ONLY on retry #1 (officially 'flaky'), and multi-user.property / multi-user-3p.property fail on the documented multi-context NIP-46 connect-race. retries=1 is load-bearing mitigation for that known harness flakiness; dropping to 0 would convert flaky-but-recovering runs into hard CI failures. The standing project policy treats multi-context red as harness flakiness (not a product bug), and retries=1 is its mitigation.",
       "source_slug": "playwright-retries-zero-after-baseline"
+    },
+    {
+      "date": "2026-06-28",
+      "text": "event-side updatedByDevice ?? '' normalization has no AC in any epic",
+      "reason": "Tested-but-unspecced internal CRDT helper. The event-side updatedByDevice ?? '' normalization is the LWW tie-break null-coalescing; task-reducer.ts is at 100% mutation score (commit b28082a) and task-reducer.test.ts (lines 318-399) is the executable contract for the sibling-device tie-break including the ''-normalized edges. Formal prose ACs add maintenance burden without changing product behavior or test strength. Consistent with the 2026-06-28 device-store/nostr.ts dispositions.",
+      "source_slug": "event-side-updatedbydevice-normalization-has-no"
+    },
+    {
+      "date": "2026-06-28",
+      "text": "joinFromWelcomeInvite failure classification (no_matching_kp / ciphersuite_mismatch / unknown) has no AC in any epic",
+      "reason": "Tested-but-unspecced internal diagnostic helper. The no_matching_kp/ciphersuite_mismatch/unknown classification feeds FailedWelcomeRecord.failureReason, a diagnostic log field (not user-facing behavior); device-sync.test.ts:1715 'failure reason classification (GAP-C)' is the executable contract with one test per branch. Formal prose ACs add maintenance burden without changing product behavior or test strength. Consistent with the 2026-06-28 device-store/nostr.ts dispositions.",
+      "source_slug": "joinfromwelcomeinvite-failure-classification-no"
     }
   ]
 }
