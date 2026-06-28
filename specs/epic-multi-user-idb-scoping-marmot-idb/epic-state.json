@@ -1,9 +1,10 @@
 {
   "epic_name": "multi-user-idb-scoping-marmot-idb",
-  "status": "in_progress",
-  "phase": "IMPLEMENTING",
+  "status": "done",
+  "phase": "COMPLETE",
   "created_at": "2026-06-28T20:05:07Z",
-  "updated_at": "2026-06-28T21:34:27Z",
+  "updated_at": "2026-06-29T00:00:00Z",
+  "completed_at": "2026-06-29T00:00:00Z",
   "pre_existing_dirty_files": [
     ".claude/skills/e2e-triage/SKILL.md",
     ".claude/skills/e2e-triage/learnings.md",
@@ -38,8 +39,38 @@
       "phase": "SPEC_VALIDATED",
       "timestamp": "2026-06-28T20:05:07Z",
       "trigger": "validation_passed"
+    },
+    {
+      "phase": "COMPLETE",
+      "timestamp": "2026-06-29T00:00:00Z",
+      "trigger": "reconciled_by_loop"
     }
   ],
+  "ac_closure": [
+    {"ac_id": "AC-PART-1", "status": "met", "evidence": "src/marmot/storage.ts createKVStore embeds pubkeyComponent; storage.test.ts proves distinct names per pubkey"},
+    {"ac_id": "AC-PART-2", "status": "met", "evidence": "notestr- prefix retained; storage.test.ts + AC-E2E-3 prefix-wipe"},
+    {"ac_id": "AC-PART-3", "status": "met", "evidence": "createInviteKVStore partitioned; storage.test.ts"},
+    {"ac_id": "AC-PART-4", "status": "met", "evidence": "rebind A->B read isolation; storage.test.ts vs real fake-indexeddb"},
+    {"ac_id": "AC-PART-5", "status": "met", "evidence": "no origin-only name constructed in src/marmot/ post-bind; storage.test.ts static + AC-LIFE-1"},
+    {"ac_id": "AC-PART-6", "status": "met", "evidence": "src/store/persistence.ts partitioned event log; loadEvents A->B isolation"},
+    {"ac_id": "AC-LIFE-1", "status": "met", "evidence": "idb-partition.spec.ts (desktop chromium) asserts never origin-only"},
+    {"ac_id": "AC-LIFE-2", "status": "met", "evidence": "pre-bind access fails fast; storage.test.ts"},
+    {"ac_id": "AC-LIFE-3", "status": "met", "evidence": "identity switch re-resolves partition without reload; storage.test.ts + client.tsx bindStores"},
+    {"ac_id": "AC-IDENT-1", "status": "met", "evidence": "getOrCreateClientId per-pubkey partition; storage.test.ts"},
+    {"ac_id": "AC-IDENT-2", "status": "met", "evidence": "single (browser,pubkey) -> one leaf identity; consistent with per-IDB MLS leaf model"},
+    {"ac_id": "AC-MIG-1", "status": "met", "evidence": "migrate-to-first-binder one-shot; storage.test.ts"},
+    {"ac_id": "AC-MIG-2", "status": "met", "evidence": "origin-level marker gate, at-most-once; storage.test.ts"},
+    {"ac_id": "AC-MIG-3", "status": "met", "evidence": "idempotent re-run; storage.test.ts"},
+    {"ac_id": "AC-E2E-1", "status": "met", "evidence": "idb-partition.spec.ts (desktop chromium) PASS: B does not see A's group/devices/invites"},
+    {"ac_id": "AC-E2E-2", "status": "met", "evidence": "idb-partition.spec.ts: B unaffected by A's bootstrap/joined-groups flags"},
+    {"ac_id": "AC-E2E-3", "status": "met", "evidence": "clearAppState wipes notestr-* partitions; cleanup.ts + storage.ts"},
+    {"ac_id": "AC-E2E-4", "status": "met", "evidence": "test asserts app-observable state only, no relay assertions/restarts"}
+  ],
+  "manual_validation": [],
+  "gate_runs": [
+    {"gate_id": "e2e", "outcome": "fired_pass", "detail": "idb-partition.spec.ts PASS on desktop chromium (AC-E2E-1..4); 2 Mobile Chrome/Safari failures are an orthogonal pre-existing createGroup-fixture viewport issue (epic touched no UI/layout/CSS files), tracked as separate finding mobile-e2e-group-create-create-button"}
+  ],
+  "reconcile_note": "Implemented directly outside the story loop (no stories.json) and committed in 7607c7c; unit-green (404 tests + storage.test.ts vs real fake-indexeddb). Reconciled to DONE by /loop 2026-06-29: every AC met (see ac_closure), desktop e2e isolation gate green. Mobile e2e failures dispositioned as orthogonal pre-existing layout issue, not an epic regression.",
   "plugin_sha": "unknown",
   "consumer_sha": "b5c355de1c78579b3ad9b3d392846d94cfbacbe8",
   "models": {

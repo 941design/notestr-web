@@ -230,3 +230,16 @@ See [`acceptance-criteria.md`](./acceptance-criteria.md).
   partitions its own local storage by pubkey; there is no networked registry.
 - Defending against an attacker with direct IndexedDB / devtools access. This
   epic prevents *in-app* cross-account reads, not OS-level data extraction.
+
+## Amendments
+
+- **2026-06-29 (reconciled by /loop):** Implemented directly outside the
+  /base:feature story loop and committed in `7607c7c`; reconciled to **Implemented**.
+  All ACs met (see `epic-state.json#ac_closure`): unit suite (404 tests +
+  `src/marmot/storage.test.ts` against real fake-indexeddb) proves
+  PART/LIFE/IDENT/MIG/PART-5; `e2e/tests/idb-partition.spec.ts` passes on desktop
+  chromium proving AC-E2E-1..4. The 2 Mobile Chrome/Safari e2e failures are an
+  orthogonal, pre-existing responsive-layout interaction issue in the shared
+  `createGroup` fixture (the "Create" button is below the mobile viewport fold) —
+  this epic touched no UI/layout/CSS files, so it cannot have introduced them.
+  Tracked separately as backlog finding `mobile-e2e-group-create-create-button`.
