@@ -3,15 +3,43 @@
   "_comment": "Re-run after gap-closure tests — forget-device.ts only.",
   "packageManager": "npm",
   "testRunner": "vitest",
-  "vitest": { "configFile": "vitest.config.ts" },
+  "vitest": {
+    "configFile": "vitest.config.ts"
+  },
   "coverageAnalysis": "perTest",
   "concurrency": 4,
-  "mutate": ["src/marmot/forget-device.ts"],
-  "reporters": ["html", "json", "progress", "clear-text"],
-  "htmlReporter": { "fileName": "reports/mutation/deep-forget-device/index.html" },
-  "jsonReporter": { "fileName": "reports/mutation/deep-forget-device/mutation.json" },
+  "mutate": [
+    "src/marmot/forget-device.ts"
+  ],
+  "reporters": [
+    "html",
+    "json",
+    "progress",
+    "clear-text"
+  ],
+  "htmlReporter": {
+    "fileName": "reports/mutation/deep-forget-device/index.html"
+  },
+  "jsonReporter": {
+    "fileName": "reports/mutation/deep-forget-device/mutation.json"
+  },
   "tempDirName": ".stryker-tmp/deep-forget-device",
   "timeoutMS": 180000,
   "disableTypeChecks": "src/**/*.{ts,tsx}",
-  "checkers": []
+  "checkers": [],
+  "_ignore_comment": "Stryker copies the project into each sandbox and does NOT honor .gitignore. Exclude large generated/cache dirs — especially the 34k-file pnpm content store, which otherwise bloats every sandbox copy and can trip ENFILE (system file-table overflow) under FD load. None are needed to run the vitest unit suite.",
+  "ignorePatterns": [
+    "**/.pnpm-store/**",
+    "**/.stryker-tmp/**",
+    "**/reports/**",
+    "**/out/**",
+    "**/.next/**",
+    "**/test-results/**",
+    "**/playwright-report/**",
+    "**/dist/**",
+    "**/bug-reports/**",
+    "**/e2e/.triage/**",
+    "**/.claude/**",
+    "**/e2e/**"
+  ]
 }

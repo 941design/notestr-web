@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
-  "_comment": "Focused audit of src/marmot/device-store.ts only.",
+  "_comment": "Focused audit of src/store/task-reducer.ts only — CRDT LWW merge engine.",
   "packageManager": "npm",
   "testRunner": "vitest",
   "vitest": {
@@ -9,7 +9,7 @@
   "coverageAnalysis": "perTest",
   "concurrency": 4,
   "mutate": [
-    "src/marmot/device-store.ts"
+    "src/store/task-reducer.ts"
   ],
   "reporters": [
     "html",
@@ -18,13 +18,13 @@
     "clear-text"
   ],
   "htmlReporter": {
-    "fileName": "reports/mutation/deep-device-store/index.html"
+    "fileName": "reports/mutation/task-reducer/index.html"
   },
   "jsonReporter": {
-    "fileName": "reports/mutation/deep-device-store/mutation.json"
+    "fileName": "reports/mutation/task-reducer/mutation.json"
   },
-  "tempDirName": ".stryker-tmp/deep-device-store",
-  "timeoutMS": 180000,
+  "tempDirName": ".stryker-tmp/task-reducer",
+  "timeoutMS": 120000,
   "disableTypeChecks": "src/**/*.{ts,tsx}",
   "checkers": [],
   "_ignore_comment": "Stryker copies the project into each sandbox and does NOT honor .gitignore. Exclude large generated/cache dirs — especially the 34k-file pnpm content store, which otherwise bloats every sandbox copy and can trip ENFILE (system file-table overflow) under FD load. None are needed to run the vitest unit suite.",

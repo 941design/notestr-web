@@ -14,7 +14,8 @@
  *   - No React imports.
  *   - No router.push / window.location calls — navigation delegated to onSignOut().
  *   - Sequential per-group calls (for...of, never Promise.all). Self-forget
- *     uses `group.leave()`; sibling-forget uses `removeLeafByIndex`.
+ *     publishes a targeted Remove proposal via `group.propose` (not
+ *     `group.leave()`); sibling-forget uses `removeLeafByIndex`.
  *
  * Architect decisions:
  *   D1 (IDB cleanup): indexedDB.deleteDatabase by stable name for
@@ -22,25 +23,25 @@
  *   D2 (kind-5 publish): client.network.publish(relays, signedEvent).
  *   D3 (epoch race): retry-once wrapper before bubbling.
  *
- * Mutation-test residuals (Stryker 2026-05-22 — score 0.94, 9 residual mutants).
+ * Mutation-test residuals (Stryker 9.6.1, 2026-06-28 — score 0.94, 9 residuals).
  * All survivors are classified equivalent — do not chase further:
- *   - L77 StringLiteral fallback `""`: only reached when firstErr is not Error;
- *     any non-epoch-keyword string is observably identical.
- *   - L88 `if (recomputeLeafIndex)`: the no-callback branch is dead at every
+ *   - L100 StringLiteral fallback `""` (no coverage): only reached when firstErr
+ *     is not an Error instance; any non-epoch string is observably identical.
+ *   - L111 `if (recomputeLeafIndex)`: the no-callback branch is dead at every
  *     production call site (only forgetSiblingDevice uses removeLeafWithRetry,
  *     always with a callback).
- *   - L137 / L192 `<` off-by-one: index past length yields `undefined` node,
+ *   - L160 / L205 `<` off-by-one: index past length yields `undefined` node,
  *     filtered by the `!node` guard.
- *   - L197 `sig.length === ownSigKey.length`: MLS signaturePublicKey arrays
+ *   - L210 `sig.length === ownSigKey.length`: MLS signaturePublicKey arrays
  *     are fixed-length (ed25519 / 32B); the guard is defensive against an
  *     MLS-impossible state.
- *   - L209 `ownLeafIndex !== null ? filter : raw`: when null, the filter is
- *     a no-op (no idx equals null).
- *   - L266 `kp.published ?? []`: nullish branch with Stryker stub still hits
- *     the falsy-id guard and emits nothing.
- *   - L335 `let kpEvents = []`: only observed on the empty-relays branch;
+ *   - L250 `own !== null ? filter : raw`: when null, `idx !== null` is always
+ *     true for number indexes — the filter is a no-op.
+ *   - L338 `kp.published ?? []` (no coverage): nullish branch still hits the
+ *     falsy-id guard and emits nothing.
+ *   - L408 `let kpEvents = []`: only observed on the empty-relays branch;
  *     downstream slot-filter yields [] for any seed value.
- *   - L345 `catch { continue }`: redundant with the trailing
+ *   - L418 `catch { continue }`: redundant with the trailing
  *     `if (siblingEvents.length === 0) continue`.
  */
 
