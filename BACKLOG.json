@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-06-28T07:52:53Z",
+  "updated_at": "2026-06-28T08:19:46Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -208,18 +208,6 @@
       },
       "text": "E2E tests cannot use IDB notestr-failed-welcomes count as a pass/fail assertion: the ephemeral relay accumulates Welcome events from prior runs that produce unrelated no_matching_kp records on fresh contexts; sidebar visibility is the correct gate for KP-freshness regressions.",
       "created_at": "2026-05-19"
-    },
-    {
-      "slug": "e2e-error-state-selector-ambiguity",
-      "scope": "e2e",
-      "anchor": {
-        "path": "e2e/tests/task-sync.spec.ts"
-      },
-      "text": "E2E error-state assertions rely on a non-standard selector — no canonical data-testid for error display components defined",
-      "created_at": "2026-05-24",
-      "motivation": "AC-3 ('no error is shown') requires an E2E assertion on error state, but there is no stable data-testid on the app's error display components. The test initially used a non-existent data-testid selector, which could make future error-state assertions brittle or invisible (a missing element reads as no error, masking real failures).",
-      "behavior": "Error display components in the app do not carry a data-testid attribute; E2E tests that assert on 'no error shown' cannot reliably distinguish a hidden error state from a missing DOM node.",
-      "approach": "Add data-testid='error-banner' (or equivalent) to the app's top-level error display components so E2E assertions on error state are unambiguous. Document the canonical selector in the E2E README."
     },
     {
       "slug": "asserts5-3p-membership-anchor-and-dead-branch",
