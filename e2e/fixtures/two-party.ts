@@ -135,11 +135,36 @@ export async function authenticate(
 }
 
 /**
+ * Open the mobile sidebar drawer when it is currently closed.
+ *
+ * On mobile/narrow viewports the Groups sidebar is a transform-translated
+ * overlay drawer (`-translate-x-full` when closed), opened by the `md:hidden`
+ * hamburger labelled "Open menu". Playwright can `fill()` an input inside a
+ * translated-off-screen drawer (it still has layout, so it counts as
+ * "visible"), but it CANNOT scroll a translated element into the viewport to
+ * `click()` it — the action fails with "element is outside of the viewport".
+ * So every fixture that clicks something inside the sidebar must open the
+ * drawer first.
+ *
+ * On desktop the sidebar is static and the hamburger is `display:none`, so the
+ * "Open menu" button is not visible and this is a no-op. When the drawer is
+ * already open the button's label is "Close menu", so this never accidentally
+ * closes it.
+ */
+async function ensureSidebarOpen(page: Page): Promise<void> {
+  const openMenu = page.getByRole("button", { name: "Open menu" });
+  if (await openMenu.isVisible().catch(() => false)) {
+    await openMenu.click();
+  }
+}
+
+/**
  * `Cg(g)` — create a group with the given name. The page must already be
  * authenticated. Resolves once the group's task board is visible (the
  * group-creation flow auto-selects the new group).
  */
 export async function createGroup(page: Page, name: string): Promise<void> {
+  await ensureSidebarOpen(page);
   await page.getByPlaceholder("Group name").first().fill(name);
   await page.getByRole("button", { name: "Create", exact: true }).first().click();
   await expect(page.locator("aside").getByText(name).first()).toBeVisible({
@@ -155,6 +180,7 @@ export async function createGroup(page: Page, name: string): Promise<void> {
  * Waits for the invite input to clear (the success signal in `GroupManager`).
  */
 export async function inviteByNpub(page: Page, inviteeNpub: string): Promise<void> {
+  await ensureSidebarOpen(page);
   await page.getByPlaceholder("npub1...").fill(inviteeNpub);
   await page.getByRole("button", { name: "Invite" }).click();
   await expect(page.getByPlaceholder("npub1...")).toHaveValue("", {
@@ -167,6 +193,7 @@ export async function inviteByNpub(page: Page, inviteeNpub: string): Promise<voi
  * pages that reach a group via Welcome rather than by creating it locally.
  */
 export async function selectGroup(page: Page, name: string): Promise<void> {
+  await ensureSidebarOpen(page);
   const sidebar = page.locator("aside");
   await expect(sidebar.getByText(name).first()).toBeVisible({ timeout: 60000 });
   await sidebar.getByText(name).first().click();
@@ -184,6 +211,7 @@ export async function selectGroup(page: Page, name: string): Promise<void> {
  * dense multi-group sessions cannot accidentally leave the wrong group.
  */
 export async function leaveGroup(page: Page, name: string): Promise<void> {
+  await ensureSidebarOpen(page);
   const groupRow = page
     .locator('nav[aria-label="Groups"] li')
     .filter({ hasText: name });
