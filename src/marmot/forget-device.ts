@@ -67,6 +67,7 @@ import { markSlotForgotten } from "./forgotten-slots";
 import {
   bootstrapCompletedStore,
   clearIdentityStore,
+  getActivePubkey,
   invitedKeysStore,
   joinedGroupsStore,
 } from "./storage";
@@ -362,13 +363,16 @@ export async function forgetSelfDevice(
 
   // 3b. Delete the three stores owned by MarmotClient's init() closure
   // (Decision D1: indexedDB.deleteDatabase by stable name).
-  // These names are derived from createKVStore('key-packages'),
-  // createKVStore('group-state'), and createInviteKVStore() ('invite-store').
-  // They are already relied upon by the e2e cleanup fixture (KNOWN_IDB_NAMES).
-  if (typeof indexedDB !== "undefined") {
-    indexedDB.deleteDatabase("notestr-key-packages");
-    indexedDB.deleteDatabase("notestr-group-state");
-    indexedDB.deleteDatabase("notestr-invite-store");
+  // The marmot IDB layer is partitioned per-pubkey (storage.ts), so the real
+  // databases are `notestr-${pubkey}-${name}` — deleting the legacy origin-only
+  // names would leave this device's private MLS state (key packages, group
+  // state, invites) on disk after a self-forget. Delete the ACTIVE partition's
+  // databases.
+  const activePartition = getActivePubkey();
+  if (typeof indexedDB !== "undefined" && activePartition) {
+    indexedDB.deleteDatabase(`notestr-${activePartition}-key-packages`);
+    indexedDB.deleteDatabase(`notestr-${activePartition}-group-state`);
+    indexedDB.deleteDatabase(`notestr-${activePartition}-invite-store`);
   }
 
   // --- Step 4: NIP-46 cleanup (AC-SELF-4, AC-CLEANUP-3) ---

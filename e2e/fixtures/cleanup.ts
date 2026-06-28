@@ -28,6 +28,14 @@ const KNOWN_IDB_NAMES = [
   // S1: failed-welcomes store — must be cleared between runs so join-failure
   // records from one test run do not surface in subsequent runs.
   'notestr-failed-welcomes',
+  // bootstrap-completed flag store (was missing from this fallback list).
+  'notestr-bootstrap-completed',
+  // Per-pubkey IDB partitioning: pubkey-suffixed databases
+  // (notestr-${pubkey}-${name}) are caught by the prefix enumeration above on
+  // Chromium; the origin-level migration marker and the legacy default
+  // task-event store have fixed names listed here so they are always wiped.
+  'notestr-partition-migration',
+  'keyval-store',
 ];
 
 /**

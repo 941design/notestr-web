@@ -102,3 +102,7 @@ Uses `data-testid="detached-overlay"` for E2E targeting. Positioned over the boa
 5. When the user switches to an identity that IS a member, the group becomes fully interactive again (verified via E2E with second keypair)
 6. No changes to data persistence or storage structure
 7. When a detached group is selected, the invite form is hidden but the member list remains visible
+
+## Amendments
+
+- **2026-06-28** — Cross-identity detached-group visibility superseded by per-pubkey IDB partitioning (`epic-multi-user-idb-scoping`). The detached/disabled view existed because the shared origin-only IndexedDB leaked groups across identities; once each identity has an isolated partition, another identity's groups are not present to display. The detached UI is retained for the same-identity lost-membership case (e.g. after forgetting this device); the cross-identity e2e tests in `identity-visibility.spec.ts` were replaced with a per-pubkey isolation assertion (a different identity does not see the prior identity's group) plus the member-via-MLS-invite test (a genuinely invited identity still sees the group). Source: e2e regression + Codex review during the partitioning epic.

@@ -71,11 +71,13 @@ vi.mock("./forgotten-slots", () => ({
   markSlotForgotten: vi.fn().mockResolvedValue(undefined),
 }));
 
+const TEST_PUBKEY = "a".repeat(64);
 vi.mock("./storage", () => ({
   clearIdentityStore: vi.fn().mockResolvedValue(undefined),
   invitedKeysStore: { clear: vi.fn().mockResolvedValue(undefined) },
   joinedGroupsStore: { clear: vi.fn().mockResolvedValue(undefined) },
   bootstrapCompletedStore: { clear: vi.fn().mockResolvedValue(undefined) },
+  getActivePubkey: vi.fn(() => "a".repeat(64)),
 }));
 
 vi.mock("../lib/nostr", () => ({
@@ -499,16 +501,19 @@ describe("forgetSelfDevice", () => {
    *
    * AC-CLEANUP-2 (D1: indexedDB.deleteDatabase by stable name)
    */
-  it("deletes notestr-key-packages, notestr-group-state, notestr-invite-store via indexedDB.deleteDatabase (AC-CLEANUP-2, D1)", async () => {
+  it("deletes the ACTIVE pubkey's partitioned key-packages/group-state/invite-store via indexedDB.deleteDatabase (AC-CLEANUP-2, D1)", async () => {
     const mockDeleteDatabase = vi.fn().mockReturnValue({});
     vi.stubGlobal("indexedDB", { deleteDatabase: mockDeleteDatabase });
 
     const client = makeSelfClient([], []);
     await forgetSelfDevice(client, makeSigner(), [], vi.fn());
 
-    expect(mockDeleteDatabase).toHaveBeenCalledWith("notestr-key-packages");
-    expect(mockDeleteDatabase).toHaveBeenCalledWith("notestr-group-state");
-    expect(mockDeleteDatabase).toHaveBeenCalledWith("notestr-invite-store");
+    // IDB is partitioned per-pubkey, so self-forget must delete the active
+    // partition's databases — deleting the legacy origin-only names would leave
+    // this device's private MLS state on disk.
+    expect(mockDeleteDatabase).toHaveBeenCalledWith(`notestr-${TEST_PUBKEY}-key-packages`);
+    expect(mockDeleteDatabase).toHaveBeenCalledWith(`notestr-${TEST_PUBKEY}-group-state`);
+    expect(mockDeleteDatabase).toHaveBeenCalledWith(`notestr-${TEST_PUBKEY}-invite-store`);
 
     vi.unstubAllGlobals();
   });

@@ -1,12 +1,18 @@
 /**
- * E2E tests: Identity-scoped group visibility.
+ * E2E tests: Identity-scoped group visibility under per-pubkey IDB partitioning.
  *
- * Tests that groups belonging to a different identity appear as detached
- * (visually disabled) and that interaction is restricted.
+ * Per-pubkey IndexedDB partitioning (epic-multi-user-idb-scoping) supersedes the
+ * old cross-identity "detached group" view: a different identity no longer SEES
+ * another identity's groups at all (they live in a separate partition), so there
+ * is nothing to render as detached. The detached UI still applies to the
+ * same-identity case (a group you've lost membership in — e.g. after forgetting
+ * this device), which is exercised by the forget-device specs.
  *
- * Uses a single browser context (shared IndexedDB) with identity switching:
- * - User A creates a group, then disconnects
- * - User B authenticates in the same context and sees the group as detached
+ * - Isolation: User A creates a group, signs out, User B signs in to the SAME
+ *   browser and does NOT see A's group.
+ * - Membership: a user genuinely invited (via MLS Welcome) DOES see the group as
+ *   a full member after authenticating — membership flows over the network, not
+ *   through shared local storage.
  */
 
 import { devices } from '@playwright/test';
@@ -21,7 +27,7 @@ test.describe('identity-visibility', () => {
 
   const GROUP_NAME = `Detached-Test ${Date.now()}`;
 
-  test('detached group shows opacity-50 and data-detached after identity switch', async ({ page }) => {
+  test('a different identity does NOT see the prior identity\'s group (per-pubkey isolation)', async ({ page }) => {
     // Clean slate
     await page.goto('/');
     await clearAppState(page);
@@ -62,63 +68,11 @@ test.describe('identity-visibility', () => {
       await hamburger.click();
     }
 
-    // The group should be visible but detached
-    const detachedItem = page.locator('[data-detached="true"]').first();
-    await expect(detachedItem).toBeVisible({ timeout: 15000 });
-    await expect(detachedItem).toHaveClass(/opacity-50/);
-
-    // Clicking the group name should NOT select it (no board columns visible)
-    await detachedItem.locator('span').first().click();
-    await expect(page.locator('[data-column="open"]')).not.toBeVisible({ timeout: 3000 });
-
-    // AC-012: Invite form should not be visible (detached group cannot be selected)
-    await expect(page.locator('form:has([placeholder="npub1..."])')).not.toBeVisible({ timeout: 3000 });
-  });
-
-  test('leave button works on detached group', async ({ page }) => {
-    // Clean slate
-    await page.goto('/');
-    await clearAppState(page);
-
-    // User A authenticates and creates a group
-    await authenticateViaBunker(page);
-
-    const hamburger = page.locator('button[aria-label="Open menu"]');
-    if (await hamburger.isVisible()) {
-      await hamburger.click();
-    }
-
-    const leaveGroupName = `Leave-Test ${Date.now()}`;
-    await page.getByPlaceholder('Group name').first().fill(leaveGroupName);
-    await page.getByRole('button', { name: 'Create', exact: true }).first().click();
-    await expect(page.getByLabel('Groups').getByText(leaveGroupName)).toBeVisible({ timeout: 30000 });
-
-    // Disconnect User A — force click to bypass QR button overlap on mobile.
-    // Confirm the plain "Sign out" path (preserves groups so B can see them).
-    await page.locator('[data-testid="disconnect-button"]').click({ force: true });
-    await page
-      .getByRole('alertdialog')
-      .getByRole('button', { name: 'Sign out', exact: true })
-      .click();
-    await page.getByText('Sign in to notestr').waitFor({ state: 'visible', timeout: 15000 });
-
-    // User B authenticates
-    await authenticateAsBunkerB(page);
-
-    if (await hamburger.isVisible()) {
-      await hamburger.click();
-    }
-
-    // Find the detached group's leave button and click it
-    const detachedItem = page.locator('[data-detached="true"]').first();
-    await expect(detachedItem).toBeVisible({ timeout: 15000 });
-    await detachedItem.locator('[data-testid="group-leave-btn"]').click();
-
-    // Confirm in AlertDialog
-    await page.locator('[data-testid="group-leave-confirm"]').click();
-
-    // Group should disappear from sidebar (use .first() — GroupManager renders in multiple containers)
-    await expect(page.getByLabel('Groups').getByText(leaveGroupName).first()).not.toBeVisible({ timeout: 15000 });
+    // Per-pubkey IDB partitioning: B has its own partition, so A's group is
+    // ISOLATED — not visible at all (not merely shown 'detached'). This is the
+    // privacy fix that supersedes the old cross-identity detached-group view.
+    await expect(page.getByLabel('Groups').getByText(GROUP_NAME)).not.toBeVisible({ timeout: 15000 });
+    await expect(page.locator('[data-detached="true"]')).not.toBeVisible({ timeout: 3000 });
   });
 
   test('identity switch restores full interactivity for member', async ({ browser }) => {

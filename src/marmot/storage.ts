@@ -19,35 +19,280 @@ export interface KeyValueStoreBackend<T> {
 }
 
 /**
- * Creates an IndexedDB-backed key-value store using idb-keyval.
- * Each name gets its own database to avoid IDB version conflicts.
+ * Per-pubkey IndexedDB partitioning.
+ *
+ * Every marmot store is physically isolated by the signed-in pubkey: the
+ * database name is `notestr-${pubkey}-${name}`, so two npubs used in the same
+ * browser open *different* databases and one can never read another's metadata,
+ * key packages, MLS group-state, or task history. Isolation is by construction
+ * (distinct DB names), not by a signout cleanup that must fire.
+ *
+ * `activePubkey` is set by `bindStores(pubkey)` (called from the auth flow in
+ * client.tsx once the signed-in pubkey is known) and cleared by
+ * `unbindStores()` on sign-out. Because idb-keyval's `createStore` only opens
+ * the DB on first I/O — and every marmot store I/O happens after the provider
+ * mounts (pubkey known) — store handles created at module load resolve their
+ * physical database lazily, at first I/O, against the active pubkey.
  */
-export function createKVStore<T>(name: string): KeyValueStoreBackend<T> {
-  const store: UseStore = createStore(`notestr-${name}`, name);
+let activePubkey: string | null = null;
 
+/** Cache of resolved idb-keyval stores, keyed by `${pubkey}:${name}`. */
+const resolvedStores = new Map<string, UseStore>();
+
+const PUBKEY_RE = /^[0-9a-f]{64}$/;
+
+/**
+ * Bind all marmot stores to a signed-in pubkey. MUST be called (from the auth
+ * flow) before any marmot store is read or written. Idempotent for the same
+ * pubkey; switching pubkey re-points every store to the new partition.
+ */
+export function bindStores(pubkey: string): void {
+  if (!PUBKEY_RE.test(pubkey)) {
+    throw new Error("bindStores: pubkey must be a 64-char lowercase hex string");
+  }
+  activePubkey = pubkey;
+}
+
+/** Clear the active binding (sign-out). Subsequent store access throws. */
+export function unbindStores(): void {
+  activePubkey = null;
+}
+
+/** The pubkey currently bound, or null. Exposed for tests/diagnostics. */
+export function getActivePubkey(): string | null {
+  return activePubkey;
+}
+
+function resolveStoreForPubkey(pubkey: string, name: string): UseStore {
+  const cacheKey = `${pubkey}:${name}`;
+  let store = resolvedStores.get(cacheKey);
+  if (!store) {
+    store = createStore(`notestr-${pubkey}-${name}`, name);
+    resolvedStores.set(cacheKey, store);
+  }
+  return store;
+}
+
+function resolveStore(name: string): UseStore {
+  if (activePubkey === null) {
+    throw new Error(
+      `marmot store "${name}" accessed before bindStores(pubkey) — IDB is partitioned per-pubkey`,
+    );
+  }
+  return resolveStoreForPubkey(activePubkey, name);
+}
+
+/**
+ * Creates an IndexedDB-backed key-value store using idb-keyval.
+ * Each name gets its own database (`notestr-${pubkey}-${name}`) to avoid IDB
+ * version conflicts and to isolate per signed-in pubkey.
+ *
+ * - Default (no `pinnedPubkey`): the physical database is resolved lazily at
+ *   first I/O against the CURRENT active pubkey (see {@link bindStores});
+ *   accessing it before a pubkey is bound throws. Used for the module-level
+ *   singletons whose lifetime spans the active identity.
+ * - With `pinnedPubkey`: the store is permanently bound to that one pubkey's
+ *   partition, regardless of later identity switches. Use this for stores owned
+ *   by a specific `MarmotClient` instance (group-state, key-packages, invites)
+ *   so an in-flight task from a signed-out identity can never resolve into the
+ *   newly signed-in identity's partition (cross-account corruption).
+ */
+export function createKVStore<T>(
+  name: string,
+  pinnedPubkey?: string,
+): KeyValueStoreBackend<T> {
+  if (pinnedPubkey !== undefined && !PUBKEY_RE.test(pinnedPubkey)) {
+    throw new Error("createKVStore: pinnedPubkey must be 64-char lowercase hex");
+  }
+  const resolve = pinnedPubkey
+    ? () => resolveStoreForPubkey(pinnedPubkey, name)
+    : () => resolveStore(name);
   return {
     async getItem(key: string): Promise<T | null> {
-      const value = await get<T>(key, store);
+      const value = await get<T>(key, resolve());
       return value ?? null;
     },
 
     async setItem(key: string, value: T): Promise<T> {
-      await set(key, value, store);
+      await set(key, value, resolve());
       return value;
     },
 
     async removeItem(key: string): Promise<void> {
-      await del(key, store);
+      await del(key, resolve());
     },
 
     async clear(): Promise<void> {
-      await idbClear(store);
+      await idbClear(resolve());
     },
 
     async keys(): Promise<string[]> {
-      return idbKeys<string>(store);
+      return idbKeys<string>(resolve());
     },
   };
+}
+
+/**
+ * Names of the legacy origin-only marmot databases (`notestr-${name}`) that
+ * predate per-pubkey partitioning. Used only by {@link migrateLegacyPartition}.
+ */
+const LEGACY_STORE_NAMES = [
+  "identity",
+  "device-names",
+  "group-state",
+  "key-packages",
+  "invite-store",
+  "invited-keys",
+  "group-sync",
+  "joined-groups",
+  "bootstrap-completed",
+  "forgotten-slots",
+  "failed-welcomes",
+] as const;
+
+/** Origin-level (un-partitioned) marker recording the one-shot legacy migration. */
+const MIGRATION_MARKER_DB = "notestr-partition-migration";
+
+/**
+ * One-shot migration of pre-partitioning data into the first pubkey's partition.
+ *
+ * Before this epic, all data lived in origin-only `notestr-${name}` databases
+ * (and the task log in the bare idb-keyval default store). To preserve
+ * continuity for the overwhelmingly common single-user browser — so an existing
+ * user keeps their MLS leaf, groups, and key packages across the upgrade rather
+ * than re-bootstrapping — the legacy data is copied **wholesale** (byte-for-byte
+ * idb-keyval values, no merge/reinterpret, so MLS group-state stays valid) into
+ * the first pubkey that binds after the upgrade.
+ *
+ * The copy runs at most once per browser, gated by an origin-level marker. A
+ * second pubkey binding later does NOT inherit the legacy data — it starts from
+ * an empty, isolated partition. Pre-upgrade browsers that were shared by
+ * multiple users already had commingled data under the single origin-only
+ * partition (the bug this epic fixes); attributing that legacy blob to the first
+ * binder is no worse than the status quo for that binder, and every write after
+ * the bind is correctly isolated.
+ *
+ * Idempotent: returns immediately once the marker is set.
+ */
+export async function migrateLegacyPartition(pubkey: string): Promise<void> {
+  if (!PUBKEY_RE.test(pubkey)) {
+    throw new Error("migrateLegacyPartition: pubkey must be 64-char lowercase hex");
+  }
+  const marker = createStore(MIGRATION_MARKER_DB, "marker");
+  if (await get<string>("migratedTo", marker)) return;
+
+  // Enumerate existing databases so we touch ONLY legacy stores that actually
+  // exist — never probe a missing one (probing via idb-keyval would create an
+  // empty origin-only database, re-introducing the very name we are removing).
+  const existing = await listDatabaseNames();
+  if (existing === null) {
+    // No enumeration support (old Safari): cannot safely detect legacy data
+    // without creating empties. Mark migrated and skip — those users start with
+    // a clean isolated partition rather than risk an origin-only leak.
+    await set("migratedTo", pubkey, marker);
+    return;
+  }
+  const present = new Set(existing);
+
+  for (const name of LEGACY_STORE_NAMES) {
+    const legacyDb = `notestr-${name}`;
+    if (!present.has(legacyDb)) continue;
+    const entries = await readAllRaw(legacyDb, name);
+    if (entries.length > 0) {
+      const target = createStore(`notestr-${pubkey}-${name}`, name);
+      for (const [key, value] of entries) {
+        await set(key, value, target);
+      }
+    }
+    // The raw read closed its connection, so this delete is not blocked.
+    await deleteDatabaseSafe(legacyDb);
+  }
+
+  // Task event log: legacy lived in the bare idb-keyval default store
+  // ("keyval-store") under `notestr:events:*` keys. Copy those into the
+  // partitioned task-events store, then drop the originals.
+  if (present.has("keyval-store")) {
+    const defaultKeys = await idbKeys();
+    const taskKeys = defaultKeys.filter(
+      (k): k is string => typeof k === "string" && k.startsWith("notestr:events:"),
+    );
+    if (taskKeys.length > 0) {
+      const taskTarget = createStore(`notestr-${pubkey}-task-events`, "task-events");
+      for (const key of taskKeys) {
+        await set(key, await get(key), taskTarget);
+        await del(key);
+      }
+    }
+  }
+
+  await set("migratedTo", pubkey, marker);
+}
+
+/** Lists existing IndexedDB database names, or null when unavailable (old Safari). */
+async function listDatabaseNames(): Promise<string[] | null> {
+  if (typeof indexedDB === "undefined") return null;
+  const fn = (indexedDB as IDBFactory & {
+    databases?: () => Promise<{ name?: string }[]>;
+  }).databases;
+  if (typeof fn !== "function") return null;
+  const infos = await fn.call(indexedDB);
+  return infos.map((i) => i.name).filter((n): n is string => !!n);
+}
+
+/**
+ * Reads every (key, value) entry from an existing IndexedDB database's object
+ * store using a RAW connection that is closed before returning — so a
+ * subsequent {@link deleteDatabaseSafe} is not blocked by a lingering
+ * idb-keyval handle. Returns [] if the store is absent.
+ */
+async function readAllRaw(
+  dbName: string,
+  storeName: string,
+): Promise<[IDBValidKey, unknown][]> {
+  return new Promise((resolve, reject) => {
+    const open = indexedDB.open(dbName);
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      if (!db.objectStoreNames.contains(storeName)) {
+        db.close();
+        resolve([]);
+        return;
+      }
+      const tx = db.transaction(storeName, "readonly");
+      const store = tx.objectStore(storeName);
+      const keysReq = store.getAllKeys();
+      const valsReq = store.getAll();
+      tx.oncomplete = () => {
+        db.close();
+        resolve(keysReq.result.map((k, i) => [k, valsReq.result[i]]));
+      };
+      tx.onerror = () => {
+        db.close();
+        reject(tx.error);
+      };
+    };
+  });
+}
+
+/**
+ * Deletes an IndexedDB database, resolving regardless of success/error/blocked
+ * so migration never hangs. No-op in environments without an IndexedDB
+ * implementation (e.g. the node unit-test runner).
+ */
+async function deleteDatabaseSafe(dbName: string): Promise<void> {
+  if (
+    typeof indexedDB === "undefined" ||
+    typeof indexedDB.deleteDatabase !== "function"
+  ) {
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    const req = indexedDB.deleteDatabase(dbName);
+    req.onsuccess = () => resolve();
+    req.onerror = () => resolve();
+    req.onblocked = () => resolve();
+  });
 }
 
 /**
@@ -58,11 +303,14 @@ export function createKVStore<T>(name: string): KeyValueStoreBackend<T> {
  * a fresh IDB ("invite-store") so old per-flow records left over from
  * v0.4 don't get reinterpreted under the new schema.
  */
-export function createInviteKVStore(): KeyValueStoreBackend<
+export function createInviteKVStore(
+  pinnedPubkey?: string,
+): KeyValueStoreBackend<
   import("@internet-privacy/marmot-ts").StoredInviteEntry
 > {
   return createKVStore<import("@internet-privacy/marmot-ts").StoredInviteEntry>(
     "invite-store",
+    pinnedPubkey,
   );
 }
 

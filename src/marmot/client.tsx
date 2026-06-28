@@ -29,8 +29,15 @@ import type {
 } from "@internet-privacy/marmot-ts";
 import type { EventSigner } from "applesauce-core";
 
-import { get as idbGet, set as idbSet, createStore } from "idb-keyval";
-import { createKVStore, createInviteKVStore, getOrCreateClientId } from "./storage";
+import {
+  createKVStore,
+  createInviteKVStore,
+  getOrCreateClientId,
+  bindStores,
+  unbindStores,
+  getActivePubkey,
+  migrateLegacyPartition,
+} from "./storage";
 import { loadFailedWelcomes } from "./failed-welcomes";
 import { NdkNetworkAdapter } from "./network";
 import { useDeviceSync, groupHasKeyPackageLeaf } from "./device-sync";
@@ -43,10 +50,11 @@ import { DEFAULT_RELAYS, NDK_CONNECT_TIMEOUT_MS } from "../config/relays";
 import { computeAllGroupRelays } from "../lib/relay-utils";
 import { shouldRunProbe } from "./probe-gate";
 
-// Shared reference to the notestr-identity IDB store for probe gating.
-// createStore("notestr-identity", "identity") must match storage.ts exactly so
-// both modules operate on the same IndexedDB object store.
-const _probeIdentityStore = createStore("notestr-identity", "identity");
+// Probe-gating timestamp store. Routed through the per-pubkey partitioned
+// `createKVStore("identity")` (NOT a direct origin-only createStore) so the
+// probe gate reads/writes the active identity's partition — accessed only
+// inside the post-auth probe effect below, after bindStores has run.
+const probeIdentityStore = createKVStore<string>("identity");
 
 function isTestRuntime(): boolean {
   return process.env.NEXT_PUBLIC_E2E === "1" || process.env.NODE_ENV === "test";
@@ -138,6 +146,17 @@ export function MarmotProvider({
   children,
 }: MarmotProviderProps) {
   const relays = relaysProp ?? DEFAULT_RELAYS;
+
+  // Bind the per-pubkey IDB partition synchronously at render — BEFORE any
+  // descendant (e.g. TaskStoreProvider, which calls loadEvents on mount for a
+  // restored group) can touch a store. Doing this only in the async init()
+  // below is too late: children mount and run their effects before init()
+  // awaits past ndk.connect, so an unbound store would reject. bindStores is
+  // idempotent and writes only a module global; async migration stays in init().
+  if (pubkey && getActivePubkey() !== pubkey) {
+    bindStores(pubkey);
+  }
+
   const [state, setState] = useState<
     Pick<MarmotContextValue, "client" | "groups" | "loading" | "error" | "discoverable" | "probeBannerCount">
   >({
@@ -176,6 +195,15 @@ export function MarmotProvider({
 
       if (!mountedRef.current) return;
 
+      // Stores are already bound synchronously at render (see top of
+      // MarmotProvider). Run the one-shot legacy migration before the client
+      // loads group-state / key-packages so an existing single-user browser's
+      // groups and MLS leaf carry across the upgrade.
+      bindStores(pubkey); // idempotent re-assert (harmless; keeps the invariant explicit)
+      await migrateLegacyPartition(pubkey);
+
+      if (!mountedRef.current) return;
+
       // marmot-ts v0.5 takes raw GenericKeyValueStore handles directly
       // — the previous KeyValueGroupStateBackend / KeyPackageStore wrappers
       // were collapsed into the manager classes (KeyPackageStore was merged
@@ -183,9 +211,12 @@ export function MarmotProvider({
       // GroupsManager). We persist invite state in IndexedDB too so the
       // InviteManager survives reloads instead of falling back to the
       // in-memory default.
-      const groupStateStore = createKVStore<SerializedClientState>("group-state");
-      const keyPackageStore = createKVStore<StoredKeyPackage>("key-packages");
-      const inviteStore = createInviteKVStore();
+      // Pin these client-owned stores to THIS pubkey's partition so an
+      // in-flight task from a signed-out identity can never resolve into a
+      // newly signed-in identity's partition (P1-A cross-account corruption).
+      const groupStateStore = createKVStore<SerializedClientState>("group-state", pubkey);
+      const keyPackageStore = createKVStore<StoredKeyPackage>("key-packages", pubkey);
+      const inviteStore = createInviteKVStore(pubkey);
 
       const network = new NdkNetworkAdapter(ndk, relays);
       const clientId = await getOrCreateClientId();
@@ -260,8 +291,8 @@ export function MarmotProvider({
         if (!pubkey || !client) return;
 
         // AC-PROBE-1 gating: run at most once per 24 hours per browser session.
-        const lastProbeAtRaw = await idbGet<string>("lastProbeAt", _probeIdentityStore);
-        const lastProbeAtParsed = lastProbeAtRaw !== undefined ? Number(lastProbeAtRaw) : null;
+        const lastProbeAtRaw = await probeIdentityStore.getItem("lastProbeAt");
+        const lastProbeAtParsed = lastProbeAtRaw !== null ? Number(lastProbeAtRaw) : null;
         // Treat NaN (corrupt IDB value) as absent so the probe always runs in that case.
         const lastProbeAt = lastProbeAtParsed !== null && isNaN(lastProbeAtParsed) ? null : lastProbeAtParsed;
         if (!shouldRunProbe(lastProbeAt)) {
@@ -292,7 +323,7 @@ export function MarmotProvider({
           }
         } finally {
           // AC-PROBE-1.5: always record the probe time so gating works next visit.
-          await idbSet("lastProbeAt", String(Date.now()), _probeIdentityStore);
+          await probeIdentityStore.setItem("lastProbeAt", String(Date.now()));
         }
       })().catch(console.error);
 
@@ -474,6 +505,10 @@ export function MarmotProvider({
       clientRef.current = null;
       // NDK doesn't expose a clean pool.disconnect() — just drop the reference
       ndkRef.current = null;
+      // Unbind the per-pubkey IDB partition on sign-out / identity switch, so a
+      // subsequent access without a fresh bindStores throws rather than silently
+      // resolving the prior user's partition.
+      unbindStores();
     };
   }, [init]);
 
