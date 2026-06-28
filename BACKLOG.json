@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-06-28T01:32:26Z",
+  "updated_at": "2026-06-28T01:58:56Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -210,98 +210,6 @@
       "created_at": "2026-05-19"
     },
     {
-      "slug": "device-store-defaultdevicename-format-has-no",
-      "scope": "any",
-      "anchor": {
-        "path": "src/marmot/device-store.ts",
-        "range": [
-          14,
-          23
-        ]
-      },
-      "text": "device-store: defaultDeviceName format has no AC",
-      "created_at": "2026-05-22",
-      "motivation": "UI displays either 'this browser' or device-<slot[0..6]>; no epic specifies this contract.",
-      "behavior": "defaultDeviceName returns 'this browser' iff clientId matches localClientId, else 'device-' followed by the first 6 chars of clientId.",
-      "kind": "spec-gap"
-    },
-    {
-      "slug": "device-store-device-rename-trim-fallback",
-      "scope": "any",
-      "anchor": {
-        "path": "src/marmot/device-store.ts:25-27,74-88"
-      },
-      "text": "device-store: device rename trim + fallback has no AC",
-      "created_at": "2026-05-22",
-      "motivation": "Whitespace in user-typed names is silently trimmed and blank input falls back to the synthetic default — observable but unspecified.",
-      "behavior": "setDeviceName persists name.trim() if non-empty; otherwise persists defaultDeviceName(clientId).",
-      "kind": "spec-gap"
-    },
-    {
-      "slug": "device-store-firstseen-lastseen-timestamp",
-      "scope": "any",
-      "anchor": {
-        "path": "src/marmot/device-store.ts",
-        "range": [
-          35,
-          88
-        ]
-      },
-      "text": "device-store: firstSeen/lastSeen timestamp semantics have no AC",
-      "created_at": "2026-05-22",
-      "motivation": "Device-tracking UI relies on stable firstSeen and monotonic lastSeen; no epic owns this contract.",
-      "behavior": "markDeviceSeen and setDeviceName set firstSeen on create, preserve it on update, and advance lastSeen to Date.now() on every write.",
-      "kind": "spec-gap"
-    },
-    {
-      "slug": "device-store-listdevices-null-tolerance-sort",
-      "scope": "any",
-      "anchor": {
-        "path": "src/marmot/device-store.ts",
-        "range": [
-          90,
-          96
-        ]
-      },
-      "text": "device-store: listDevices null-tolerance and sort order have no AC",
-      "created_at": "2026-05-22",
-      "motivation": "UI list must be stable and tolerant of keys/getItem races; no epic owns the contract.",
-      "behavior": "listDevices filters out null entries and sorts the remainder by name via localeCompare.",
-      "kind": "spec-gap"
-    },
-    {
-      "slug": "device-store-invited-keys-clear-by",
-      "scope": "any",
-      "anchor": {
-        "path": "src/marmot/device-store.ts",
-        "range": [
-          98,
-          113
-        ]
-      },
-      "text": "device-store: invited-keys clear-by-group prefix contract has no AC",
-      "created_at": "2026-05-22",
-      "motivation": "clearInvitedKeysForGroup uses groupId-prefix matching; sibling-group isolation is observable but unspecified.",
-      "behavior": "clearInvitedKeysForGroup removes exactly the keys starting with the groupId prefix.",
-      "kind": "spec-gap"
-    },
-    {
-      "slug": "device-store-joined-groups-trio-contract",
-      "scope": "any",
-      "anchor": {
-        "path": "src/marmot/device-store.ts",
-        "range": [
-          122,
-          132
-        ]
-      },
-      "text": "device-store: joined-groups trio contract has no AC",
-      "created_at": "2026-05-22",
-      "motivation": "markGroupJoinedFromWelcome / isGroupJoinedFromWelcome / forgetJoinedGroup form the sibling-auto-invite suppression substrate; no AC defines them. AC-CLEANUP-4 mentions the store but not the helpers' semantics.",
-      "behavior": "mark sets the group as joined-from-welcome; is checks it; forget undoes it; cross-group isolation holds.",
-      "kind": "spec-gap"
-    },
-    {
       "slug": "e2e-error-state-selector-ambiguity",
       "scope": "e2e",
       "anchor": {
@@ -478,6 +386,42 @@
       "text": "nostr.ts: NIP-07 browser extension detection (getNip07Signer) has no AC",
       "reason": "False survivor. src/lib/nostr.ts helper has 100% COVERED mutation score via nostr.pure.test.ts (verified 2026-06-28 by stryker.nostr-lib.conf.json: 43 killed / 0 survived among covered). The 45.74% total reflects 51 NoCoverage mutants in the NDK signer-bridge/connect functions (bridgeNip46ToEventSigner/connectBunker/restoreNip46Session/startNostrConnect), which are e2e-tested via the real bunker, NOT these helpers. The next-mutation walker run mislabeled killed mutants as survivors due to a restricted test scope that excluded nostr.pure.test.ts.",
       "source_slug": "nostr-ts-nip-07-browser-extension"
+    },
+    {
+      "date": "2026-06-28",
+      "text": "device-store: defaultDeviceName format has no AC",
+      "reason": "Tested-but-unspecced internal storage helper. device-store.ts is at 97.1% mutation score (verified 2026-06-28 via stryker.device-store.conf.json: 67 killed / 2 survived / 0 no-coverage); device-store.test.ts is the executable contract for this behavior. These are internal IDB-bookkeeping helpers (device-name defaulting/trim, firstSeen/lastSeen, listDevices sort/null-tolerance, invited-key prefix clearing, joined-groups flags) — formal prose ACs add maintenance burden without changing product behavior or test strength. Re-open against a device-management epic if/when this behavior becomes a product concern.",
+      "source_slug": "device-store-defaultdevicename-format-has-no"
+    },
+    {
+      "date": "2026-06-28",
+      "text": "device-store: device rename trim + fallback has no AC",
+      "reason": "Tested-but-unspecced internal storage helper. device-store.ts is at 97.1% mutation score (verified 2026-06-28 via stryker.device-store.conf.json: 67 killed / 2 survived / 0 no-coverage); device-store.test.ts is the executable contract for this behavior. These are internal IDB-bookkeeping helpers (device-name defaulting/trim, firstSeen/lastSeen, listDevices sort/null-tolerance, invited-key prefix clearing, joined-groups flags) — formal prose ACs add maintenance burden without changing product behavior or test strength. Re-open against a device-management epic if/when this behavior becomes a product concern.",
+      "source_slug": "device-store-device-rename-trim-fallback"
+    },
+    {
+      "date": "2026-06-28",
+      "text": "device-store: firstSeen/lastSeen timestamp semantics have no AC",
+      "reason": "Tested-but-unspecced internal storage helper. device-store.ts is at 97.1% mutation score (verified 2026-06-28 via stryker.device-store.conf.json: 67 killed / 2 survived / 0 no-coverage); device-store.test.ts is the executable contract for this behavior. These are internal IDB-bookkeeping helpers (device-name defaulting/trim, firstSeen/lastSeen, listDevices sort/null-tolerance, invited-key prefix clearing, joined-groups flags) — formal prose ACs add maintenance burden without changing product behavior or test strength. Re-open against a device-management epic if/when this behavior becomes a product concern.",
+      "source_slug": "device-store-firstseen-lastseen-timestamp"
+    },
+    {
+      "date": "2026-06-28",
+      "text": "device-store: listDevices null-tolerance and sort order have no AC",
+      "reason": "Tested-but-unspecced internal storage helper. device-store.ts is at 97.1% mutation score (verified 2026-06-28 via stryker.device-store.conf.json: 67 killed / 2 survived / 0 no-coverage); device-store.test.ts is the executable contract for this behavior. These are internal IDB-bookkeeping helpers (device-name defaulting/trim, firstSeen/lastSeen, listDevices sort/null-tolerance, invited-key prefix clearing, joined-groups flags) — formal prose ACs add maintenance burden without changing product behavior or test strength. Re-open against a device-management epic if/when this behavior becomes a product concern.",
+      "source_slug": "device-store-listdevices-null-tolerance-sort"
+    },
+    {
+      "date": "2026-06-28",
+      "text": "device-store: invited-keys clear-by-group prefix contract has no AC",
+      "reason": "Tested-but-unspecced internal storage helper. device-store.ts is at 97.1% mutation score (verified 2026-06-28 via stryker.device-store.conf.json: 67 killed / 2 survived / 0 no-coverage); device-store.test.ts is the executable contract for this behavior. These are internal IDB-bookkeeping helpers (device-name defaulting/trim, firstSeen/lastSeen, listDevices sort/null-tolerance, invited-key prefix clearing, joined-groups flags) — formal prose ACs add maintenance burden without changing product behavior or test strength. Re-open against a device-management epic if/when this behavior becomes a product concern.",
+      "source_slug": "device-store-invited-keys-clear-by"
+    },
+    {
+      "date": "2026-06-28",
+      "text": "device-store: joined-groups trio contract has no AC",
+      "reason": "Tested-but-unspecced internal storage helper. device-store.ts is at 97.1% mutation score (verified 2026-06-28 via stryker.device-store.conf.json: 67 killed / 2 survived / 0 no-coverage); device-store.test.ts is the executable contract for this behavior. These are internal IDB-bookkeeping helpers (device-name defaulting/trim, firstSeen/lastSeen, listDevices sort/null-tolerance, invited-key prefix clearing, joined-groups flags) — formal prose ACs add maintenance burden without changing product behavior or test strength. Re-open against a device-management epic if/when this behavior becomes a product concern.",
+      "source_slug": "device-store-joined-groups-trio-contract"
     }
   ]
 }
