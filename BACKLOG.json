@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-06-29T00:45:31Z",
+  "updated_at": "2026-06-29T00:49:03Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -60,7 +60,7 @@
     {
       "path": "specs/epic-property-tests-l3-three-party/",
       "status": "DONE",
-      "next_action": "completed 2026-05-26 (S1-S7 verified; 3-party L3 property test + coverage-matrix doc edit)"
+      "next_action": "completed 2026-05-26 (epic-state reconciled by /loop 2026-06-29)"
     },
     {
       "path": "specs/epic-rename-device-cross-context-coverage/",
