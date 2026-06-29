@@ -63,7 +63,7 @@ before the group is operational or after it stops).
 | # | From | To | Trigger |
 |---|---|---|---|
 | H1 | nominal | degraded | live subscription error/drop, bootstrap timeout (L5), or repeated ingest failures past threshold |
-| H2 | degraded | nominal | live subscription re-established AND live buffer re-drained to empty |
+| H2 | degraded | nominal | the degradation cause cleared: live subscription re-established AND live buffer re-drained, OR a late bootstrap fetch (post-`T_join`) resolved and merged |
 
 Health changes emit `engine_state_changed{ state, health }`. A group can be
 `live + degraded` (relay flaky but operating on local state) or
@@ -90,10 +90,34 @@ distinct:
 
 ---
 
+## Joining timeout (`T_join`) — Item 4 / Decision 4
+
+`T_join = 8000 ms` (default; configurable per deployment).
+
+Rationale: the bootstrap fetch is a relay query (kind-30078 + EOSE). Normal
+round-trips resolve in well under this; 8 s covers slow-relay tails while bounding
+the worst-case "blank board on first join" window before the engine degrades and
+proceeds. This is a UX ceiling on relay-blocked joins, not a typical wait.
+
+**Wiring:**
+- On entry to `joining`, start the bootstrap fetch AND an 8 s timer.
+- `bootstrapResolved` before the timer → L4 (`catching_up`, nominal).
+- Timer fires first → `bootstrapTimedOut` → L5 (`catching_up`, **degraded**).
+- **The fetch is NOT cancelled on timeout.** It continues in the background. If it
+  resolves later, its snapshot is merged (LWW-safe — bootstrap is order-independent)
+  and health returns to `nominal` (H2, extended below). The timeout only unblocks
+  the lifecycle; it never discards a pending bootstrap.
+- `bootstrapFailed` (terminal fetch error) before the timer → L5 immediately
+  (degraded); a re-fetch is attempted on the next live-subscription reconnect.
+
+This preserves today's behavior: a slow/down relay never freezes the group — the
+user works on locally-available state and the bootstrap is absorbed whenever it
+lands.
+
 ## Guard definitions
 
 - `bootstrapResolved` — the kind-30078 bootstrap snapshot was fetched and merged.
-- `bootstrapTimedOut` — `T_join` elapsed before resolution (Item 4 sets `T_join`).
+- `bootstrapTimedOut` — `T_join` (8000 ms) elapsed before resolution; fetch continues in background.
 - `bootstrapFailed` — the bootstrap fetch errored non-retryably.
 - `catchUpComplete` — `adapter.catchUp()` async iterator returned done.
 - `liveBufferEmpty` — no buffered live signals remain to apply.

@@ -36,7 +36,7 @@ focused message, then continue. Stop when all boxes are ticked.
     if it touches the wire/convergence contract, a check against
     `../protocol/task-protocol.md` first.
 
-- [ ] **4. Joining-gate timeout value + transition wiring** *(gate: before joining-phase story; Decision 4 follow-up)*
+- [x] **4. Joining-gate timeout value + transition wiring** *(gate: before joining-phase story; Decision 4 follow-up)*
   - Pick the timeout duration and define the precise `joining → degraded`
     (and recovery-back) transition, consistent with the FSM table.
   - Deliver: update fsm.md + architecture.md Constraint 2; note the chosen value
