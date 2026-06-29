@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-06-28T23:07:18Z",
+  "updated_at": "2026-06-29T00:45:31Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -366,6 +366,18 @@
       "text": "joinFromWelcomeInvite failure classification (no_matching_kp / ciphersuite_mismatch / unknown) has no AC in any epic",
       "reason": "Tested-but-unspecced internal diagnostic helper. The no_matching_kp/ciphersuite_mismatch/unknown classification feeds FailedWelcomeRecord.failureReason, a diagnostic log field (not user-facing behavior); device-sync.test.ts:1715 'failure reason classification (GAP-C)' is the executable contract with one test per branch. Formal prose ACs add maintenance burden without changing product behavior or test strength. Consistent with the 2026-06-28 device-store/nostr.ts dispositions.",
       "source_slug": "joinfromwelcomeinvite-failure-classification-no"
+    },
+    {
+      "date": "2026-06-29",
+      "text": "NIP-46 EventSigner adapter cipher dispatch (nip44 vs nip04) has no acceptance criterion",
+      "reason": "Oscillation against the comprehensive 2026-06-28 disposition: nostr.ts NIP-46 adapter/signer-bridge behaviors (incl. auth-method) were archived as tested-but-unspecced internal/integration behavior needing no formal prose AC (e2e-tested via the real bunker; helpers 100% covered via nostr.pure.test.ts). This re-files the same 'no AC' class the prior session rejected. Unit coverage for these lines was added this session (nostr.adapter.test.ts, mutation-killing). Re-open against a product epic only if cipher-selection/session-management becomes a product concern.",
+      "source_slug": "nip-46-eventsigner-adapter-cipher-dispatch"
+    },
+    {
+      "date": "2026-06-29",
+      "text": "NIP-46 session management behaviors (connect/restore/cancel/auth-method) have no acceptance criteria",
+      "reason": "Oscillation against the comprehensive 2026-06-28 disposition: nostr.ts NIP-46 adapter/signer-bridge behaviors (incl. auth-method) were archived as tested-but-unspecced internal/integration behavior needing no formal prose AC (e2e-tested via the real bunker; helpers 100% covered via nostr.pure.test.ts). This re-files the same 'no AC' class the prior session rejected. Unit coverage for these lines was added this session (nostr.adapter.test.ts, mutation-killing). Re-open against a product epic only if cipher-selection/session-management becomes a product concern.",
+      "source_slug": "nip-46-session-management-behaviors-connect"
     }
   ]
 }
