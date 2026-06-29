@@ -20,7 +20,7 @@ focused message, then continue. Stop when all boxes are ticked.
     Rule 9 (engine must not import marmot-ts types). Confirm `marmot-adapter.ts`
     remains the sole marmot-coupled file.
 
-- [ ] **2. Formal FSM transition table** *(gate: before Phase 5; Open Q6 / Constraint 4)*
+- [x] **2. Formal FSM transition table** *(gate: before Phase 5; Open Q6 / Constraint 4)*
   - Enumerate legal transitions, entry/exit conditions, and guard predicates for
     the nine states. Model `degraded` as an orthogonal `{ state, health }` pair,
     not a flat enum peer.
