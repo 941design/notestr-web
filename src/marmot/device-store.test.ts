@@ -382,6 +382,50 @@ describe("device-store", () => {
   });
 
   // -------------------------------------------------------------------------
+  // Property: markDeviceSeen with no fallbackName resolves to the synthetic
+  // default (Family C output contract — the absent-fallbackName branch).
+  //
+  // Story: a device recorded without an explicit friendly name — the common
+  // case, where a sighting arrives carrying nothing but its clientId —
+  // surfaces in the UI under the recognisable synthetic default ("this
+  // browser" for the local browser, "device-<slot>" for any other), never
+  // an arbitrary placeholder. The "no name supplied" path must collapse to
+  // defaultDeviceName, honouring the localClientId hint.
+  //
+  // (no AC; see BACKLOG finding device-store-rename-roundtrip)
+  // Family C — output contract over arbitrary input.
+  // -------------------------------------------------------------------------
+  it("markDeviceSeen: absent fallbackName resolves to defaultDeviceName(clientId, localClientId)", async () => {
+    // With a localClientId hint but no fallbackName.
+    await fc.assert(
+      fc.asyncProperty(
+        clientIdArb,
+        clientIdArb,
+        async (clientId, localClientId) => {
+          deviceNamesData.clear();
+          const created = await markDeviceSeen(clientId, { localClientId });
+          expect(created.name).toBe(
+            defaultDeviceName(clientId, localClientId),
+          );
+          // The persisted record agrees with the returned one.
+          expect(await getDeviceName(clientId, localClientId)).toBe(
+            defaultDeviceName(clientId, localClientId),
+          );
+        },
+      ),
+    );
+
+    // With no options at all (fallbackName and localClientId both absent).
+    await fc.assert(
+      fc.asyncProperty(clientIdArb, async (clientId) => {
+        deviceNamesData.clear();
+        const created = await markDeviceSeen(clientId);
+        expect(created.name).toBe(defaultDeviceName(clientId));
+      }),
+    );
+  });
+
+  // -------------------------------------------------------------------------
   // Property: setDeviceName preserves firstSeen across renames (Family B
   // isolation: renaming does not affect the first-sighting timestamp).
   //
