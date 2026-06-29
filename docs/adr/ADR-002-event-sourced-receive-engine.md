@@ -253,7 +253,15 @@ The five risks above that required a human decision were adjudicated by the prod
 
 5. **spec.md hygiene → broken links removed.** The dead links to `docs/quizzl-report.md` and `docs/shophop-report.md` were removed and the distilled lessons reframed to stand on their own.
 
-**Still open (engineering-internal, no product-behavior implication):** the engine↔adapter ingest seam (Accepted Risk 4), the formal FSM transition table, the recovery-sequencing protocol, and the Rule-10 teardown-order enforcement. These are owned by the integration architect and resolved before the phases noted in the architecture doc — they do not require a product decision.
+**Engineering-internal follow-ups — all RESOLVED 2026-06-29** (no product-behavior implication; see `architecture.md` and `fsm.md`):
+- **Engine↔adapter ingest seam** (was Accepted Risk 4) → `IngestSource` / `IngestSignal` contract; adapter is the sole marmot-coupled site, engine imports no marmot types.
+- **Formal FSM transition table** → `specs/epic-event-sourced-receive-engine/fsm.md` (lifecycle × orthogonal health, L1–L11 / H1–H2, cutover protocol, invariants).
+- **Joining-gate timeout** → `T_join = 8000 ms`; degrade-forward (L5) with background-continue + late-merge to nominal (H2).
+- **Re-join sequencing** → `start({origin})` discriminator + dispose→reset→start; widened to a full per-group reset.
+- **Recovery-sequencing protocol** → steps R1–R4 with invariants R-INV-1..4. NOTE: this refined the EngineCheckpoint seam shown above — `lastIngestedFactId` became `lastIngestedSeq` and a monotonic `seq` was added to `RawProtocolFact` (content-hash ids are not orderable). The architecture doc is authoritative over the snapshot in this ADR's Decision section.
+- **Rule-10 teardown order** → enforced structurally by engine-owns-adapter single ownership.
+
+The epic is ready for story planning.
 
 ---
 
