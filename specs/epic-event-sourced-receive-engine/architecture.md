@@ -181,6 +181,39 @@ Functional core + imperative shell, three nested shells: pure domain inner core 
 
 ---
 
+### IngestSource / IngestSignal  *(resolves Open Question §4 — engine↔adapter ingest seam)*
+
+The ET-1 contradiction is resolved by **direction of control vs. direction of coupling**: the engine *drives* ingest (decides when to catch up, when to open live, when to stop) but never *touches* marmot. `marmot-adapter.ts` is the sole site that calls `group.ingest()`, `client.network.subscription()`, `deserializeApplicationData`, and reads epoch state. It translates every marmot outcome into a marmot-free `IngestSignal` the engine consumes.
+
+**Control interface — the engine calls these on the adapter (no marmot types cross the boundary):**
+
+| Method | Purpose |
+|---|---|
+| `catchUp(): AsyncIterable<IngestSignal>` | Drain historical events through `group.ingest()` once; yields one signal per event. |
+| `openLive(onSignal: (s: IngestSignal) => void): Unsubscribe` | Open the live `client.network.subscription()`; pushes signals as they arrive. |
+| `close(): void` | Close subscription and release marmot handles. Called by the engine during `stop()`. |
+
+**Data interface — `IngestSignal` (discriminated union, marmot-free):**
+
+| Variant | Fields | Meaning |
+|---|---|---|
+| `message` | `{ fact: RawProtocolFact, rumorId: string, payload: TaskEvent, epoch: string, receiptSource }` | `group.ingest` decrypted an application message; `payload` already decoded via `deserializeApplicationData` (in the adapter). |
+| `deferred` | `{ fact: RawProtocolFact, reason: "unreadable" \| "epoch_mismatch", epoch }` | Event received but not yet decryptable; engine parks it. |
+| `skipped` | `{ factId: string }` | Ratchet already consumed this id (own-echo / duplicate); no payload. |
+| `epoch_advanced` | `{ newEpoch: string, prevEpoch: string }` | Translated from marmot `stateChanged` when the epoch changed; triggers deferred-retry. |
+
+**Invariants:**
+- `IngestSignal` carries **no marmot-ts types**. `payload` is the app's own `TaskEvent` wire type; `RawProtocolFact` is already marmot-free (a `NostrEvent` envelope). Decoding and epoch reads happen inside the adapter.
+- The engine never calls `group.ingest()` or the subscription directly. The adapter never makes accept/defer/dedupe/normalize decisions — those are engine-owned.
+- `catchUp()` must be drained to completion before `openLive()` is invoked for the same group (the engine's `catching_up → buffering_live` transition); live signals arriving during catch-up are buffered by the engine, not the adapter.
+- `epoch_advanced` maps to the engine's `group_epoch_advanced` output and the deferred-retry flush; a bare ratchet advance (no epoch change) produces no signal.
+
+**Produced by:** `src/integration/marmot-adapter.ts`
+**Consumed by:** `src/engine/receive-engine.ts` (drives via the control interface; consumes `IngestSignal`)
+**Defined in:** `src/engine/engine-types.ts` (both `IngestSource` and `IngestSignal`) — the engine owns the type so the adapter implements an engine-defined interface, not vice versa.
+
+---
+
 ## Boundary Rules
 
 **Allowed dependency edges:**
@@ -200,7 +233,7 @@ Functional core + imperative shell, three nested shells: pure domain inner core 
 6. `ensureMonotonicTimestamp` entering the projector or domain reducer.
 7. `OutboxEntry.createdAt` being mutated after creation.
 8. Any IDB key not defined in `src/engine/engine-types.ts` being introduced by an implementation agent.
-9. `src/engine/receive-engine.ts` importing marmot-ts types directly (pending resolution of Open Question §4 — engine<->adapter ingest seam).
+9. `src/engine/receive-engine.ts` importing marmot-ts types directly. RESOLVED: the engine consumes only `IngestSignal` (marmot-free) and drives ingest via the `IngestSource` control interface; all marmot calls live in `marmot-adapter.ts`. See the IngestSource / IngestSignal seam contract.
 10. `src/integration/marmot-adapter.ts` being torn down before `src/engine/receive-engine.ts` is stopped.
 
 ---
@@ -244,7 +277,7 @@ Items below require a verifier or integration architect to watch for and resolve
 
 3. **RESOLVED (2026-06-29) — Re-join resets the accepted-log:** On re-join the engine clears the per-group accepted-event log and `bootstrap-completed` flag before replaying the fresh snapshot, preventing the bootstrap idempotency key from silencing the new snapshot. spec.md amended (Ordering and Identity). See Implementation Constraint §1(b). Engineering follow-up: re-join-vs-restart detection and reset sequencing.
 
-4. **ENGINEERING (before any engine/adapter story) — Engine<->adapter ingest seam:** `receive-engine.ts` is described as absorbing `ingestGroupEventsRaw` (`device-sync.ts:677-761`) and `syncGroup` (`895-1010`), both of which call `group.ingest()` (`line 700`) and `client.network.subscription()` (`line 942`) directly. `marmot-adapter.ts` claims to contain all marmot coupling (ET-1 boundary). Both cannot simultaneously be true. Resolve who calls `group.ingest()`, who drives the subscription, and what typed interface the adapter exposes to the engine (`raw NostrEvent[]`, `IngestResult` async iterable, or other). This contract must be typed in `engine-types.ts` before either module's stories are written. (No product-behavior implication — internal seam.)
+4. **RESOLVED (2026-06-29) — Engine<->adapter ingest seam:** Resolved by the `IngestSource` / `IngestSignal` seam contract (see Seam Contracts). The adapter is the sole marmot-coupled site (calls `group.ingest()`, the subscription, `deserializeApplicationData`, epoch reads) and emits marmot-free `IngestSignal`s; the engine drives ingest via the `IngestSource` control interface (`catchUp` / `openLive` / `close`) and makes all accept/defer/dedupe/normalize decisions, importing no marmot types. Both `IngestSource` and `IngestSignal` are defined in `engine-types.ts`. Boundary Rule 9 updated. ET-1 holds (marmot API change → only `marmot-adapter.ts`).
 
 5. **RESOLVED (2026-06-29) — Joining-gate timeout:** The `joining` gate gets an explicit timeout; on timeout/bootstrap-failure the engine transitions forward into `catching_up`/`live` in `degraded` health rather than blocking the group, preserving today's graceful relay-down behavior. spec.md amended (Desired Engine State Machine). See Implementation Constraint §2. Engineering follow-up: timeout value and the `joining → degraded` transition wiring.
 

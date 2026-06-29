@@ -11,7 +11,7 @@ focused message, then continue. Stop when all boxes are ticked.
 
 ---
 
-- [ ] **1. Engine↔adapter ingest seam contract** *(gate: before any engine/adapter story; Open Q4 / Constraint 3)*
+- [x] **1. Engine↔adapter ingest seam contract** *(gate: before any engine/adapter story; Open Q4 / Constraint 3)*
   - Resolve the ET-1 contradiction: who calls `group.ingest()` and who drives
     `client.network.subscription()`. Decide whether the engine receives raw
     `NostrEvent[]`, an `IngestResult` async iterable, or another typed shape.
