@@ -43,7 +43,7 @@ before the group is operational or after it stops).
 | # | From | To | Trigger | Guard | Entry action of target |
 |---|---|---|---|---|---|
 | L1 | uninitialized | recovering | `start()` | a persisted `EngineCheckpoint` exists for this group | replay persisted raw-log + accepted-log + checkpoint to rebuild in-memory projection and `PendingRetryQueue` |
-| L2 | uninitialized | joining | `start()` | no checkpoint exists (first join or post-reset) | **if re-join** (new Welcome with a non-empty local accepted-log): clear accepted-log + `bootstrap-completed` flag (Decision 3, see Item 3); then begin bootstrap snapshot fetch with timeout `T_join` (Item 4) |
+| L2 | uninitialized | joining | `start({origin:"welcome"})` | no checkpoint exists (first join, or post-reset re-join) | local per-group state is already empty here (a re-join arrives via `reset()` → `start()`, see "Re-join & Reset" in architecture.md); begin bootstrap snapshot fetch with timeout `T_join` (Item 4) |
 | L3 | recovering | catching_up | recovery replay completes | — | open live subscription buffered; begin historical `catchUp()` drain |
 | L4 | joining | catching_up | bootstrap snapshot applied | `bootstrapResolved` | open live subscription buffered; begin historical `catchUp()` drain |
 | L5 | joining | catching_up **[degraded]** | bootstrap timeout/failure | `bootstrapTimedOut ∨ bootstrapFailed` (Item 4) | same as L4 entry, but set `health = degraded`; emit `engine_state_changed{health:"degraded"}` |

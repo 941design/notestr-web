@@ -238,13 +238,52 @@ The ET-1 contradiction is resolved by **direction of control vs. direction of co
 
 ---
 
+## Re-join and Reset  *(implements Decision 3 — resolves Open Question §3)*
+
+**Detection.** The engine cannot infer first-join vs restart vs re-join from
+local state alone. The integration layer (which knows whether a `MarmotGroup` was
+created from a fresh Welcome or rehydrated from persisted `SerializedClientState`)
+passes an explicit origin into `start()`:
+
+| `start({origin})` | Meaning | Path |
+|---|---|---|
+| `"restored"` | group rehydrated from persisted MLS state on app launch | L1 → `recovering` (replay local log) |
+| `"welcome"` | group (re)created from a freshly processed MLS Welcome | L2 → `joining` (fetch fresh bootstrap) |
+
+**Re-join sequencing.** A new Welcome for a group that already has local state is a
+re-join (e.g. the `forget-device` per-leaf flow → re-invite). The integration
+layer handles it as a **dispose-then-recreate**:
+
+1. If an engine instance for the group is live, `stop()` it (L10).
+2. Call `reset()` (L11) — clears **all** persisted per-group state: raw-log,
+   accepted-log, checkpoint, deferred ids, and the `bootstrap-completed` flag.
+3. `start({origin:"welcome"})` → `joining` → fresh bootstrap snapshot rebuilds
+   current task state.
+
+**Why a full reset, not just the accepted-log.** Decision 3 (and the spec
+amendment) names the accepted-log + bootstrap flag. The engine widens this to a
+full per-group reset because a new Welcome makes the prior MLS ratchet
+unrecoverable: the old raw-log facts are ciphertext no surviving key can decrypt,
+and the old checkpoint references a dead epoch/membership. Keeping them would make
+a later restart (L1) replay permanently-unreadable facts that park in the deferred
+queue forever. Clearing everything and rebuilding from the fresh bootstrap is both
+simpler and strictly more correct; it fully satisfies the product decision (a
+re-joining device is never stranded on stale data).
+
+**Convergence note.** Correctness of "clear local, rebuild from bootstrap" rests
+on the existing kind-30078 bootstrap delivering LWW-merged current state — an
+unchanged protocol behavior. No wire-format or convergence-rule change; the parent
+`../protocol/task-protocol.md` is unaffected.
+
+---
+
 ## Implementation Constraints
 
 Numbered constraints that integration-architect subagents must comply with before dispatching stories:
 
 1. **Product decisions — DECIDED (ADR-002, 2026-06-29). These are now binding; do not re-open:**
    - (a) **AcceptedDomainEvent.id bootstrap contract:** Bootstrap-sourced id is `"bootstrap:${groupId}:${task.id}"` (formalized in the AcceptedDomainEvent seam above). Engineering task: ensure all agents read this contract; do not invent an alternative key.
-   - (b) **Re-join accepted-log reset policy — DECIDED: reset.** On re-join (new MLS Welcome), the engine clears the per-group accepted-event log and the `bootstrap-completed` IDB flag before the joining phase replays the fresh snapshot. This prevents the bootstrap idempotency key from silencing the new snapshot and stranding a re-joining device on stale data. spec.md amended (Ordering and Identity → "Re-join must reset the local accepted-event log"). Remaining engineering work: detect re-join vs plain restart and sequence the reset before `appendAcceptedEvent` idempotency lands (Phase 2).
+   - (b) **Re-join accepted-log reset policy — DECIDED: reset.** On re-join (new MLS Welcome), the engine clears the per-group accepted-event log and the `bootstrap-completed` IDB flag before the joining phase replays the fresh snapshot. This prevents the bootstrap idempotency key from silencing the new snapshot and stranding a re-joining device on stale data. spec.md amended (Ordering and Identity → "Re-join must reset the local accepted-event log"). Detection + sequencing delivered in the "Re-join and Reset" section (origin discriminator + dispose-then-recreate; widened to a full per-group reset). Settled before Phase 2 `appendAcceptedEvent` idempotency.
    - (c) **Invariant 3 — DECIDED: narrow to same-epoch replay.** Recovery equivalence is guaranteed from the current encryption epoch forward only; cross-epoch recovery of events undecryptable across an epoch advance is out of scope (recovered by relay re-sync instead). spec.md amended (P4, Invariant 3, Out of Scope). The expensive alternative — a per-epoch key-snapshot fork extension — was rejected as out of scope for this epic.
 
 2. **Joining-gate timeout — DECIDED (ADR-002, 2026-06-29): timeout → degraded.** The `joining` gate must have an explicit timeout; on timeout or bootstrap failure the engine transitions forward into `catching_up`/`live` in a `degraded` health state rather than blocking the group. This preserves today's graceful relay-down behavior (`bootstrap` fails non-fatally at `device-sync.ts:602`, work continues locally, sync catches up later). spec.md amended (Desired Engine State Machine). Remaining engineering work: choose the timeout value and wire the `joining → degraded` failure transition.
@@ -275,7 +314,7 @@ Items below require a verifier or integration architect to watch for and resolve
 
 2. **RESOLVED (2026-06-29) — Invariant 3 narrowed:** Invariant 3 is narrowed to same-epoch replay only; cross-epoch recovery is out of scope (recovered by relay re-sync). spec.md amended at P4, Invariant 3, and Out of Scope. The per-epoch key-snapshot fork extension was rejected as out of scope for this epic. See Implementation Constraint §1(c).
 
-3. **RESOLVED (2026-06-29) — Re-join resets the accepted-log:** On re-join the engine clears the per-group accepted-event log and `bootstrap-completed` flag before replaying the fresh snapshot, preventing the bootstrap idempotency key from silencing the new snapshot. spec.md amended (Ordering and Identity). See Implementation Constraint §1(b). Engineering follow-up: re-join-vs-restart detection and reset sequencing.
+3. **RESOLVED (2026-06-29) — Re-join resets local state:** Detection and sequencing delivered in the "Re-join and Reset" section: the integration layer passes `start({origin})` (`"restored"` vs `"welcome"`); a re-join is handled as `stop()` → `reset()` (full per-group clear) → `start({origin:"welcome"})` → fresh bootstrap. Widened from accepted-log-only to a full reset so a later restart never replays dead old-epoch ciphertext. spec.md amended (Ordering and Identity); no protocol change. See Implementation Constraint §1(b).
 
 4. **RESOLVED (2026-06-29) — Engine<->adapter ingest seam:** Resolved by the `IngestSource` / `IngestSignal` seam contract (see Seam Contracts). The adapter is the sole marmot-coupled site (calls `group.ingest()`, the subscription, `deserializeApplicationData`, epoch reads) and emits marmot-free `IngestSignal`s; the engine drives ingest via the `IngestSource` control interface (`catchUp` / `openLive` / `close`) and makes all accept/defer/dedupe/normalize decisions, importing no marmot types. Both `IngestSource` and `IngestSignal` are defined in `engine-types.ts`. Boundary Rule 9 updated. ET-1 holds (marmot API change → only `marmot-adapter.ts`).
 

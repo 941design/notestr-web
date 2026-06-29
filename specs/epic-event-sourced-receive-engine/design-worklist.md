@@ -28,7 +28,7 @@ focused message, then continue. Stop when all boxes are ticked.
     architecture.md. Must cover joining→degraded (Decision 4) and the
     catch-up→live cutover condition.
 
-- [ ] **3. Re-join detection + accepted-log reset sequencing** *(gate: before Phase 2; Decision 3 follow-up)*
+- [x] **3. Re-join detection + accepted-log reset sequencing** *(gate: before Phase 2; Decision 3 follow-up)*
   - Specify how the engine distinguishes a re-join (new MLS Welcome) from a plain
     restart, and the exact order in which it clears the per-group accepted-event
     log and `bootstrap-completed` flag relative to replaying the fresh snapshot.
