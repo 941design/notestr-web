@@ -49,7 +49,7 @@ focused message, then continue. Stop when all boxes are ticked.
   - Deliver: a "Recovery Sequencing" subsection in architecture.md with the
     intersection rule stated as an invariant.
 
-- [ ] **6. Rule-10 teardown-order enforcement** *(gate: before joining-phase story; Open Q8 / Constraint Boundary-Rule-10)*
+- [x] **6. Rule-10 teardown-order enforcement** *(gate: before joining-phase story; Open Q8 / Constraint Boundary-Rule-10)*
   - Replace the unenforceable "adapter outlasts engine" convention with a
     structural mechanism (single owner that tears down in a fixed order, or an
     explicit lifecycle handshake) so the adapter's `group.off()` can't starve the

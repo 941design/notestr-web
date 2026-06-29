@@ -236,7 +236,7 @@ The ET-1 contradiction is resolved by **direction of control vs. direction of co
 7. `OutboxEntry.createdAt` being mutated after creation.
 8. Any IDB key not defined in `src/engine/engine-types.ts` being introduced by an implementation agent.
 9. `src/engine/receive-engine.ts` importing marmot-ts types directly. RESOLVED: the engine consumes only `IngestSignal` (marmot-free) and drives ingest via the `IngestSource` control interface; all marmot calls live in `marmot-adapter.ts`. See the IngestSource / IngestSignal seam contract.
-10. `src/integration/marmot-adapter.ts` being torn down before `src/engine/receive-engine.ts` is stopped.
+10. `src/integration/marmot-adapter.ts` having any independent React lifecycle. ENFORCED STRUCTURALLY (resolves Open Question §8): the engine **owns** the adapter — the adapter is constructed and handed to the engine, the engine holds the only reference, and `engine.stop()` (FSM L10) calls `adapter.close()` as its final action. The React integration manages exactly **one** object (the engine) with one `useEffect` cleanup (`engine.stop()`); the adapter MUST NOT register its own effect/cleanup. Teardown order is therefore a function of call sequence inside `stop()`, not React effect registration order — the `group.off()`-before-`engine.stop()` starvation is structurally impossible.
 
 ---
 
@@ -353,6 +353,6 @@ Items below require a verifier or integration architect to watch for and resolve
 
 7. **RESOLVED (2026-06-29) — Recovery sequencing:** Specified as the "Recovery Sequencing" section (steps R1–R4, invariants R-INV-1..4). Added a monotonic `seq` to `RawProtocolFact` and changed the checkpoint marker to `lastIngestedSeq`; recovery re-ingests only `seq > lastIngestedSeq` and recovers deferred facts from `deferred-store`. See Implementation Constraint §5.
 
-8. **Rule 10 enforcement gap:** Adapter-outlasts-engine has no enforcement mechanism. `useEffect` cleanup order in a shared React provider is registration-order dependent, not guaranteed. Adapter torn down first → `group.off()` removes `applicationMessage`/`stateChanged` before `engine.stop()`, starving the engine during teardown — reproducing the `mountedRef` guard problem (`device-sync.ts:508-509`) the epic aims to eliminate. Must be verified or structurally enforced before the joining-phase story is implemented.
+8. **RESOLVED (2026-06-29) — Rule 10 enforced by ownership:** Replaced the unenforceable "adapter outlasts engine" convention with single-ownership: the engine owns the adapter, React manages exactly one object (the engine) with one cleanup (`engine.stop()`), and `stop()` closes the adapter last (FSM L10). The adapter has no independent React effect. Teardown order follows call sequence, not effect registration order; the `group.off()`-starvation path is structurally impossible. See Boundary Rule 10.
 
 9. **RESOLVED (2026-06-29) — spec.md broken links:** The links to `docs/quizzl-report.md` and `docs/shophop-report.md` (which do not exist in the repo) were removed from spec.md "Lessons From Related Projects"; the distilled patterns were reframed as standing on their own. spec.md is now self-consistent on this point.
