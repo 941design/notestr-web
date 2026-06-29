@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-06-29T00:49:03Z",
+  "updated_at": "2026-06-29T05:53:01Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -270,6 +270,19 @@
         "detail": "fixme smoke needs redesign/delete decision; behavior covered",
         "stamped_at": "2026-06-29"
       }
+    },
+    {
+      "slug": "cross-client-b3-web-join-mdk-group-flaky",
+      "scope": "any",
+      "anchor": {
+        "path": "src/marmot/client.tsx"
+      },
+      "text": "Web flakily fails to surface/join a CLI-created (MDK) group (B3.1)",
+      "created_at": "2026-06-29",
+      "motivation": "Cross-client B3 regression (parent suite make cross-client-test, hop B3.1). When the CLI/daemon creates a group and invites the web, the web intermittently fails to surface the group. Web-created groups (B1) and same-identity web-joins-CLI-group are green -> specific to joining a different-npub MDK-created group.",
+      "behavior": "make cross-client-test B3.1 flaky: passes once then times out 60s on serial retry at cross-client.spec.ts:306 (webGroups never contains the new group); reproduced on 2 runs.",
+      "approach": "Inspect welcome processing for an MDK-origin group + the live subscription wired for it via __notestrTestInspectGroupEvent/__notestrTestGroupEpoch/__notestrTestMlsTrace (received-but-not-applied vs never-received). IDB partitioning 7607c7c is ruled out (shipped, B3 unchanged). Likely src/marmot/. See notestr/bug-reports/cross-client-b3-web-join-mdk-group-flaky-report.md.",
+      "success_signal": "make cross-client-test B3.1 passes reliably across >=5 runs for a CLI-created group."
     }
   ],
   "archive": [
