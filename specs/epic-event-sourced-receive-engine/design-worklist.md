@@ -42,7 +42,7 @@ focused message, then continue. Stop when all boxes are ticked.
   - Deliver: update fsm.md + architecture.md Constraint 2; note the chosen value
     and its rationale.
 
-- [ ] **5. Recovery-sequencing protocol (three-way replay)** *(gate: before Phase 7; Open Q7 / Constraint 5)*
+- [x] **5. Recovery-sequencing protocol (three-way replay)** *(gate: before Phase 7; Open Q7 / Constraint 5)*
   - Define the replay protocol across raw-log / deferred-store / checkpoint so an
     unreadable event (id in raw-log AND deferred-store, NOT accepted-log, with
     `lastIngestedFactId` set) is neither dropped nor re-ingested.

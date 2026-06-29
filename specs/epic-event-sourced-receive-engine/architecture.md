@@ -39,7 +39,8 @@ Functional core + imperative shell, three nested shells: pure domain inner core 
 
 | Field | Type | Optional |
 |---|---|---|
-| id | string | no — `nostrEvent.id`; content-addressed; idempotency key |
+| id | string | no — `nostrEvent.id`; content-addressed; idempotency/dedupe key |
+| seq | number | no — monotonic per-group receipt sequence assigned on append; the ORDERING and recovery-watermark key (ids are content hashes, NOT ordered) |
 | groupId | string | no — `group.idStr` (MLS hex group ID) |
 | nostrEventId | string | no — same as `id`; explicit for query clarity |
 | nostrEvent | NostrEvent | no — full relay envelope |
@@ -48,7 +49,8 @@ Functional core + imperative shell, three nested shells: pure domain inner core 
 | epochAtReceipt | string | no — DIAGNOSTIC ONLY |
 
 **Invariants:**
-- `id` is stable across duplicate deliveries of the same relay event (content-addressed).
+- `id` is stable across duplicate deliveries of the same relay event (content-addressed) and is the dedupe key. `id` is NOT ordered — never compare ids to determine sequence.
+- `seq` is assigned monotonically on append to the per-group raw-log and is the sole ordering/recovery-watermark key. Duplicate deliveries (same `id`) do not get a new `seq` (idempotent append by `id`).
 - `epochAtReceipt` MUST NOT be used as a retrieval key for past `SerializedClientState`. No snapshot-at-epoch API exists in marmot-ts. This field is diagnostic metadata only.
 - Bootstrap-sourced facts enter the same store as MLS-sourced facts; `receiptSource` discriminates origin.
 - `nostrEvent.content` is encrypted MLS ciphertext; raw-fact storage does not attempt decryption.
@@ -92,14 +94,14 @@ Functional core + imperative shell, three nested shells: pure domain inner core 
 | savedAt | number | no — client ms |
 | engineState | EngineLifecycleState | no — enum value at checkpoint time |
 | lastEpoch | string | no — MLS epoch string |
-| lastIngestedFactId | string | no — last `RawProtocolFact.id` through `group.ingest` (= `syncedEventIds`; includes processed + skipped) |
+| lastIngestedSeq | number | no — `seq` of the last `RawProtocolFact` that COMPLETED `group.ingest` (processed, skipped, or deferred). Recovery re-ingests only facts with `seq > lastIngestedSeq`. |
 | lastAcceptedDomainEventId | string | no — last `AcceptedDomainEvent.id` produced |
 | deferredNostrEventIds | string[] | no — events in `PendingRetryQueue` at checkpoint time |
 
 **Invariants:**
-- `lastIngestedFactId` and `lastAcceptedDomainEventId` are DISTINCT markers. An unreadable/deferred event advances `lastIngestedFactId` but NOT `lastAcceptedDomainEventId`. Conflating them is a known anti-pattern from the original proposal.
-- OPEN RISK: Recovery sequencing across raw-log / deferred-store / checkpoint is UNSPECIFIED (see Open Questions §7). Do not implement Phase 7 without a defined three-way intersection replay protocol.
-- On restart, engine uses `lastIngestedFactId` to skip already-processed raw-log facts during recovery replay.
+- `lastIngestedSeq` and `lastAcceptedDomainEventId` are DISTINCT markers. An unreadable/deferred event advances `lastIngestedSeq` but NOT `lastAcceptedDomainEventId`. Conflating them is a known anti-pattern from the original proposal.
+- Recovery sequencing is SPECIFIED in the "Recovery Sequencing" section (resolves Open Questions §7). A fact's recovery disposition is decided by store membership + the `seq` watermark, never by comparing content-hash ids.
+- On restart, the engine re-ingests only raw-log facts with `seq > lastIngestedSeq`; facts at or below the watermark already have their outcome in the accepted-log or deferred-store.
 
 **Produced by:** `src/engine/receive-engine.ts` (on phase transition and periodic save)
 **Consumed by:** `src/engine/receive-engine.ts` (on restart, to reconstruct `PendingRetryQueue`)
@@ -238,6 +240,33 @@ The ET-1 contradiction is resolved by **direction of control vs. direction of co
 
 ---
 
+## Recovery Sequencing  *(resolves Open Question §7 — three-way replay)*
+
+The `recovering` lifecycle (FSM L1, taken on `start({origin:"restored"})`) rebuilds
+in-memory state from three persisted stores without re-decrypting through the
+already-advanced MLS ratchet. Inputs: `rawLog` (ordered by `seq`), `acceptedLog`,
+`deferredIds` (set), and the `EngineCheckpoint`.
+
+**The disambiguation rule:** a fact's disposition is decided by **which store it is
+in**, plus the `seq` watermark — never by comparing content-hash ids (they are not
+ordered). This is what resolves the "id in raw-log AND deferred-store, NOT in
+accepted-log, yet already ingested" ambiguity.
+
+| Step | Action |
+|---|---|
+| **R1 — Rebuild projection** | `projection = buildProjection(replayOrder(acceptedLog))`, where `replayOrder` = bootstrap-sourced events first, then MLS-sourced, each in `seq`/append order (NOT `acceptedAt` clock). Deterministic per Invariants 1 & 4. |
+| **R2 — Rebuild deferred queue** | Re-queue every id in `deferredIds` into the `PendingRetryQueue`. Their ciphertext lives in `rawLog` keyed by id; they await `epoch_advanced` (FSM L8). Do NOT re-ingest them now. |
+| **R3 — Re-ingest the crash-gap tail** | For each `rawLog` fact with `seq > checkpoint.lastIngestedSeq`, submit it to the adapter for ingest. These were persisted to the raw-log but the crash preceded their ingest. Facts with `seq <= lastIngestedSeq` are NEVER re-submitted (ratchet already consumed them; outcome already in `acceptedLog` or `deferredIds`). |
+| **R4 — Resume** | `recovering → catching_up` (L3): open live + drain `catchUp()` for anything that arrived on the relay while offline. |
+
+**Invariants:**
+- **R-INV-1:** Recovery disposition uses store membership + `seq` watermark only. Never order or compare facts by `id`.
+- **R-INV-2:** No fact with `seq <= lastIngestedSeq` is re-submitted to ingest. (At best a no-op skip; at worst a double-apply.)
+- **R-INV-3:** `deferredIds ∩ {e.factId | e ∈ acceptedLog} = ∅`. A fact is parked XOR accepted. When a deferred fact is later accepted on retry, it is removed from `deferred-store` and appended to `accepted-log` atomically (single persistence transaction) so a crash cannot leave it in both or neither.
+- **R-INV-4:** Projection after R1+R3 equals the in-memory projection at crash time plus any gap-tail facts — i.e. Invariant 4 (rebuild equality) holds across restart.
+
+---
+
 ## Re-join and Reset  *(implements Decision 3 — resolves Open Question §3)*
 
 **Detection.** The engine cannot infer first-join vs restart vs re-join from
@@ -292,7 +321,7 @@ Numbered constraints that integration-architect subagents must comply with befor
 
 4. **FSM transition table — DELIVERED in [`./fsm.md`](./fsm.md).** `receive-engine.ts` stories MUST conform to it: the `{ lifecycle, health }` encoding (degraded is orthogonal health, never a lifecycle peer), transitions L1–L11 + H1–H2, the cutover protocol, and invariants I-FSM-1..6. Any state-machine deviation from `fsm.md` is a review-blocking defect.
 
-5. **Recovery sequencing specification required before Phase 7.** The three-way intersection replay protocol (raw-log / deferred-store / checkpoint) is undefined. An unreadable event has its id in raw-log AND deferred-store but NOT accepted-log, yet `lastIngestedFactId` is set. On recovery: skipping facts `<= lastIngestedFactId` silently drops the deferred event needing retry; not skipping re-ingests already-processed events. This ambiguity is a Phase 7 blocker.
+5. **Recovery sequencing — DELIVERED in the "Recovery Sequencing" section.** The three-way replay (raw-log / deferred-store / checkpoint) is specified as steps R1–R4 with invariants R-INV-1..4. The id-ordering ambiguity is resolved by a monotonic `seq` watermark (`lastIngestedSeq`) plus store-membership disposition; deferred facts are recovered from `deferred-store` (R2), not from a raw-log id comparison. Phase 7 stories MUST follow R1–R4.
 
 6. **Phase 3 scope is projection-layer validation only.** State-machine behavior — joining-gate delay, live-cutover drop/reorder (`syncGroup:993-1009`), deferred-retry timing — produces no signal in Phase 3 (engine inactive in listener-only mode). FSM unit tests for `receive-engine.ts` MUST be required before Phase 5 stories to compensate. Phase 3 passing does NOT indicate state-machine correctness.
 
@@ -322,7 +351,7 @@ Items below require a verifier or integration architect to watch for and resolve
 
 6. **RESOLVED (2026-06-29) — FSM transition table:** Authored in [`./fsm.md`](./fsm.md): lifecycle states, the orthogonal `{ lifecycle, health }` encoding, all transitions (L1–L11, H1–H2) with triggers/guards/entry actions, the gap-free catch-up→live cutover protocol, and six FSM invariants. This is the Phase 5 entry gate for `receive-engine.ts` stories.
 
-7. **Recovery sequencing unspecified:** Three-way intersection replay protocol (raw-log / deferred-store / checkpoint) is undefined (see Implementation Constraint §5). Required before Phase 7. The ambiguity between "skip facts <= `lastIngestedFactId`" and "re-ingest already-processed events" cannot be resolved by an implementation agent without context.
+7. **RESOLVED (2026-06-29) — Recovery sequencing:** Specified as the "Recovery Sequencing" section (steps R1–R4, invariants R-INV-1..4). Added a monotonic `seq` to `RawProtocolFact` and changed the checkpoint marker to `lastIngestedSeq`; recovery re-ingests only `seq > lastIngestedSeq` and recovers deferred facts from `deferred-store`. See Implementation Constraint §5.
 
 8. **Rule 10 enforcement gap:** Adapter-outlasts-engine has no enforcement mechanism. `useEffect` cleanup order in a shared React provider is registration-order dependent, not guaranteed. Adapter torn down first → `group.off()` removes `applicationMessage`/`stateChanged` before `engine.stop()`, starving the engine during teardown — reproducing the `mountedRef` guard problem (`device-sync.ts:508-509`) the epic aims to eliminate. Must be verified or structurally enforced before the joining-phase story is implemented.
 
