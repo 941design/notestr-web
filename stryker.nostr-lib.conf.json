@@ -1,0 +1,45 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Focused mutation audit of src/lib/nostr.ts — NIP-46 session helpers, pubkey formatting, localStorage read/write.",
+  "packageManager": "npm",
+  "testRunner": "vitest",
+  "vitest": {
+    "configFile": "vitest.config.ts"
+  },
+  "coverageAnalysis": "perTest",
+  "concurrency": 4,
+  "mutate": [
+    "src/lib/nostr.ts"
+  ],
+  "reporters": [
+    "html",
+    "json",
+    "progress",
+    "clear-text"
+  ],
+  "htmlReporter": {
+    "fileName": "reports/mutation/nostr-lib/index.html"
+  },
+  "jsonReporter": {
+    "fileName": "reports/mutation/nostr-lib/mutation.json"
+  },
+  "tempDirName": ".stryker-tmp/nostr-lib",
+  "timeoutMS": 180000,
+  "disableTypeChecks": "src/**/*.{ts,tsx}",
+  "checkers": [],
+  "_ignore_comment": "Stryker copies the project into each sandbox and does NOT honor .gitignore. Exclude large generated/cache dirs — especially the 34k-file pnpm content store, which otherwise bloats every sandbox copy and can trip ENFILE (system file-table overflow) under FD load. None are needed to run the vitest unit suite.",
+  "ignorePatterns": [
+    "**/.pnpm-store/**",
+    "**/.stryker-tmp/**",
+    "**/reports/**",
+    "**/out/**",
+    "**/.next/**",
+    "**/test-results/**",
+    "**/playwright-report/**",
+    "**/dist/**",
+    "**/bug-reports/**",
+    "**/e2e/.triage/**",
+    "**/.claude/**",
+    "**/e2e/**"
+  ]
+}

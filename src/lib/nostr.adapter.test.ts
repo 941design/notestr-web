@@ -100,11 +100,11 @@ vi.mock("@/config/relays", () => ({ NDK_CONNECT_TIMEOUT_MS: 5000 }));
 
 vi.mock("@nostr-dev-kit/ndk", () => ({
   default: class NDK {
-    connect = (...args: unknown[]) => mockNDKConnect(...args);
+    connect = () => mockNDKConnect();
   },
   NDKNip46Signer: {
     bunker: (...args: unknown[]) => mockBunkerFn(...args),
-    fromPayload: (...args: unknown[]) => mockFromPayloadFn(...args),
+    fromPayload: () => mockFromPayloadFn(),
     nostrconnect: (...args: unknown[]) => mockNostrConnectFn(...args),
   },
   NDKPrivateKeySigner: {},
@@ -119,7 +119,7 @@ vi.mock("nostr-tools/nip19", () => ({
 }));
 
 vi.mock("nostr-tools/pure", () => ({
-  getEventHash: (...args: unknown[]) => mockGetEventHash(...args),
+  getEventHash: (event: unknown) => mockGetEventHash(event),
 }));
 
 // ---------------------------------------------------------------------------
