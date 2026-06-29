@@ -1,0 +1,88 @@
+{
+  "epic": "event-sourced-receive-engine",
+  "generated_by": "two base:code-explorer agents (architecture + similar-features)",
+  "paradigm_today": {
+    "classification": "mixed: functional-core+imperative-shell (reducer/store) over event-driven transport over layered macro-structure",
+    "layers": [
+      "transport adapter: src/marmot/network.ts (NdkNetworkAdapter implements marmot-ts NostrNetworkInterface)",
+      "MLS ingest: src/marmot/device-sync.ts (useDeviceSync hook; group.ingest, ingestLock, retry)",
+      "domain normalization: src/store/task-reducer.ts applyEvent via applicationMessage",
+      "persistence: src/store/persistence.ts appendEvent (device-sync listener)",
+      "React projection: src/store/task-store.tsx setState (task-store listener)",
+      "UI: components consuming useTaskStore"
+    ],
+    "correctness_fragmentation": "CRDT convergence rules live in task-reducer.ts (pure); MLS epoch ordering/ingest serialization/retry live in useDeviceSync closure (imperative, effect-bound); optimistic apply + publish ordering live in task-store.tsx dispatch (React, async)"
+  },
+  "two_listeners_confirmed": {
+    "persistence_listener": "device-sync.ts:874-892 attachAppMsgListener -> appendEvent(group.idStr, taskEvent), fire-and-forget; survives TaskStoreProvider unmount (lives in useDeviceSync)",
+    "react_listener": "task-store.tsx:181-255 handleApplicationMessage -> applyEvent(stateRef.current, taskEvent) + setState; lost on unmount",
+    "coordination": "none; both fire for every incoming application message, each independently calls deserializeApplicationData; delivery order guaranteed only by EventEmitter, no explicit sequencing"
+  },
+  "persistence_reality": {
+    "mechanism": "IndexedDB via idb-keyval through createKVStore<T> (storage.ts:100-133); per-pubkey DB namespacing notestr-${pubkey}-${name}",
+    "appendEvent": "persistence.ts:29-36 read-modify-write (loadEvents -> push -> setItem); NO idempotency key, NOT atomic, NOT transactional",
+    "race": "device-sync persistence listener (remote) and task-store dispatch (local) can both call appendEvent; concurrent callers on same key can lose writes (last-write-wins on the array)",
+    "log_inflation": "duplicates accumulate silently; reducer idempotence (property C3) keeps FINAL STATE safe but log grows unbounded and replayEvents folds every entry",
+    "relevant_stores": [
+      "task-events (key notestr:events:${groupId} -> TaskEvent[])",
+      "group-sync (key groupId -> string[] seen kind-445 event ids; storage.ts:391-406)",
+      "group-state (SerializedClientState; managed by marmot-ts) -- the persisted MLS state P2 requires",
+      "bootstrap-completed (groupId -> true)",
+      "joined-groups (groupId -> true)"
+    ]
+  },
+  "existing_building_blocks": {
+    "pure_reducer": "task-reducer.ts:5-105 applyEvent (LWW CRDT, three-level tie-break updatedAt->updatedBy->updatedByDevice; task.created is FWW) + replayEvents (log-fold). Pure, no React. MATURE; used by publishTaskStateSync and bootstrap.",
+    "ingest_queue": "ingest-queue.ts createPendingRetryQueue: pure, framework-agnostic, bounded(200), TTL(24h), O(1) id-dedupe, FIFO eviction. = the spec's 'Deferred Event' concept. MATURE, unit-tested.",
+    "ingestLock": "device-sync.ts:651 Map<string,Promise> chain-promise mutex per group; serializes group.ingest to avoid ts-mls state races. Closure-private to the hook.",
+    "retry_on_epoch": "device-sync.ts:819-870 attachRetryOnEpochAdvance on group.on('stateChanged'); triggers on newEpoch>prev; MAX_RETRIES_PER_EPOCH=3; lastEpoch Map<string,bigint>.",
+    "drain_on_ingest": "device-sync.ts:759-793 Solution B: drains retry queue when >=1 event processed; selectAndIncrementRetries pure+tested.",
+    "subscribe_first_cutover": "device-sync.ts:925-1010 syncGroup: liveBuffer, cutoverComplete flag, t0-60s overlap since-bridge; historical fetch during buffer accumulation; sort by created_at + drain through ingest lock on cutover.",
+    "outbox_bridge_partial": "device-sync.ts:86-290 enqueueExpectedPublish/consumeExpectedPublishForKind445/begin|endDispatchPublishWindow: per-hTag FIFO correlating rumor.id->kind445 eventId at publish to work around marmot-ts own-echo suppression. Handles TRACEABILITY only, not durability/retry.",
+    "trace": "mls-trace.ts: MlsTrace + TraceEvent union (16 variants) covering full receive+dispatch path; build-gated (NEXT_PUBLIC_E2E_TRACE_MLS). Close to 'engine metadata' vocabulary."
+  },
+  "framework_coupling_to_remove": [
+    "useDeviceSync IS a React hook (device-sync.ts:487); whole receive state machine lives in a useEffect closure; all internal state resets on unmount",
+    "mountedRef.current guards (device-sync.ts:508,896,986,1000) silently stop receive on unmount",
+    "TaskStoreProvider second applicationMessage listener calls setState directly from protocol callback (F3 race class)",
+    "load + listener-attach useEffects; message between mount and attach is lost (F3a); stale-load overwrite race (F3d) task-store.tsx:154-166",
+    "DOM event bus coupling: window 'notestr:forgotten-slots-changed' (device-sync.ts:1055), 'notestr:taskPublishFailed' (task-store.tsx:371)",
+    "client.tsx attachStateListener calls React setState from group.on('stateChanged')",
+    "ADR-001 sender-side monotonic bump ensureMonotonicTimestamp lives in dispatch() in React layer (task-store.tsx); must move with publish/outbox layer"
+  ],
+  "marmot_surface": {
+    "transport": "client.network.request(relays, filters)->Promise<NostrEvent[]> (one-shot EOSE); client.network.subscription(relays,filters)->Subscribable<NostrEvent>",
+    "ingest": "group.ingest(events)->async iterable of IngestResult {kind: processed|skipped|rejected|unreadable, event}; marmot-ts owns epoch-advance + MLS state mutation",
+    "events": "group.on('applicationMessage', (data:Uint8Array)) on decrypt of kind-31337 rumor; NOT fired for own-echo. group.on('stateChanged') on epoch OR ratchet advance (disambiguate via lastEpoch).",
+    "own_echo": "marmot-ts suppresses self-echo at ingest (skipped/self-echo); reason outbox bridge operates on publish path not receive path",
+    "no_catchup_api": "historical vs live is entirely consumer-managed in syncGroup; no marmot-ts catch-up abstraction",
+    "fork": "marmot-ts is a controlled fork consumed as a packed tarball (see CLAUDE.md)"
+  },
+  "ordering_identity": {
+    "adr_001": "docs/adr/ADR-001: updatedAt(seconds) primary, updatedBy(pubkey lower-wins), updatedByDevice(MLS clientId lower-wins). Rejected ms-timestamps and Lamport. Sender-side monotonic bump added.",
+    "alignment": "new epic spec.md:495 'timestamps must not be sole correctness boundary' ALIGNS with ADR-001 (already three-level). Lamport named as next axis if needed.",
+    "gap": "NO stable idempotency key on TaskEvent today. Dedupe is on kind-445 event IDs (MLS layer), not TaskEvent identity. rumor.id is the correlator but is NOT a field on TaskEvent. spec.md:492 'every accepted domain event must have a stable idempotency key' is UNSATISFIED."
+  },
+  "related_epics": {
+    "epic-mls-live-delivery-race": "DONE; all code live in tree. This epic INHERITS (no collision): subscribe-first cutover, drain-on-ingest retry, PendingRetryQueue, MlsTrace.",
+    "epic-task-snapshot-removal-crdt-convergence": "done; task.snapshot removed from kind-445 layer. BUT kind-30078 (TASK_STATE_SYNC_KIND) bootstrap side-channel STILL EXISTS (fetchAndApplyTaskBootstrap/inviteAndPublishSnapshot, device-sync.ts:1324-1586). MATERIAL: canonical durable truth is NOT purely the kind-445 log; it also includes kind-30078 events replayed into the TaskEvent log at join time.",
+    "epic-task-sync-publish-contract": "added publish-failure surfacing (taskPublishFailed CustomEvent) + dispatch publish mutex; not yet behind an outbox abstraction.",
+    "other_touching_specs": ["epic-new-member-task-state-sync (owns kind-30078 bootstrap)", "epic-multi-device-sync", "epic-property-based-invariants / property-tests-l3-*", "epic-auto-invite-freshness (concurrent auto-invite scan in device-sync)", "epic-multi-user-idb-scoping-marmot-idb (per-pubkey IDB)"]
+  },
+  "test_culture": {
+    "frameworks": "vitest + fast-check; NUM_RUNS=1000 (FAST_CHECK_NUM_RUNS overridable)",
+    "files": [
+      "task-reducer.test.ts (50+ unit: FWW/LWW, three-level tie-break, stale rejection, resurrection, sub-frame burst)",
+      "task-reducer.property.test.ts (15+ fast-check props labeled with AC codes S1-S9, A1-A13, R1, C0-C3, D1, COMMUTATIVITY)",
+      "multi-client.property.test.ts (N-client convergence via FakeBoard; single-writer constraint documented -- multi-writer needs consensus the LWW reducer lacks)",
+      "ingest-queue.test.ts (dedup, FIFO, eviction, prune, cap)",
+      "device-sync.test.ts (selectAndIncrementRetries, keyPackageSlot, publish-window brackets)"
+    ],
+    "convention": "properties tagged with acceptance-criterion codes; this is the right home for the epic's 6 correctness invariants"
+  },
+  "notable_flags": [
+    "docs/quizzl-report.md and docs/shophop-report.md referenced in spec.md:153-154 DO NOT EXIST in the repo; only the distilled lessons inline in the spec are available. Downstream architects will hit broken links.",
+    "kind-30078 out-of-band bootstrap means the 'canonical record' (P2) is NOT just raw kind-445 + MLS state; it must also account for the NIP-44 bootstrap side channel.",
+    "appendEvent idempotency gap is real but currently masked by reducer idempotence; not type-enforced -- a future double-call inflates the log silently."
+  ]
+}

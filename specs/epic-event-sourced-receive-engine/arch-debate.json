@@ -1,0 +1,12 @@
+{
+  "status": "synthesized",
+  "mode": "epic",
+  "adr_number": 2,
+  "proposal": "see arch-debate-proposal.md (verbatim Proposer output)",
+  "round1_challenge": "see arch-debate-round1-challenge.json",
+  "round1_response": "see arch-debate-round1-response.md",
+  "round2_challenge": "see arch-debate-round2-challenge.json",
+  "synthesized_at": "2026-06-29T17:27:00Z",
+  "adr_path": "docs/adr/ADR-002-event-sourced-receive-engine.md",
+  "architecture_path": "specs/epic-event-sourced-receive-engine/architecture.md"
+}

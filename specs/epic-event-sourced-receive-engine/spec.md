@@ -124,9 +124,11 @@ Transport envelopes and MLS `applicationMessage` callbacks are input signals. Th
 
 The system should normalize accepted protocol payloads into domain events and use those domain events as the replayable basis for projection.
 
-### P4 — Recovery must be equivalent by design
+### P4 — Recovery must be equivalent by design, within the current encryption epoch
 
-If the app is restarted mid-flight, recovery should converge to the same projected state as uninterrupted execution, subject only to accepted eventual-consistency semantics.
+If the app is restarted mid-flight, recovery should converge to the same projected state as uninterrupted execution, subject only to accepted eventual-consistency semantics **and to the availability of decryption state**.
+
+**Decision (ADR-002, 2026-06-29):** The encryption library (the marmot-ts fork) persists only the *current* group key state, not a per-epoch history. An event that arrived under an earlier epoch and was still undecrypted when the group's epoch advanced cannot be re-read after a restart — its decryption key is gone. Recovery equivalence is therefore guaranteed **from the current epoch forward only**. A device that was holding an undecryptable event across an epoch change and then restarted re-acquires that event's content by re-syncing from the relay, not from the local raw log. Full cross-epoch recovery would require a per-epoch key-snapshot API that does not exist in the fork and is explicitly out of scope for this epic (see Out of Scope and Invariant 3).
 
 ### P5 — Duplicate delivery and replay are normal
 
@@ -148,10 +150,7 @@ Optimistic local publish, outbox state, own-echo reconciliation, and delivery fa
 
 ## Lessons From Related Projects
 
-Two related projects were reviewed as architectural references:
-
-- [docs/quizzl-report.md](/Users/mrother/Projects/941design/notestr/notestr-web/docs/quizzl-report.md:1)
-- [docs/shophop-report.md](/Users/mrother/Projects/941design/notestr/notestr-web/docs/shophop-report.md:1)
+Two related projects (Quizzl and Shophop) were reviewed as architectural references during early design. Their review reports are **not checked into this repo** — the patterns distilled below stand on their own and the architecture does not depend on those source documents. (The prior links to `docs/quizzl-report.md` and `docs/shophop-report.md` were removed because those files do not exist here.)
 
 The main lessons are:
 
@@ -427,6 +426,8 @@ Examples:
 
 The point is not the exact enum. The point is to stop encoding operational phases indirectly in callbacks and refs.
 
+**Decision (ADR-002, 2026-06-29) — the joining gate must not block the group on relay I/O.** The `joining` phase waits for the join-time bootstrap/catch-up to resolve before the group goes `live`. That wait depends on relay I/O and must therefore have an explicit timeout and a failure-path transition. On timeout (or bootstrap failure), the engine must transition forward into `catching_up`/`live` in a `degraded` state rather than remaining in `joining` indefinitely. This preserves today's behavior: when the relay is slow or unavailable the user keeps working locally and sync catches up later — the group is never frozen. The timeout value and the `joining -> degraded` failure transition must be specified before the joining-phase story is implementable.
+
 ## Consistency Contract
 
 The target consistency model is **eventual consistency with deterministic interpretation and projection**.
@@ -494,6 +495,12 @@ Requirements:
 - if total ordering is needed within a scope, the tie-break strategy must be explicit
 
 The design should not rely solely on second-resolution `created_at` values to define correctness.
+
+### Re-join must reset the local accepted-event log
+
+**Decision (ADR-002, 2026-06-29):** Idempotency by stable event id is correct for *live* duplicate delivery, but it must not silence the join-time bootstrap snapshot on a re-join. When a device re-joins a group (a new MLS Welcome — for example after "forget device" and rejoin), the engine must treat its local accepted-event log and the `bootstrap-completed` marker as **stale and reset them**, so the fresh bootstrap snapshot is applied rather than skipped as "already seen."
+
+Requirement: re-join clears the per-group accepted-event log (and bootstrap marker) before the joining phase replays the new snapshot. Without this reset, a re-joining device whose in-between history has been pruned from the relay would be permanently stranded on an outdated projection with no error surfaced. The reset policy and its interaction with the `bootstrap-completed` marker must be defined before the persistence adapter's append-with-idempotency contract is finalized (Phase 2).
 
 ## Projection Model
 
@@ -651,6 +658,7 @@ The live-delivery race work may land first as a tactical stabilization. This epi
 - solving every future application domain upfront beyond the abstractions needed for extension
 - guaranteeing strict real-time consistency
 - rewriting unrelated product areas that do not participate in this state path
+- per-epoch decryption-key snapshots (cross-epoch recovery of events that were undecryptable across an epoch advance) — see P4 and Invariant 3
 
 ## Correctness Invariants
 
@@ -660,7 +668,7 @@ Target invariants:
 
 1. `projection(replay(X))` is deterministic for a fixed canonical record `X`.
 2. `projection(replay(X))` is unchanged by duplicate delivery of already-accounted-for inputs.
-3. `projection(recover(prefix(X)) + replay(suffix(X))) == projection(replay(X))`.
+3. `projection(recover(prefix(X)) + replay(suffix(X))) == projection(replay(X))` **for inputs decryptable under the current encryption epoch**. Inputs that were undecryptable across an epoch advance are recovered by relay re-sync, not by local replay, and are excluded from this equality (see P4). Full cross-epoch replay equality is out of scope for this epic; it requires a per-epoch key-snapshot API that does not exist in the marmot-ts fork.
 4. For any accepted task-event log `L`, rebuilding projection from persisted inputs yields the same state as the in-memory projection.
 5. Deferred/unreadable events that become readable after later valid state transitions converge without manual reload.
 6. Optimistic local publish reconciles to the same durable projected state whether or not own-echo is observed before restart.
