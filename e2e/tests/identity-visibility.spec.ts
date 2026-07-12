@@ -76,38 +76,40 @@ test.describe('identity-visibility', () => {
   });
 
   test('identity switch restores full interactivity for member', async ({ browser }) => {
-    // This test needs two separate browser contexts:
-    // - Context B: User B authenticates first to publish key package
-    // - Context A: User A creates group, invites User B
-    // Then in a shared single context: User A creates group, invites User B,
-    // disconnects, User B logs in and sees the group as fully interactive.
+    // The whole scenario runs in ONE browser context (shared IndexedDB with
+    // per-pubkey partitions). User B signs in FIRST so B's key package —
+    // including the private HPKE init key needed to decrypt an MLS Welcome —
+    // lands in B's partition of THIS browser's IndexedDB. Do NOT publish B's
+    // key package from a separate, later-closed context: that makes delivery
+    // cryptographically impossible (no device holding the private material
+    // exists anymore). The pre-partitioning version of this test did exactly
+    // that and only passed by reading A's group state out of the shared
+    // origin-level store — the cross-identity leak 7607c7c removed.
 
     const groupName = `Switch-Test ${Date.now()}`;
 
     const BASE_URL = 'http://localhost:3100';
     const contextOpts = { baseURL: BASE_URL, ...devices['Desktop Chrome'] };
 
-    // Step 1: User B publishes key package in a separate context
-    const contextB = await browser.newContext(contextOpts);
-    const pageB = await contextB.newPage();
-    await pageB.goto('/');
-    await clearAppState(pageB);
-    await pageB.goto('/');
-    await pageB.getByRole('tab', { name: /bunker:\/\/ URL/i }).click();
-    await pageB.getByPlaceholder('bunker://...').fill(
-      (await import('../fixtures/auth-helper-b.js')).E2E_BUNKER_B_URL,
-    );
-    await pageB.getByRole('button', { name: 'Connect' }).click();
-    await pageB.locator('[data-testid="pubkey-chip"]').waitFor({ state: 'visible', timeout: 30000 });
-    // Wait for key package to be published
-    await pageB.waitForTimeout(3000);
-    await contextB.close();
-
-    // Step 2: User A creates group and invites User B in a single-context flow
     const context = await browser.newContext(contextOpts);
     const page = await context.newPage();
     await page.goto('/');
     await clearAppState(page);
+
+    // Step 1: User B signs in, publishes a key package into B's partition,
+    // and signs out. Plain "Sign out" preserves B's partition (and thus the
+    // key package private material) on disk for the re-sign-in in Step 3.
+    await authenticateAsBunkerB(page);
+    // Wait for key package to be published
+    await page.waitForTimeout(3000);
+    await page.locator('[data-testid="disconnect-button"]').click({ force: true });
+    await page
+      .getByRole('alertdialog')
+      .getByRole('button', { name: 'Sign out', exact: true })
+      .click();
+    await page.getByText('Sign in to notestr').waitFor({ state: 'visible', timeout: 15000 });
+
+    // Step 2: User A creates group and invites User B in the same context
     await authenticateViaBunker(page);
 
     const hamburger = page.locator('button[aria-label="Open menu"]');
@@ -138,7 +140,9 @@ test.describe('identity-visibility', () => {
       .click();
     await page.getByText('Sign in to notestr').waitFor({ state: 'visible', timeout: 15000 });
 
-    // User B authenticates in the same context (shared IndexedDB)
+    // Step 3: User B re-authenticates in the same context (shared IndexedDB).
+    // B's partition still holds the key package private material from Step 1,
+    // so the MLS Welcome fetched from the relay is decryptable.
     await authenticateAsBunkerB(page);
 
     if (await hamburger.isVisible()) {
