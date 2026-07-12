@@ -67,7 +67,13 @@
     "epic-mls-live-delivery-race": "DONE; all code live in tree. This epic INHERITS (no collision): subscribe-first cutover, drain-on-ingest retry, PendingRetryQueue, MlsTrace.",
     "epic-task-snapshot-removal-crdt-convergence": "done; task.snapshot removed from kind-445 layer. BUT kind-30078 (TASK_STATE_SYNC_KIND) bootstrap side-channel STILL EXISTS (fetchAndApplyTaskBootstrap/inviteAndPublishSnapshot, device-sync.ts:1324-1586). MATERIAL: canonical durable truth is NOT purely the kind-445 log; it also includes kind-30078 events replayed into the TaskEvent log at join time.",
     "epic-task-sync-publish-contract": "added publish-failure surfacing (taskPublishFailed CustomEvent) + dispatch publish mutex; not yet behind an outbox abstraction.",
-    "other_touching_specs": ["epic-new-member-task-state-sync (owns kind-30078 bootstrap)", "epic-multi-device-sync", "epic-property-based-invariants / property-tests-l3-*", "epic-auto-invite-freshness (concurrent auto-invite scan in device-sync)", "epic-multi-user-idb-scoping-marmot-idb (per-pubkey IDB)"]
+    "other_touching_specs": [
+      "epic-new-member-task-state-sync (owns kind-30078 bootstrap)",
+      "epic-multi-device-sync",
+      "epic-property-based-invariants / property-tests-l3-*",
+      "epic-auto-invite-freshness (concurrent auto-invite scan in device-sync)",
+      "epic-multi-user-idb-scoping-marmot-idb (per-pubkey IDB)"
+    ]
   },
   "test_culture": {
     "frameworks": "vitest + fast-check; NUM_RUNS=1000 (FAST_CHECK_NUM_RUNS overridable)",
@@ -84,5 +90,39 @@
     "docs/quizzl-report.md and docs/shophop-report.md referenced in spec.md:153-154 DO NOT EXIST in the repo; only the distilled lessons inline in the spec are available. Downstream architects will hit broken links.",
     "kind-30078 out-of-band bootstrap means the 'canonical record' (P2) is NOT just raw kind-445 + MLS state; it must also account for the NIP-44 bootstrap side channel.",
     "appendEvent idempotency gap is real but currently masked by reducer idempotence; not type-enforced -- a future double-call inflates the log silently."
+  ],
+  "prior_learnings": [
+    {
+      "id": "vitest-passing-does-not-mean-build",
+      "note": "TS type errors slip past unit tests; gate every story on npx tsc --noEmit / make build"
+    },
+    {
+      "id": "vitest-node-env-cannot-import-tsx",
+      "note": "vitest env is node-only; .tsx and NEXT_PUBLIC-dependent modules cannot be imported by unit tests — keep engine/domain/persistence pure .ts (matches boundary rules)"
+    },
+    {
+      "id": "extract-pure-helpers-ts-when-vitest",
+      "note": "extract pure logic to .ts sidecars for testability"
+    },
+    {
+      "id": "vitest-defaults-forks-pool-separate-processes",
+      "note": "forks pool = separate processes; BroadcastChannel cannot bridge test workers"
+    },
+    {
+      "id": "kind-445-events-have-ephemeral-authors",
+      "note": "never filter NDK subscriptions for kind-445 by author"
+    },
+    {
+      "id": "lww-tie-break-pubkey-alone-fails",
+      "note": "three-level tie-break (updatedAt, updatedBy, updatedByDevice) is the settled CRDT rule — task-crdt.ts must implement exactly this (ADR-001)"
+    },
+    {
+      "id": "joingroupfromwelcome-throws-no-matching",
+      "note": "self-echo welcomes throw a known error class; adapter must treat as benign"
+    },
+    {
+      "id": "notestr-web-custom-dom-event-pattern",
+      "note": "existing custom DOM event pattern for IDB-backed store changes — react-engine-hooks may supersede but must not break it mid-migration"
+    }
   ]
 }

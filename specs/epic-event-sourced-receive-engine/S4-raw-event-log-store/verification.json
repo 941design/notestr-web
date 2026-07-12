@@ -1,0 +1,82 @@
+{
+  "story_id": "S4",
+  "authored_by": "story-planner",
+  "authored_at": "2026-07-12T13:15:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S4-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does raw-event-log-store.ts's appendFact/appendAcceptedEvent implement real lookup-before-insert idempotency (an actual read against the IDB store keyed by id before writing) rather than a no-op or always-insert stub that only appears idempotent because the test double never surfaces the duplicate?"
+    },
+    {
+      "question_id": "VQ-S4-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does raw-event-log-store.ts implement only the fact/accepted-event half of PersistenceAdapter (appendFact, loadFacts, appendAcceptedEvent, loadAcceptedEvents) via createKVStore, with zero checkpoint/deferred-id methods (S11's scope) and zero writes to notestr:events:${groupId}?"
+    },
+    {
+      "question_id": "VQ-S4-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `raw-event-log-store` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list (src/domain/* for types only, src/marmot/storage.ts for IDB infrastructure)? If not, which cross-module dependencies exist and do they flow through the declared PersistenceAdapter seam contract in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S4-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does raw-event-log-store.test.ts call appendFact and appendAcceptedEvent twice each with the same id and assert loadFacts/loadAcceptedEvents returns exactly one entry (not zero, not two), using a real (or IDB-faithful fake) createKVStore rather than a mock that always returns a length of 1 regardless of what was appended?"
+    },
+    {
+      "question_id": "VQ-S4-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does raw-event-log-store.ts reference IDB key constants exported from src/engine/engine-types.ts (notestr:raw-facts:${groupId}, notestr:accepted-events:${groupId}) rather than inlining the string literals, per Rule 9 / Boundary Rule 8?"
+    },
+    {
+      "question_id": "VQ-S4-006",
+      "phase": "pre-impl",
+      "category": "BEST_PRACTICES",
+      "question": "Does legacy-key-guard.structural.test.ts assert, via grep across the repo excluding src/store/persistence.ts's existing implementation, zero write call sites targeting a key matching notestr:events:, with evidence the check would fail if raw-event-log-store.ts (or any other new file) wrote to that legacy key?"
+    },
+    {
+      "question_id": "VQ-S4-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-INV-2",
+      "question": "does the implementation satisfy AC-INV-2's persistence-side observable -- does a unit test call appendFact and appendAcceptedEvent twice with the same id and assert loadFacts/loadAcceptedEvents returns exactly one entry each time, exercising the real IDB-backed store (or an IDB-faithful fake), not a mock-spy that only counts invocations without checking stored state?"
+    },
+    {
+      "question_id": "VQ-S4-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MIG-1",
+      "question": "does the implementation satisfy AC-MIG-1's observable -- does legacy-key-guard.structural.test.ts grep the repository, excluding src/store/persistence.ts's pre-existing implementation, for any write call site targeting a key matching notestr:events: and assert zero matches, with evidence this check is wired to run as a CI gate at every phase-boundary commit from this point onward (not merely a one-time local assertion)?"
+    },
+    {
+      "question_id": "VQ-S4-P1",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MIG-1",
+      "question": "legacy-key-guard.structural.test.ts's write-call-site scanner excludes TWO files (src/store/persistence.ts AND src/marmot/storage.test.ts), while the story brief and AC-MIG-1's text pre-authorized only the first. Is the second exclusion (storage.test.ts's pre-existing literal `set(\"notestr:events:g1\", ...)` legacy-migration test fixture) a legitimate reading of AC-MIG-1's intent (test-only historical-state simulation, not a new production write path), or does it require either escalation to amend the AC's exclusion clause, or a rewrite of storage.test.ts's fixture (out of this story's src/persistence/-only file scope) to hold the gate to the AC's literal text?",
+      "answer": "YES, legitimate reading -- not an escalation-requiring deviation. Read src/marmot/storage.test.ts:170-181 directly: the fixture under test is `describe(\"legacy migration\")` / `it(\"migrates task event log from the legacy default keyval-store\")`, which seeds `set(\"notestr:events:g1\", [{ id: \"e1\" }])` against the BARE idb-keyval default store (no createKVStore, no per-pubkey partition) specifically to reproduce the ON-DISK SHAPE a pre-this-epic app version would already have written, then asserts storage.ts's migrateLegacyPartition correctly copies it forward. This is data-simulation for a migration-correctness test of PRE-EXISTING, already-shipped behavior -- structurally the same category AC-MIG-1's own text already carves out for persistence.ts (a pre-existing, sanctioned read/write path), not a new call site that could route production data around persistence.ts going forward. AC-MIG-1's actual hazard -- a NEW production module choosing to persist accepted-event data through a second, independent path instead of going through raw-event-log-store.ts / persistence.ts -- is not present here: nothing production-facing consumes storage.test.ts. Confirmed empirically: with the exclusion removed (manual local edit, reverted), legacy-key-guard.structural.test.ts's violations array reports exactly [\"src/marmot/storage.test.ts\"] and nothing else across all of src/, i.e. no OTHER file (production or test) trips the scanner -- so the exclusion is narrowly scoped to this one pre-existing fixture, not a laundered escape hatch. Recommend this as informational for the epic's later phase-boundary reviewers (S9/S12/S13) rather than a required action now: if storage.test.ts's fixture is ever rewritten to seed via a raw IDB connection (mirroring storage.ts's own readAllRaw pattern), the second exclusion can be dropped with zero behavior change to the gate.",
+      "confidence": 0.9
+    },
+    {
+      "question_id": "VQ-S4-P2",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "question": "Does the appendAcceptedEvent idempotency proof actually key on `event.id` alone (not deep-equality of the whole event object)? A test that only ever appends byte-identical duplicates could pass even if the implementation accidentally deep-compared the full event and let a same-id-different-payload duplicate through as a second entry.",
+      "answer": "YES, proven directly. raw-event-log-store.test.ts's \"keys idempotency on id alone\" test (appendAcceptedEvent describe block) constructs two AcceptedDomainEvents sharing id \"evt-1\" but with DIFFERENT task titles in their payload, appends both, and asserts loadAcceptedEvents returns exactly one entry equal to the FIRST-appended event (not the second, not a merge of both). Independently re-read the test and the implementation (`existing.some((e) => e.id === event.id)`, a bare `.id` comparison with no other field involved) -- the check is structurally incapable of comparing anything but id.",
+      "confidence": 1.0
+    },
+    {
+      "question_id": "VQ-S4-P3",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "The story brief's pre-impl question set (VQ-S4-005) references IDB key constants as literal template strings (notestr:raw-facts:${groupId}, notestr:accepted-events:${groupId}); the amended architecture requires these come from engine-types.ts's rawFactsKey/acceptedEventsKey FUNCTIONS, not inlined templates. Does raw-event-log-store.ts call the functions, or does it reconstruct the template inline while merely importing the prefix constants (which would still trip AC-BOUND-3's per-file literal scan since the constants' VALUES, not names, are what's scanned)?",
+      "answer": "YES, calls the functions directly -- confirmed by reading raw-event-log-store.ts's imports (`rawFactsKey`, `acceptedEventsKey` imported as functions from ../engine/engine-types, not the KEY_PREFIX constants) and every call site (`rawFactsKey(fact.groupId)`, `rawFactsKey(groupId)`, `acceptedEventsKey(event.groupId)`, `acceptedEventsKey(groupId)` -- four call sites total, no inline template literal anywhere in the file). Independently confirmed via `npx vitest run` that engine-boundary.structural.test.ts's AC-BOUND-3 suite (which scans ALL of src/ for the four IDB key literal markers outside engine-types.ts) passed for raw-event-log-store.ts as part of the full 733-test green run -- if a literal had been inlined, that pre-existing, unmodified structural test would have failed without any action from this story.",
+      "confidence": 1.0
+    }
+  ]
+}

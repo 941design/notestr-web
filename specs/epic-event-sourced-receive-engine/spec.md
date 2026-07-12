@@ -256,15 +256,20 @@ Per-group engine responsible for:
 - acceptance/rejection/defer decisions
 - receive-state persistence checkpoints
 
-The engine emits typed outputs such as:
+The engine emits exactly these ten typed `EngineOutputEvent` variants (amended
+2026-07-12, Stage-2 cold review — P3-12; see `architecture.md` "Seam Contracts
+› EngineOutputEvent" for the authoritative field-level definition):
 
 - `envelope_received`
 - `envelope_deferred`
 - `domain_event_accepted`
 - `domain_event_rejected`
 - `projection_invalidated`
-- `group_state_changed`
-- `degraded`
+- `group_epoch_advanced`
+- `group_ratchet_advanced`
+- `engine_state_changed` — carries `{ state, health }`; `degraded` is a
+  **health dimension** on this event, not a separate event of its own
+- `deferred_retry_started`
 - `recovered`
 
 This layer is framework-agnostic.
@@ -587,9 +592,12 @@ This refactor is large and should be staged.
 
 ### Phase 3 — Introduce parallel-run and diff-checking
 
-- run the new engine in shadow mode where feasible
+**Scope (amended 2026-07-12, per ADR-002):** Phase 3 is **projection-layer validation only, in listener-observation mode**. The originally proposed shadow/parallel-ingest design was rejected as structurally impossible (`group.ingest()` destructively consumes ratchet keys; `ingestLock` is closure-private — see ADR-002 Alternatives Considered and architecture.md Constraint 6). Do not re-derive it.
+
+- observe the legacy listeners' outputs and feed the same accepted events through the new projection path
 - compare new projection outputs against the legacy path
 - add structured diff-checking before cutover
+- Phase 3 passing does NOT indicate state-machine correctness; FSM unit tests are a Phase 5 entry gate (architecture.md Constraint 6)
 
 ### Phase 4 — Move task projection behind the engine
 
@@ -649,6 +657,7 @@ The live-delivery race work may land first as a tactical stabilization. This epi
 - separating engine/persistence/projection/app layers
 - making recovery and degraded states explicit
 - reducing or removing UI dependence on raw protocol callback timing
+- moving optimistic local publish, outbox durability, and own-echo reconciliation behind the engine boundary (P8, Phase 6, Invariant 6)
 - preserving future extractability where it does not distort near-term architecture
 
 ## Out of Scope
@@ -659,6 +668,7 @@ The live-delivery race work may land first as a tactical stabilization. This epi
 - guaranteeing strict real-time consistency
 - rewriting unrelated product areas that do not participate in this state path
 - per-epoch decryption-key snapshots (cross-epoch recovery of events that were undecryptable across an epoch advance) — see P4 and Invariant 3
+- concurrent multi-tab operation: the engine assumes a single active tab per group. Two tabs running engine instances against the same per-group IDB stores are not coordinated (no Web Locks / leader election). Revisit as an evolution trigger if multi-tab becomes a supported scenario.
 
 ## Correctness Invariants
 
@@ -689,18 +699,23 @@ This epic is successful when:
 
 ## Open Design Questions
 
-These questions should be resolved before implementation phases that depend on them:
+All five questions are **RESOLVED** (design phase completed 2026-06-29; markers added 2026-07-12):
 
-1. What exact raw-envelope shape should be persisted as the canonical fact record?
-2. Should projections use periodic snapshots for replay performance, or begin with log-only rebuild?
-3. What exact receive metadata is necessary to make restart recovery semantically strong without over-persisting internal engine state?
-4. Which interpreted artifacts should be persisted as caches/indexes versus rebuilt on demand?
-5. How should degraded states surface into the UI without making the UI a correctness owner?
-
-Questions 1 and 3 are blockers for any implementation step that persists or replays the canonical record.
+1. ~~What exact raw-envelope shape should be persisted as the canonical fact record?~~ **RESOLVED** — `RawProtocolFact` seam contract (architecture.md "Seam Contracts": full field table, `id`-vs-`seq` invariants).
+2. ~~Should projections use periodic snapshots for replay performance, or begin with log-only rebuild?~~ **RESOLVED — log-only rebuild.** `EngineCheckpoint` carries no projection snapshot; Recovery Sequencing R1 always does `buildProjection(replayOrder(acceptedLog))`. Snapshots may be revisited later as a performance optimization; they are not part of this epic.
+3. ~~What exact receive metadata is necessary for restart recovery?~~ **RESOLVED** — `EngineCheckpoint` seam + Recovery Sequencing R1–R4 (architecture.md).
+4. ~~Which interpreted artifacts are persisted vs rebuilt?~~ **RESOLVED** — `AcceptedDomainEvent` is the only persisted interpreted artifact (`PersistenceAdapter.appendAcceptedEvent`); projections are always rebuildable and never source of truth.
+5. ~~How should degraded states surface into the UI?~~ **RESOLVED** — `engine_state_changed{state, health}` output event consumed by `react-engine-hooks.ts`; visual treatment is app-shell concern (Library Character section).
 
 ## Recommendation
 
 Proceed with this refactor as a first-class architecture epic.
 
 The immediate live-delivery stabilization work should still land, but it should be treated as tactical containment. The long-term fix is to redesign the state pipeline so that eventually consistent distributed behavior is modeled explicitly and owned by a reusable core, rather than emerging from coordination between transport code, UI effects, and ad hoc persistence.
+
+## Amendments
+
+- **2026-06-29 (ADR-002):** Five product-behavior decisions resolved and back-ported (P4/Invariant-3 narrowing, re-join reset, joining-gate timeout, EngineCheckpoint `lastIngestedSeq`, engine↔adapter seam).
+- **2026-07-12 (spec validation, pre-implementation):** Phase 3 reworded from "shadow mode" to listener-observation-only (the shadow design was rejected by ADR-002; wording predated the debate). Open Design Questions 1–5 all marked RESOLVED with pointers (Q2 → log-only rebuild; Q4 → accepted-events are the only persisted interpreted artifact). In Scope gains the publish/outbox bullet (was implied by P8/Phase 6/Invariant 6 but absent from the list). Out of Scope gains the single-active-tab assumption. Failure-mode defaults added to architecture.md Implementation Constraints §11–§13 (persistence I/O failure → degraded+retry; corrupt checkpoint → treated as absent; parse_error → permanent reject, never parked).
+- **2026-07-12 (Stage-2 cold review batch A–G):** persistence carve-out permitting `src/persistence/*` to import `engine-types.ts` only (A); `EngineCheckpoint.bootstrapCompleted` added and FSM L1/L2 restart routing keyed on it, plus `PersistenceAdapter.clearGroupState` realizing `reset()` (B); `AcceptedDomainEvent.factId` made non-nullable — bootstrap events now link to their kind-30078 `RawProtocolFact` (C); `EngineCheckpoint.deferredNostrEventIds` removed, `deferred-store` is the sole deferred-queue source of truth (D); `lastEpoch`/`lastAcceptedDomainEventId` made nullable to legally represent a checkpoint saved during `joining` (E); the boundary-scanner test tightened to cover `.tsx`, no-space `from"..."` imports, all of `src/` for AC-BOUND-3, and `src/marmot`/`src/persistence` for AC-BOUND-1 (F); this output-event list corrected to the real ten-variant vocabulary (G).
+- **2026-07-12 (S3 Stage-2 cold review batch):** `task-projector.ts` gained property coverage for `replayOrder` (phase-partitioning, within-phase stability, non-mutation, fresh-array return) and purity oracles (input non-mutation, result-vs-independent-fold equality, `EMPTY_PROJECTION` non-pollution); AC-INV-2's projector half re-scoped to "re-applying an already-applied event is a no-op" — unique-id logs are a persistence-layer precondition (S4's `appendAcceptedEvent` idempotency), not something the projector dedups, correcting a prior phrasing that implied projector-side id-dedup; `applyEvent` now preserves referential identity on no-op paths (returns the same `TaskProjection` reference rather than a fresh copy), a pure optimization S8's React layer will rely on for change detection.

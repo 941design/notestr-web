@@ -1,0 +1,274 @@
+{
+  "epic": "event-sourced-receive-engine",
+  "concepts": [
+    {
+      "id": "receive-engine-lifecycle",
+      "name": "Per-group receive engine lifecycle (start/stop/reset, L1-L11/H1-H2)",
+      "owning_module": "receive-engine",
+      "type": "invariant",
+      "added_by_story": "S5"
+    },
+    {
+      "id": "engine-types-idb-key-authority",
+      "name": "IDB key schema authority (raw-facts, accepted-events, engine-checkpoints, deferred-ids)",
+      "owning_module": "engine-types",
+      "type": "path_convention",
+      "added_by_story": "S1"
+    },
+    {
+      "id": "ingest-policy-dedupe-retry-budget",
+      "name": "Dedupe and retry-budget policy wrapping PendingRetryQueue",
+      "owning_module": "ingest-policy",
+      "type": "validation_rule",
+      "added_by_story": "S5"
+    },
+    {
+      "id": "accepted-domain-event-idempotency",
+      "name": "AcceptedDomainEvent dual idempotency-key derivation (MLS rumor.id / bootstrap deterministic id) [S2: canonical AcceptedDomainEvent<T=TaskEvent> + deriveMlsAcceptedEventId + deriveBootstrapAcceptedEventId + SOURCE_KIND_PHASE_ORDER; factId non-null] [AC-INV-2 FULLY CLOSED: projector half S3 + persistence half S4 both proven]",
+      "owning_module": "domain-events",
+      "type": "invariant",
+      "added_by_story": "S2"
+    },
+    {
+      "id": "task-projection-determinism",
+      "name": "Deterministic, replayable, idempotent, rebuildable task projection (buildProjection/applyEvent)",
+      "owning_module": "task-projector",
+      "type": "invariant",
+      "added_by_story": "S3"
+    },
+    {
+      "id": "task-crdt-tiebreak",
+      "name": "Shared taskWinsOver three-level tie-break (updatedAt/updatedBy/updatedByDevice) -- single authority",
+      "owning_module": "task-crdt",
+      "type": "invariant",
+      "added_by_story": "S3"
+    },
+    {
+      "id": "raw-event-log-idempotent-append",
+      "name": "Idempotent raw-fact and accepted-event log append (lookup-before-insert on id)",
+      "owning_module": "raw-event-log-store",
+      "type": "invariant",
+      "added_by_story": "S4"
+    },
+    {
+      "id": "checkpoint-durability",
+      "name": "Durable engine checkpoint keyed by groupId (lastIngestedSeq watermark)",
+      "owning_module": "checkpoint-store",
+      "type": "invariant",
+      "added_by_story": "S11"
+    },
+    {
+      "id": "deferred-queue-durability",
+      "name": "Durable deferred-queue id list across restarts",
+      "owning_module": "deferred-store",
+      "type": "invariant",
+      "added_by_story": "S11"
+    },
+    {
+      "id": "marmot-adapter-ingest-translation",
+      "name": "Sole marmot-ts-coupled site; translates all marmot outcomes to marmot-free IngestSignal",
+      "owning_module": "marmot-adapter",
+      "type": "public_contract",
+      "added_by_story": "S7"
+    },
+    {
+      "id": "react-engine-hooks-single-effect",
+      "name": "Single useEffect per group owning engine.stop() cleanup (no independent adapter lifecycle)",
+      "owning_module": "react-engine-hooks",
+      "type": "invariant",
+      "added_by_story": "S8"
+    },
+    {
+      "id": "device-sync-no-new-correctness-logic",
+      "name": "device-sync.ts shrink-only constraint (Boundary Rule 5): deletions/stubbing/delegation only",
+      "owning_module": "device-sync",
+      "type": "validation_rule",
+      "added_by_story": null
+    },
+    {
+      "id": "task-store-no-new-correctness-logic",
+      "name": "task-store.tsx shrink-only constraint (Boundary Rule 5): deletions/stubbing/delegation only",
+      "owning_module": "task-store",
+      "type": "validation_rule",
+      "added_by_story": null
+    },
+    {
+      "id": "legacy-events-key-read-only",
+      "name": "Legacy notestr:events:${groupId} key is read-only from Phase 2 (raw-event-log-store.ts existing) onward",
+      "owning_module": "persistence",
+      "type": "path_convention",
+      "added_by_story": "S4"
+    },
+    {
+      "id": "engine-seam-type-authority",
+      "name": "Single definition site for all engine seam types (RawProtocolFact, AcceptedDomainEvent fwd, EngineCheckpoint, EngineOutputEvent, IngestSignal, IngestSource, PersistenceAdapter, EngineState/Lifecycle/Health) [amended 2026-07-12: RawProtocolFactInput, AppendFactResult, IngestSource.ingestPersisted (4 methods), PersistenceAdapter.acceptDeferredFact (9 methods, accepted-first crash-safe ordering), Input-shaped IngestSignal facts]",
+      "owning_module": "engine-types",
+      "type": "public_contract",
+      "added_by_story": "S1"
+    },
+    {
+      "id": "engine-boundary-structural-guard",
+      "name": "AC-BOUND-1 import scanner (incl. bare side-effect imports, post-remediation) + AC-BOUND-3 IDB-key sole-owner scanner",
+      "owning_module": "engine-types",
+      "type": "validation_rule",
+      "added_by_story": "S1"
+    },
+    {
+      "id": "task-events-domain-ownership",
+      "name": "TaskEvent wire type owned by src/domain/task-events.ts; src/store/task-events.ts is a pure re-export shim (15 importers unchanged); resolves S1 Finding 2 / Decider gate",
+      "owning_module": "domain-events",
+      "type": "path_convention",
+      "added_by_story": "S2"
+    },
+    {
+      "id": "domain-boundary-structural-guard",
+      "name": "AC-BOUND-2 scanner: zero-external-imports + DOM-global scan for src/domain (DOM word-scan hardened post-S2-review against prose false positives)",
+      "owning_module": "domain-events",
+      "type": "validation_rule",
+      "added_by_story": "S2"
+    },
+    {
+      "id": "bound-4-comparator-guard",
+      "name": "AC-BOUND-4 repo-wide three-field comparator fingerprint scan (stripped source); CANONICAL_FILES={task-crdt.ts,task-crdt.test.ts}, ALLOWLISTED_LEGACY={task-reducer.ts, expiry S9/S12}; exemptions proof-tested",
+      "owning_module": "task-projector",
+      "type": "validation_rule",
+      "added_by_story": "S3"
+    },
+    {
+      "id": "engine-persistence-retry-discipline",
+      "name": "S6: two-tier retry — blocking withPersistenceRetry (primary writes, FIFO-held, exp-2 backoff 1s..30s max 8, ~91s worst hold, unbounded buffering behind it BY DESIGN per Constraint 11) vs saveCheckpointResilient (derived, detached, gen-guarded); REF-COUNTED persistence-write-failing degradation (stop/reset zero it after abandonPendingRetries); exhaustion = parked-until-next-start, never discard [S6 cold-batch: checkpoint saves rebuilt-per-attempt + monotonic supersession counter; watermark advances only after accepted/deferred write durable (skipped/malformed asymmetry documented); saveDeferredIds in blocking family; L9 latch-consumption loop; refundAttempt on persistence-side pass failures]",
+      "owning_module": "receive-engine",
+      "type": "invariant",
+      "added_by_story": "S6"
+    },
+    {
+      "id": "rejection-reason-vocabulary",
+      "name": "domain_event_rejected reasons (4 engine-emitted): parse_error (terminal malformed), retry-exhausted (decrypt budget), deferred-ttl-expired, persistence-exhausted (primary-write retry exhaustion) — S8 UI must handle all four + unknown gracefully; relay re-sync is the recovery path",
+      "owning_module": "receive-engine",
+      "type": "public_contract",
+      "added_by_story": "S6"
+    }
+  ],
+  "stories": [
+    {
+      "id": "S1",
+      "surfaces_touched": [
+        "src/engine/engine-types.ts",
+        "src/engine/engine-boundary.structural.test.ts"
+      ],
+      "creates_seam": true,
+      "seams_defined": [
+        "RawProtocolFact",
+        "AcceptedDomainEvent(fwd)",
+        "EngineCheckpoint",
+        "EngineOutputEvent",
+        "IngestSignal",
+        "IngestSource",
+        "PersistenceAdapter"
+      ],
+      "findings_raised": 2,
+      "findings_open": 0,
+      "disposition": "F1 (scanner blind spot) remediated; F2 (engine->store type edge) deferred to S2 by lead decision (TaskEvent relocation)",
+      "verdict": "clean (post-remediation)"
+    },
+    {
+      "id": "S2",
+      "surfaces_touched": [
+        "src/domain/task-events.ts",
+        "src/domain/domain-events.ts",
+        "src/domain/domain-boundary.structural.test.ts",
+        "src/domain/domain-events.test.ts",
+        "src/store/task-events.ts",
+        "src/engine/engine-types.ts",
+        "src/engine/engine-boundary.structural.test.ts"
+      ],
+      "creates_seam": true,
+      "seams_defined": [
+        "AcceptedDomainEvent (canonical)",
+        "TaskEvent (domain-owned)"
+      ],
+      "findings_raised": 1,
+      "findings_open": 0,
+      "disposition": "sev-4 DOM-global prose false-positive remediated pre-S3; S1-Q2 Decider gate structurally discharged",
+      "verdict": "clean (post-remediation)"
+    },
+    {
+      "id": "S3",
+      "surfaces_touched": [
+        "src/domain/task-crdt.ts",
+        "src/domain/task-crdt.test.ts",
+        "src/domain/task-projector.ts",
+        "src/domain/task-projector.property.test.ts",
+        "src/domain/bound-4.structural.test.ts",
+        "src/marmot/device-sync.ts",
+        "src/domain/domain-boundary.structural.test.ts"
+      ],
+      "creates_seam": false,
+      "findings_raised": 1,
+      "findings_open": 0,
+      "disposition": "sev-5 load-order seam gap resolved by lead contract amendment (loadFacts/loadAcceptedEvents ordering) + S4 test obligation",
+      "verdict": "clean (post-amendment)"
+    },
+    {
+      "id": "S4",
+      "surfaces_touched": [
+        "src/persistence/raw-event-log-store.ts",
+        "src/persistence/raw-event-log-store.test.ts",
+        "src/persistence/legacy-key-guard.structural.test.ts"
+      ],
+      "creates_seam": true,
+      "findings_raised": 1,
+      "findings_open": 0,
+      "disposition": "sev-4 purge-composition gap remediated (S4 exports clearGroupState partial); test-fixture AC-MIG-1 exclusion confirmed sound by reviewer",
+      "verdict": "clean (post-remediation)"
+    },
+    {
+      "id": "S5",
+      "surfaces_touched": [
+        "src/engine/receive-engine.ts",
+        "src/engine/ingest-policy.ts",
+        "src/engine/receive-engine.fsm.test.ts",
+        "src/engine/receive-engine.cutover.property.test.ts",
+        "src/engine/ingest-policy.test.ts",
+        "src/engine/engine-types.ts",
+        "specs fsm.md/architecture.md amendments"
+      ],
+      "creates_seam": true,
+      "seams_defined": [
+        "fetchBootstrap (IngestSource 5th method)"
+      ],
+      "findings_raised": 13,
+      "findings_open": 0,
+      "disposition": "Stage-1 sev-6 (bootstrap seam) + cold sev-9/7/6x3/P3s all remediated; generation-token lifecycle discipline; latch semantics; re-infer point corrected",
+      "verdict": "clean (post-remediation)"
+    },
+    {
+      "id": "S6",
+      "surfaces_touched": [
+        "src/engine/receive-engine.ts",
+        "src/engine/ingest-policy.ts",
+        "src/engine/receive-engine.persistence-failure.test.ts",
+        "src/engine/receive-engine.malformed-signal.test.ts",
+        "src/engine/receive-engine.fsm.test.ts"
+      ],
+      "creates_seam": false,
+      "findings_raised": 8,
+      "findings_open": 0,
+      "disposition": "cold batch (2xsev-8/sev-7/sev-6/P3s) remediated + Opus-verified; drift suspicion benign; 12/12 examiner YES",
+      "verdict": "clean (post-remediation)"
+    }
+  ],
+  "reviewer_state": {
+    "last_story_reviewed": "S6",
+    "model_at": "2026-07-12T15:30:00Z",
+    "watch_items": [
+      "S7 (NEXT, FROZEN CONTRACT): IngestSource is 5 methods. fetchBootstrap(): kind-30078 NIP-44 fetch/decode -> message signals receiptSource bootstrap-kind-30078 sharing the snapshot fact; MUST NOT touch the MLS ratchet (background overlap with catchUp/openLive/ingestPersisted stays safe); drain completion = bootstrapResolved; T_join races this drain only; no abandonment on timeout. catchUp(): exactly once per start(), never self-concurrent. ingestPersisted(facts): R3/L8 replay, must handle bootstrap-kind-30078 facts. ALL facts Input-shaped (seq-less). Adapter lives in src/integration; NostrEvent assignability PRE-VERIFIED. Persist the bootstrap snapshot as a RawProtocolFact. Stop the engine on identity switch (L10).",
+      "S8: fold via applyEvent ONLY (buildProjection = restart/projection_invalidated); applyEvent identity contract (prev!==next = changed, === = no-op) — never re-wrap outputs; rejection-reason vocabulary {parse_error, retry-exhausted, deferred-ttl-expired, unknown}; land the engine+real-S4-store integration proof (drift guard for the S5/S6 test-mock replicas — keep-in-sync comments point here); exactly one useEffect per group, cleanup = engine.stop() which closes the adapter last (Rule 10)",
+      "S11: compose S4 clearRawAndAcceptedLogs (never reconstruct store names); CHECKPOINT-FIRST + submission-order clear discipline (reset-during-transition/detached-save must not resurrect a checkpoint); acceptDeferredFact = accepted-first via S4 appendAcceptedEvent + R2a prune; updateItem for atomic checkpoint/deferred RMW; loadFacts seq-ascending + loadAcceptedEvents append-order already contract-backed; deferred-store persists IDS ONLY (reason lossiness SETTLED by design, R2 hardcodes unreadable)",
+      "S12 (expiry): retire src/marmot/ingest-queue.ts (ingest-policy is its parallel); remove task-reducer.ts from bound-4 ALLOWLISTED_LEGACY_FILES",
+      "S13: array-per-group O(n) append + unbounded buffering behind a stuck retry — memory-pressure notes, revisit only if volumes grow",
+      "KNOWN CHARACTERISTIC: structural suites auto-scale test counts per discovered file — reconcile suite-count deltas against new-file counts before suspecting drift (bit three stories)"
+    ],
+    "paused_at": "2026-07-12 after S6 (user directive); resume at S7 via /base:feature specs/epic-event-sourced-receive-engine/ (RESUME mode; reviewer rehydrates cold from this ledger)"
+  }
+}

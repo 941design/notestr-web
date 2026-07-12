@@ -1,0 +1,50 @@
+{
+  "story_id": "S12",
+  "authored_by": "story-planner",
+  "authored_at": "2026-07-12T13:15:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S12-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Are the deleted listeners (device-sync.ts:874-892, task-store.tsx:181-255) actually removed from the source, not merely disabled behind a flag or commented out, with task-store.tsx consuming projected state via react-engine-hooks exclusively -- verified by absence of the dead code, not just a passing test that happens not to exercise it?"
+    },
+    {
+      "question_id": "VQ-S12-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Are the deletions in device-sync.ts and task-store.tsx limited to removals only, with zero new branches or exported functions introduced (per scope.excludes / Boundary Rule 5), and is src/store/persistence.ts's legacy read/write path against notestr:events:${groupId} retired consistent with the module map's 'DEPRECATED -- removed Phase 8' status?"
+    },
+    {
+      "question_id": "VQ-S12-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `task-store` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list (react-engine-hooks' exposed projected state)? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S12-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does task-store.listener-removal.test.tsx assert the removed listeners no longer fire on a simulated applicationMessage event (behavioral proof, not just a grep for absent code), and do the pre-existing S8/S11-dependent test suites (react-engine-hooks, recovery) remain green after this removal, confirming the new paths fully cover what the deleted listeners provided per this story's dependency note?"
+    },
+    {
+      "question_id": "VQ-S12-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Is this story sequenced after S8 (react-engine-hooks), S10 (publish-outbox), and S11 (recovery-sequencing) are all complete, so the deleted listeners' responsibilities (projection updates, publish/outbox, recovery) are fully covered by the new engine paths before removal -- verified by which stories' tests exist and pass at the time this story lands?"
+    },
+    {
+      "question_id": "VQ-S12-006",
+      "phase": "pre-impl",
+      "category": "BEST_PRACTICES",
+      "question": "Does removing src/store/persistence.ts's legacy read/write path avoid leaving an orphaned IDB namespace with no migration/cleanup story -- documented as an accepted risk if data is simply abandoned in place, or actively cleaned up if not?"
+    },
+    {
+      "question_id": "VQ-S12-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MIG-3",
+      "question": "does the implementation satisfy AC-MIG-3's observable -- does a grep-based test assert zero matches for applicationMessage in src/store/task-store.tsx, run as the Phase-8 exit gate, with evidence that the pre-Phase-8 tree had exactly one such match (task-store.tsx:181-255) so the check is state-discriminating across the phase boundary rather than trivially true before this story ran too?"
+    }
+  ]
+}

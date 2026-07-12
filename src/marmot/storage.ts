@@ -2,6 +2,7 @@ import {
   get,
   set,
   del,
+  update,
   clear as idbClear,
   keys as idbKeys,
   createStore,
@@ -16,6 +17,18 @@ export interface KeyValueStoreBackend<T> {
   removeItem(key: string): Promise<void>;
   clear(): Promise<void>;
   keys(): Promise<string[]>;
+  /**
+   * Atomic read-modify-write: `updater` sees the CURRENT stored value (or
+   * `undefined` if absent) and returns the value to store, all inside ONE
+   * idb-keyval `update()` call -- which itself performs the get and the put
+   * inside a single IndexedDB `readwrite` transaction (idb-keyval's
+   * `update()` never round-trips through two separate transactions). This
+   * is what makes concurrent `updateItem` calls against the SAME key
+   * serialize at the IDB layer instead of racing a separate getItem/setItem
+   * pair (the lost-update hazard the old appendFact/appendAcceptedEvent
+   * read-then-write had). Resolves with the value the updater returned.
+   */
+  updateItem(key: string, updater: (old: T | undefined) => T): Promise<T>;
 }
 
 /**
@@ -128,6 +141,30 @@ export function createKVStore<T>(
 
     async keys(): Promise<string[]> {
       return idbKeys<string>(resolve());
+    },
+
+    async updateItem(
+      key: string,
+      updater: (old: T | undefined) => T,
+    ): Promise<T> {
+      // Resolve the store handle exactly ONCE, up front -- same as every
+      // other method here -- so a mid-op identity switch (bindStores called
+      // between two ticks of this async function) cannot split the read and
+      // the write across two different pubkey partitions. The single
+      // resolved handle is threaded through idb-keyval's update(), which
+      // performs the get+put inside one readwrite transaction against that
+      // one handle.
+      const store = resolve();
+      let updated!: T;
+      await update<T | undefined>(
+        key,
+        (old) => {
+          updated = updater(old);
+          return updated;
+        },
+        store,
+      );
+      return updated;
     },
   };
 }
@@ -428,6 +465,19 @@ export function createInMemoryKVStore<T>(): KeyValueStoreBackend<T> {
 
     async keys(): Promise<string[]> {
       return Array.from(data.keys());
+    },
+
+    async updateItem(
+      key: string,
+      updater: (old: T | undefined) => T,
+    ): Promise<T> {
+      // Single synchronous read-modify-write against the in-memory Map --
+      // there is no async gap between the get and the set, so this is
+      // atomic by construction (matches the IDB-backed implementation's
+      // single-transaction guarantee).
+      const next = updater(data.get(key));
+      data.set(key, next);
+      return next;
     },
   };
 }

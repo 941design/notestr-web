@@ -1,0 +1,38 @@
+{
+  "story_id": "S1",
+  "status": "done",
+  "final_outcome": "accepted",
+  "completed_at": "2026-07-12T15:26:47.296Z",
+  "files_created": [
+    "src/engine/engine-types.ts",
+    "src/engine/engine-boundary.structural.test.ts",
+    "specs/epic-event-sourced-receive-engine/S1-engine-types-foundation/architecture.json",
+    "specs/epic-event-sourced-receive-engine/S1-engine-types-foundation/baseline.json",
+    "specs/epic-event-sourced-receive-engine/S1-engine-types-foundation/result.json"
+  ],
+  "files_modified": [
+    "specs/epic-event-sourced-receive-engine/S1-engine-types-foundation/verification.json"
+  ],
+  "tests_added": {
+    "structural": 19
+  },
+  "test_counts": {
+    "baseline": 471,
+    "final": 490
+  },
+  "mocks": [],
+  "remediation_rounds": 3,
+  "modules_touched": [
+    "engine-types"
+  ],
+  "escalation_history": [],
+  "retrospective": {
+    "skipped": true,
+    "reason": "clean_run"
+  },
+  "decider_caveats": [
+    "Q2 WAIVED for S1 only (Decider ACCEPT): the type-only ../store/task-events -> engine-types edge is an accepted temporary exception, contingent on S2 discharging the recorded remediation in full (relocate TaskEvent to src/domain/task-events.ts, store shim, flip engine-types import, add src/store to boundary scanner). If S2 ships without it, Q2 reverts to an open boundary defect against S2.",
+    "GATE: re-verify Q2 (engine-types rewritable within allow-list) at S2 completion; S2 must not close while the edge is live.",
+    "Q15 (PARTIAL, forward-looking): S5/S7 must implement against the \"type\" discriminant; re-verify at those stories."
+  ]
+}

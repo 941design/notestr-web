@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-07-12T12:36:58Z",
+  "updated_at": "2026-07-12T20:15:00Z",
+  "mocks": [
+    {
+      "mock_id": "MOCK-05-001",
+      "description": "In-memory mock IngestSource/IngestSignal producer standing in for the real marmot-adapter, used to unit-test receive-engine FSM transitions and the cutover protocol without live marmot-ts wiring.",
+      "interface_mocked": "IngestSource (src/engine/engine-types.ts)",
+      "introduced_by": "S5",
+      "resolved_by": "S7"
+    },
+    {
+      "mock_id": "MOCK-05-002",
+      "description": "In-memory mock of PersistenceAdapter's checkpoint/deferred methods (saveCheckpoint/loadCheckpoint/saveDeferredIds/loadDeferredIds) standing in for checkpoint-store.ts/deferred-store.ts, used to unit-test FSM checkpoint-call-count (AC-FSM-4) and reset behavior (AC-FSM-5) before real recovery persistence lands. In practice S5's test mocks ALL ten PersistenceAdapter methods in one in-memory adapter (including facts/accepted-events) rather than composing the real S4 raw-event-log-store, because engine-boundary.structural.test.ts's AC-BOUND-1 scanner forbids any file under src/engine/ (tests included) from importing src/persistence/* -- see verification.json VQ-S5-018 (post-impl). The mock's fact/accepted-event methods replicate raw-event-log-store.ts's algorithm rather than importing it.",
+      "interface_mocked": "PersistenceAdapter (checkpoint + deferred portion)",
+      "introduced_by": "S5",
+      "resolved_by": "S11"
+    }
+  ],
+  "all_resolved": false
+}

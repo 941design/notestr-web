@@ -1,0 +1,57 @@
+{
+  "story_id": "S7",
+  "authored_by": "story-planner",
+  "authored_at": "2026-07-12T13:15:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S7-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does marmot-adapter.ts's translation of each real marmot-ts outcome (decrypted message, unreadable, duplicate/skipped, epoch change, ratchet-only, malformed) into IngestSignal perform actual field-by-field mapping (decoded TaskEvent payload via deserializeApplicationData, real receiptSource, real epoch strings) rather than returning a fixed canned IngestSignal regardless of which marmot-ts outcome triggered it?"
+    },
+    {
+      "question_id": "VQ-S7-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Is marmot-adapter.ts the sole file (besides receive-engine.ts's type-only consumption) that imports marmot-ts types (MarmotGroup, MarmotClient), with zero marmot-ts imports anywhere under src/engine/ or src/domain/, per the Boundary Rules allowed-edge for src/integration/marmot-adapter.ts -> marmot-ts?"
+    },
+    {
+      "question_id": "VQ-S7-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `marmot-adapter` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list (src/engine/*, src/domain/*, src/persistence/*, React/Next.js, marmot-ts)? If not, which cross-module dependencies exist and do they flow through the declared IngestSource/IngestSignal seam contract in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S7-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does marmot-adapter.test.ts drive a real or contract-faithful stub of MarmotGroup through each of the six outcomes (decryptable message, unreadable ciphertext, duplicate delivery, epoch advance, ratchet-only advance, malformed payload) and assert the exact IngestSignal variant and field values emitted for each -- not merely that some signal was emitted?"
+    },
+    {
+      "question_id": "VQ-S7-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does marmot-adapter.ts's catchUp()/openLive()/close() implementation match the IngestSource control-interface contract in architecture.md exactly -- catchUp() drains group.ingest() once as an AsyncIterable yielding one signal per event; openLive() opens client.network.subscription() and pushes signals via callback; close() releases marmot handles and is called by the engine during stop()?"
+    },
+    {
+      "question_id": "VQ-S7-006",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does marmot-adapter.ts reject/translate to malformed any decrypted-but-undecodable payload rather than passing a partially-parsed or any-typed value through to the engine, preventing an unvalidated payload shape from reaching downstream projection code as if it were a well-formed TaskEvent?"
+    },
+    {
+      "question_id": "VQ-S7-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-FSM-2",
+      "question": "does the implementation satisfy AC-FSM-2's observable at the adapter integration layer (a secondary conformance check per this story's notes) -- does an integration test against a stubbed marmot client assert the real marmot-adapter.ts's catchUp()/openLive() call order matches the engine-side contract (openLive precedes the first catchUp iteration) for the adapter's real implementation, not just the S5 mock IngestSource?"
+    },
+    {
+      "question_id": "VQ-S7-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-ADPT-1",
+      "question": "does the implementation satisfy AC-ADPT-1's observable -- does an adapter unit/integration test drive a real or contract-faithful stub MarmotGroup through each outcome (decryptable message, unreadable ciphertext, duplicate delivery, epoch advance, ratchet-only advance, malformed payload) and assert the exact IngestSignal sequence emitted for each (message with decoded TaskEvent payload and correct receiptSource; deferred with reason unreadable/epoch_mismatch; skipped for own-echo/duplicate; epoch_advanced only on a real epoch change with a bare ratchet advance producing NO signal; malformed for decrypted-but-undecodable payload), plus a type-level/structural assertion that emitted signal payloads contain no marmot-ts imports?"
+    }
+  ]
+}

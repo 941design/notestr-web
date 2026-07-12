@@ -1,0 +1,130 @@
+{
+  "story_id": "S5",
+  "authored_by": "story-planner",
+  "authored_at": "2026-07-12T13:15:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S5-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does receive-engine.ts implement the full FSM (8 lifecycle states, orthogonal health, transitions L1-L11/H1-H2) as a real state machine with explicit guard evaluation and entry actions per transition -- not a simplified subset that only handles the transitions directly exercised by the mock IngestSource in tests -- and does ingest-policy.ts's dedupe/retry-budget wrapper around PendingRetryQueue perform real bounded-retry accounting rather than an unconditional pass-through?"
+    },
+    {
+      "question_id": "VQ-S5-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Is receive-engine.ts's consumption of the mock IngestSource (MOCK-05-001) and mock checkpoint/deferred PersistenceAdapter (MOCK-05-002) isolated behind the IngestSource and PersistenceAdapter interfaces from engine-types.ts, such that swapping in the real S7 marmot-adapter.ts and S11 checkpoint-store.ts/deferred-store.ts requires zero changes to receive-engine.ts's FSM logic?"
+    },
+    {
+      "question_id": "VQ-S5-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `receive-engine` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list (src/domain/* for types/pure helpers, src/persistence/* only via the PersistenceAdapter interface -- never a direct import of an implementation)? If not, which cross-module dependencies exist and do they flow through declared seam contracts (IngestSource/IngestSignal, PersistenceAdapter) in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S5-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Do receive-engine.fsm.test.ts and receive-engine.cutover.property.test.ts cover every transition L1-L11 and H1-H2 individually (not just the happy-path L1->L3->L6->L7 chain), and does the cutover property test generate randomized interleavings of historical and live facts (not a single fixed interleaving) to prove AC-FSM-8's exactly-once-application claim?"
+    },
+    {
+      "question_id": "VQ-S5-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does receive-engine.ts's transition table match fsm.md's authoritative table exactly for every guard (bootstrapResolved, bootstrapTimedOut, bootstrapFailed, catchUpComplete, liveBufferEmpty, deferredQueue.nonEmpty) and every entry action, with any deviation from fsm.md treated as a review-blocking defect per Implementation Constraint 4?"
+    },
+    {
+      "question_id": "VQ-S5-006",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does the T_join=8000ms joining-gate timeout in receive-engine.ts fail closed (transition to catching_up/degraded, never hang indefinitely) if the bootstrap promise never resolves and never rejects, preventing an unbounded resource hold on a stalled relay?"
+    },
+    {
+      "question_id": "VQ-S5-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-FSM-1",
+      "question": "does the implementation satisfy AC-FSM-1's observable -- does a test drive the engine through all documented transitions L1-L11 via a mock adapter and assert lifecycle is always one of the 8 Lifecycle union members and never the string 'degraded', using real EngineState objects (not a mocked getter that always returns a hardcoded lifecycle value)?"
+    },
+    {
+      "question_id": "VQ-S5-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-FSM-2",
+      "question": "does the implementation satisfy AC-FSM-2's observable -- does a test with a mock IngestSource record call order for all three entry paths into catching_up (recovering->catching_up, joining->catching_up nominal, joining->catching_up degraded-on-timeout) and assert openLive precedes the first catchUp iteration in every case, using a call-order-recording spy rather than an assertion that only checks both methods were eventually called?"
+    },
+    {
+      "question_id": "VQ-S5-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-FSM-3",
+      "question": "does the implementation satisfy AC-FSM-3's observable -- does a test inject a live IngestSignal mid-catch-up and assert no projection change occurs for it until after catchUpComplete and buffer drain begin, assert the buffered event applies in arrival order once draining starts, and assert applying a buffered event ahead of an earlier historical one fails the test (a negative-case assertion, not just a positive one)?"
+    },
+    {
+      "question_id": "VQ-S5-010",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-FSM-4",
+      "question": "does the implementation satisfy AC-FSM-4's observable -- does a test drive N scripted transitions and assert the mock PersistenceAdapter.saveCheckpoint call count is >= N, and does a fake-timer test separately assert at least one additional saveCheckpoint call occurs during an extended live period with zero transitions, proving periodic saving rather than only per-transition saving?"
+    },
+    {
+      "question_id": "VQ-S5-011",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-FSM-5",
+      "question": "does the implementation satisfy AC-FSM-5's observable -- does a test call reset() on an engine with non-empty persisted stores (raw-log, accepted-log, checkpoint, deferred ids, bootstrap-completed) and assert all five are empty afterward with lifecycle==='uninitialized', does a second test drive every other transition and assert none of them empties the stores, and does a follow-up start({origin:'welcome'}) after reset() assert L2 into joining rather than L1 into recovering?"
+    },
+    {
+      "question_id": "VQ-S5-012",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-FSM-6",
+      "question": "does the implementation satisfy AC-FSM-6's observable -- does a test with a non-empty deferred queue emit group_ratchet_advanced and assert lifecycle is unchanged, then emit group_epoch_advanced on the same engine instance and assert lifecycle becomes retrying_deferred, proving the differential (ratchet does not trigger, epoch does) rather than testing only the positive case?"
+    },
+    {
+      "question_id": "VQ-S5-013",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-FSM-7",
+      "question": "does the implementation satisfy AC-FSM-7's observable -- does a fake-timer test start the engine in joining with a bootstrap promise resolving at 9000ms, assert the transition to catching_up/degraded happens at the 8000ms mark, assert the bootstrap promise is never aborted/rejected by the engine, and assert that when it resolves at 9000ms the engine emits engine_state_changed{health:'nominal'} with the bootstrap snapshot's events merged into the projection?"
+    },
+    {
+      "question_id": "VQ-S5-014",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-FSM-8",
+      "question": "does the implementation satisfy AC-FSM-8's observable -- does the property test generate a random interleaving of historical and live facts arriving during the historical drain, drive the engine through cutover, and assert the final applied-fact id set equals the union of historical+live ids with no duplicates and no omissions, and that every historical fact is applied before any live fact reaches the projection, across many randomized runs rather than one fixed ordering?"
+    },
+    {
+      "question_id": "VQ-S5-015",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-INV-5",
+      "question": "does the implementation satisfy AC-INV-5's observable -- does a test park a fact via an unreadable IngestSignal (asserting envelope_deferred is emitted and the projection is unchanged), fire epoch_advanced, and -- without the test itself calling buildProjection or any manual re-sync -- assert domain_event_accepted is eventually emitted for the same fact and the projection updates, purely from the engine's own L8/L9 retry transition with no test-side reload call present in the assertion path?"
+    },
+    {
+      "question_id": "VQ-S5-016",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "receive-engine.ts's per-signal handlers are funneled through a single `serialQueue` FIFO promise chain (function `enqueue`) to preserve arrival/apply ordering across concurrently-arriving live/historical/deferred-retry signals. During implementation this surfaced a real deadlock: `runDeferredRetryPass` (invoked from `handleEpochAdvanced`, itself only ever reached via `enqueue`) originally re-entered `enqueue()` for each deferred-retry signal, chaining a new job BEHIND the very job that was awaiting it -- a job that can never resolve without the nested job running, and a nested job that can never run before the outer one resolves. Fixed by calling `handleDeferredRetrySignal` directly (no enqueue) since `runDeferredRetryPass` already executes inside a job that holds exclusive serial-chain execution. Does an examiner re-derive this same conclusion by tracing every call site that invokes `enqueue()` and confirming none of them execute from within a function that is itself already running as an enqueued job (i.e. no other latent nested-enqueue deadlock remains, e.g. in `enterRecovering`'s R3 loop or `enterCatchingUp`'s drain loops, both of which ARE top-level -- not nested -- callers)?"
+    },
+    {
+      "question_id": "VQ-S5-017",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "IngestSource (frozen by S1) exposes no dedicated bootstrap-fetch method, yet fsm.md's L2/L4/L5 guards (bootstrapResolved/bootstrapTimedOut/bootstrapFailed) presuppose one. This story resolved the gap by treating the joining-phase bootstrap fetch as ONE `adapter.catchUp()` call raced against the T_join timer (architecture.json judgment call 'bootstrap-fetch-is-a-catchup-call-raced-against-t-join'), with every catching_up entry (L3/L4/L5) performing its OWN separate, second `openLive()`+`catchUp()` cycle for the cutover-protocol drain. Does an examiner agree this is the most defensible reading of fsm.md's text given IngestSource's actual frozen shape, or does it identify a different intended design that would require re-opening the IngestSource contract (which is out of this story's scope to modify)?"
+    },
+    {
+      "question_id": "VQ-S5-018",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "Both receive-engine.fsm.test.ts and receive-engine.cutover.property.test.ts use an in-memory mock PersistenceAdapter for ALL ten methods (including facts/accepted-events), rather than the real S4 raw-event-log-store.ts, because engine-boundary.structural.test.ts's AC-BOUND-1 scanner forbids ANY file under src/engine/ -- test files included, no carve-out -- from importing anything matching '/persistence/' (verified directly against the scanner source and its liveness fixture). The mock replicates raw-event-log-store.ts's exact algorithm (idempotent lookup-before-insert, seq = last-seq+1, append-order preservation) rather than importing it. Does an examiner agree this substitution is behaviorally equivalent to 'the real S4 raw-event-log-store' for the purposes these tests need (idempotency, seq assignment, append ordering), or does it identify a divergence between the mock's algorithm and raw-event-log-store.ts's actual current implementation that this story missed?"
+    },
+    {
+      "question_id": "VQ-S5-019",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "question": "ingest-policy.ts's retryBatch() excludes an entry once its attempts counter reaches maxRetryAttempts, but the entry is never removed or terminally rejected -- it simply stops being resubmitted, silently stuck in the deferred queue forever unless a LATER epoch_advanced happens to arrive after attempts were somehow reset (they never are within this story's scope). Is leaving a permanently-exhausted deferred fact queued-but-unretriable (rather than surfacing it as a terminal domain_event_rejected or otherwise bounding its lifetime) an acceptable interim state for S5, given S6 (ingest-hardening, AC-PERS-* territory) is the story explicitly scoped to own retry-budget enforcement policy?"
+    }
+  ]
+}

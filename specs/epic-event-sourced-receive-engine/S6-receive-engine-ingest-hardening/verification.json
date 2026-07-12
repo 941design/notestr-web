@@ -1,0 +1,81 @@
+{
+  "story_id": "S6",
+  "authored_by": "story-planner",
+  "authored_at": "2026-07-12T13:15:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S6-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does receive-engine.ts's persistence-failure handling (Implementation Constraint 11) retry appendFact/appendAcceptedEvent/saveCheckpoint with a real bounded-backoff schedule (increasing or capped delay, finite retry count) rather than an immediate infinite-loop retry or a retry that silently gives up after one attempt while still reporting nominal health?"
+    },
+    {
+      "question_id": "VQ-S6-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Is the malformed-signal handling added in this story (Implementation Constraint 13) implemented entirely within receive-engine.ts's signal-dispatch logic, with zero changes to marmot-adapter.ts's classification (S7 owns malformed detection) or to the deferred-queue data structure's public shape?"
+    },
+    {
+      "question_id": "VQ-S6-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `receive-engine` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list (src/domain/*, src/persistence/* via PersistenceAdapter only)? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S6-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does receive-engine.persistence-failure.test.ts make the mock PersistenceAdapter.appendFact throw for a known K calls and assert engine_state_changed{health:'degraded'} fires after the first failure, appendFact is retried >= K+1 times with fake-timer-verified bounded backoff, the fact's content remains present in the engine's pending in-memory state throughout, and health returns to nominal after the K+1th call succeeds -- all four assertions in one scenario, not split across weaker partial tests?"
+    },
+    {
+      "question_id": "VQ-S6-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does receive-engine.malformed-signal.test.ts feed a malformed IngestSignal and assert domain_event_rejected{reason:'parse_error'} is emitted with the deferred-queue count unchanged, then emit group_epoch_advanced and assert no re-ingest attempt occurs for that fact's id -- while a sibling unreadable/epoch_mismatch fact seeded in the same test IS retried, proving the two paths diverge rather than both silently succeeding or both silently failing?"
+    },
+    {
+      "question_id": "VQ-S6-006",
+      "phase": "pre-impl",
+      "category": "BEST_PRACTICES",
+      "question": "Does the persistence-failure retry path avoid an unbounded retry loop that could starve the event loop or exhaust memory holding retained facts indefinitely -- is there a documented/tested upper bound on retry attempts or backoff ceiling?"
+    },
+    {
+      "question_id": "VQ-S6-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-PERS-1",
+      "question": "does the implementation satisfy AC-PERS-1's observable -- does a test make the mock PersistenceAdapter.appendFact throw for the first K calls, assert engine_state_changed{health:'degraded'} is emitted after the first failure, assert appendFact is retried at least K+1 times with bounded backoff verified via fake timers, assert the fact's content is present in the engine's pending in-memory state throughout, and assert engine_state_changed{health:'nominal'} follows when call K+1 succeeds?"
+    },
+    {
+      "question_id": "VQ-S6-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-PERS-3",
+      "question": "does the implementation satisfy AC-PERS-3's observable -- does a test feed a malformed signal and assert domain_event_rejected{reason:'parse_error'} is emitted with deferred-queue count unchanged, then emit group_epoch_advanced and assert no re-ingest attempt occurs for that fact's id, with a sibling unreadable/epoch_mismatch fact in the same test asserted to BE retried as the differential proof?"
+    },
+    {
+      "question_id": "VQ-S6-009",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "Does receive-engine.persistence-failure.test.ts include a generation-token flip-proof test proving a stop() issued WHILE an appendFact retry is mid-backoff (a) immediately unblocks the awaiting FIFO chain (via activeRetryCancellers force-resolving the pending wait, not by waiting out the real/virtual delay), and (b) guarantees zero further persistence.appendFact calls even after the virtual clock is advanced past every remaining backoff window? (design note (a)'s explicit 'add a test' instruction.)"
+    },
+    {
+      "question_id": "VQ-S6-010",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "question": "Is the new 'persistence-write-failing' degradation reason backed by a ref-count (activePersistenceFailures) rather than plain Set membership, and is there a test proving a concurrent pair (e.g. a background saveCheckpoint retry succeeding while a FIFO-blocking appendFact retry for a DIFFERENT signal is still failing, or vice versa) does not cause one write's success to prematurely flip health back to nominal while the other write is still genuinely failing?"
+    },
+    {
+      "question_id": "VQ-S6-011",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "Do the two S6 ledger obligations against ingest-policy.ts (TTL-prune wiring, exhausted-entry disposition) each have a differential test proving the swept-away entry (TTL-expired or retry-exhausted) is durably removed (saveDeferredIds persisted) and reported via a domain_event_rejected reason DISTINCT from 'parse_error', while a sibling fresh/healthy entry in the SAME scenario is left untouched (TTL test) or continues to be retried normally (exhaustion test) -- and do the corresponding flip-proofs (disabling the cleanup step) actually turn those specific tests red, not merely some unrelated test?"
+    },
+    {
+      "question_id": "VQ-S6-012",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "question": "When a primary-state write (appendFact/appendAcceptedEvent/acceptDeferredFact) exhausts PERSISTENCE_RETRY_MAX_ATTEMPTS, does the engine correctly avoid two anti-patterns: (a) pretending the write succeeded (emitting domain_event_accepted/envelope_received for a fact that was never durably appended), and (b) permanently deadlocking the serial FIFO chain (a later, unrelated signal pushed afterward must still be processed)? Is there a test exercising the exhaustion path itself (not just the K-failures-then-success path) that asserts both of these directly?"
+    }
+  ]
+}

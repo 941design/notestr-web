@@ -1,0 +1,73 @@
+{
+  "module_name": "engine-types",
+  "purpose": "Sole cross-module type authority and sole IDB-key authority for the event-sourced-receive-engine epic. Defines RawProtocolFact, AcceptedDomainEvent (forward declaration — see judgment_calls), EngineCheckpoint, EngineOutputEvent, EngineLifecycleState/EngineHealth/EngineState, IngestSource/IngestSignal, and PersistenceAdapter, plus the four new IDB key-prefix constants and key-builder functions. Pure type module: the only runtime exports are the key constants/builders.",
+  "public_api": [
+    { "name": "NostrEvent", "signature": "interface { id, pubkey, created_at, kind, tags, content, sig }", "description": "Minimal locally-defined structural NIP-01 relay-event shape; not imported from any external SDK." },
+    { "name": "ReceiptSource", "signature": "type = \"historical\" | \"live\" | \"bootstrap-kind-30078\"", "description": "RawProtocolFact.receiptSource / IngestSignal.message.receiptSource discriminant." },
+    { "name": "RawProtocolFact", "signature": "interface { id, seq, groupId, nostrEventId, nostrEvent, receivedAt, receiptSource, epochAtReceipt }", "description": "Durable content-addressed record of one relay delivery, pre-decryption." },
+    { "name": "DomainEventSourceKind", "signature": "type = \"mls-rumor\" | \"bootstrap-kind-30078\"", "description": "AcceptedDomainEvent.sourceKind discriminant." },
+    { "name": "AcceptedDomainEvent", "signature": "interface { id, factId, sourceKind, groupId, acceptedAt, epoch, payload: TaskEvent }", "description": "FORWARD DECLARATION — canonical (possibly generic) definition to be owned by src/domain/domain-events.ts in S2; see judgment_calls." },
+    { "name": "EngineLifecycleState", "signature": "type = \"uninitialized\"|\"joining\"|\"recovering\"|\"catching_up\"|\"buffering_live\"|\"live\"|\"retrying_deferred\"|\"stopped\"", "description": "fsm.md lifecycle phase names; excludes degraded (health-only, per I-FSM-1)." },
+    { "name": "EngineHealth", "signature": "type = \"nominal\" | \"degraded\"", "description": "Orthogonal health flag, fsm.md." },
+    { "name": "EngineState", "signature": "interface { lifecycle: EngineLifecycleState, health: EngineHealth }", "description": "The engine's full state pair, fsm.md \"State = { lifecycle, health }\"." },
+    { "name": "EngineCheckpoint", "signature": "interface { groupId, savedAt, engineState, lastEpoch, lastIngestedSeq, lastAcceptedDomainEventId, deferredNostrEventIds }", "description": "Durable per-group checkpoint." },
+    { "name": "DeferredReason", "signature": "type = \"unreadable\" | \"epoch_mismatch\"", "description": "Shared parked-disposition vocabulary; excludes parse_error (terminal, Implementation Constraint 13)." },
+    { "name": "EngineOutputEvent", "signature": "discriminated union, 10 variants (envelope_received | envelope_deferred | domain_event_accepted | domain_event_rejected | projection_invalidated | group_epoch_advanced | group_ratchet_advanced | engine_state_changed | deferred_retry_started | recovered)", "description": "Every event the engine emits to react-engine-hooks.ts." },
+    { "name": "Unsubscribe", "signature": "type = () => void", "description": "Return type of IngestSource.openLive." },
+    { "name": "IngestSignal", "signature": "discriminated union, 5 variants (message | deferred | skipped | malformed | epoch_advanced)", "description": "Marmot-free signal the adapter emits and the engine consumes." },
+    { "name": "IngestSource", "signature": "interface { catchUp(): AsyncIterable<IngestSignal>; openLive(onSignal): Unsubscribe; close(): void }", "description": "Control interface the engine calls on the adapter; engine drives, never touches marmot directly." },
+    { "name": "PersistenceAdapter", "signature": "interface { appendFact, loadFacts, appendAcceptedEvent, loadAcceptedEvents, saveCheckpoint, loadCheckpoint, saveDeferredIds, loadDeferredIds }", "description": "The engine's sole persistence seam." },
+    { "name": "RAW_FACTS_KEY_PREFIX", "signature": "const = \"notestr:raw-facts:\"", "description": "IDB key prefix, owner: raw-event-log-store.ts (S4)." },
+    { "name": "ACCEPTED_EVENTS_KEY_PREFIX", "signature": "const = \"notestr:accepted-events:\"", "description": "IDB key prefix, owner: raw-event-log-store.ts (S4)." },
+    { "name": "ENGINE_CHECKPOINTS_KEY_PREFIX", "signature": "const = \"notestr:engine-checkpoints:\"", "description": "IDB key prefix, owner: checkpoint-store.ts (S4)." },
+    { "name": "DEFERRED_IDS_KEY_PREFIX", "signature": "const = \"notestr:deferred-ids:\"", "description": "IDB key prefix, owner: deferred-store.ts (S4)." },
+    { "name": "rawFactsKey", "signature": "(groupId: string) => string", "description": "Key builder." },
+    { "name": "acceptedEventsKey", "signature": "(groupId: string) => string", "description": "Key builder." },
+    { "name": "engineCheckpointsKey", "signature": "(groupId: string) => string", "description": "Key builder." },
+    { "name": "deferredIdsKey", "signature": "(groupId: string) => string", "description": "Key builder." }
+  ],
+  "private_files": [],
+  "owned_data": [
+    "Type definitions only (per architecture.md Module Map row for engine-types)",
+    "The four new epic IDB key literals (notestr:raw-facts:, notestr:accepted-events:, notestr:engine-checkpoints:, notestr:deferred-ids:) — Boundary Rule 8/9 ownership, enforced by engine-boundary.structural.test.ts AC-BOUND-3"
+  ],
+  "dependencies_allowed": [
+    "src/store/task-events.ts (import type { TaskEvent } — type-only, sanctioned explicitly by this story's task text: 'Types may reference the app's TaskEvent wire type'; see judgment_calls for why this is treated as a documented exception to architecture.md's strict engine/* -> domain/* edge table rather than a boundary violation)"
+  ],
+  "dependencies_forbidden": [
+    "react", "next", "next/navigation", "src/integration/*", "marmot-ts (@internet-privacy/marmot-ts)",
+    "applesauce-core or any other external NostrEvent SDK type (a local structural NostrEvent is defined instead — see judgment_calls)"
+  ],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "src/engine/engine-boundary.structural.test.ts"
+  ],
+  "seam": {
+    "cross_story": true,
+    "consumed_by": ["S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11", "S12", "S13"]
+  },
+  "judgment_calls": [
+    {
+      "id": "accepted-domain-event-forward-declaration",
+      "decision": "AcceptedDomainEvent is defined as a COMPLETE, non-generic interface in engine-types.ts (field-for-field match to architecture.md's Seam Contracts table), explicitly documented in its JSDoc as a forward declaration. architecture.md's Module Map assigns the canonical (possibly generic, dual-idempotency-key) definition to src/domain/domain-events.ts, which is out of S1's scope to create. Because src/domain/* -> nothing and src/engine/* -> src/domain/* is the only legal edge direction, engine-types.ts cannot import a not-yet-existing domain module. S2 should import + re-export this shape from src/domain/domain-events.ts rather than redefine it independently; flagged in the interface's own doc comment so S2 doesn't miss it.",
+      "escalation_needed": false
+    },
+    {
+      "id": "local-structural-nostr-event",
+      "decision": "Rather than importing NostrEvent from applesauce-core/helpers/event (the app's current source per exploration.json), engine-types.ts declares its own minimal structural NIP-01 NostrEvent interface. Rationale: architecture.md's 'Allowed dependency edges' table grants src/engine/* exactly one edge (src/domain/*); no external npm package is a declared allowed edge. A type-only import from applesauce-core would have zero runtime cost but would still be an undeclared coupling in the epic's foundational type-authority module. Structural typing keeps any real SDK's NostrEvent value assignment-compatible without a cast.",
+      "escalation_needed": false
+    },
+    {
+      "id": "outbox-entry-excluded",
+      "decision": "OutboxEntry (architecture.md Seam Contracts) is NOT defined in engine-types.ts. It is not in this story's explicit type-authority enumeration, has zero src/engine/ producer or consumer (entirely internal to src/integration/), has no IDB key in Rule 9's four-key table, and is explicitly marked 'Phase 6 pre-condition, TBD' in architecture.md. Defining it now risks drift before its Phase 6 shape is settled.",
+      "escalation_needed": false
+    },
+    {
+      "id": "self-referential-scan-discipline",
+      "decision": "engine-boundary.structural.test.ts builds its IDB-key marker strings via concatenation (\"notestr:\" + \"raw-facts:\") and writes disallowed-import fixtures to temp scratch files (never as contiguous literal text in its own source), per the story's prior-learning note about self-referential structural-scan tests. Verified empirically: grep for each of the four IDB key literals over the test file's own source returns zero contiguous matches; engine-types.ts contains exactly one occurrence of each.",
+      "escalation_needed": false
+    }
+  ]
+}

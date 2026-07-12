@@ -1,0 +1,74 @@
+{
+  "story_id": "S3",
+  "status": "done",
+  "final_outcome": "accepted",
+  "completed_at": "2026-07-12T17:00:16.660Z",
+  "files_created": [
+    "src/domain/task-crdt.ts",
+    "src/domain/task-crdt.test.ts",
+    "src/domain/task-projector.ts",
+    "src/domain/task-projector.property.test.ts",
+    "src/domain/bound-4.structural.test.ts",
+    "specs/epic-event-sourced-receive-engine/S3-task-projector-and-crdt/architecture.json",
+    "specs/epic-event-sourced-receive-engine/S3-task-projector-and-crdt/baseline.json",
+    "specs/epic-event-sourced-receive-engine/S3-task-projector-and-crdt/result.json"
+  ],
+  "files_modified": [
+    "src/marmot/device-sync.ts",
+    "src/domain/domain-boundary.structural.test.ts",
+    "specs/epic-event-sourced-receive-engine/S3-task-projector-and-crdt/verification.json"
+  ],
+  "tests_added": {
+    "unit": 21,
+    "property": 3,
+    "structural": 32
+  },
+  "test_counts": {
+    "baseline": 640,
+    "final": 696
+  },
+  "mocks": [],
+  "remediation_rounds": 1,
+  "modules_touched": [
+    "task-projector",
+    "task-crdt",
+    "device-sync"
+  ],
+  "escalation_history": [],
+  "test_count_reconciliation_note": "tests_added totals (56) reconcile the full-suite baseline->final delta (640->696), independently verified by re-running `npx vitest run` multiple times. Precise per-file attribution: task-crdt.test.ts=19 unit (incl. an it.each legacy-parity matrix), task-projector.property.test.ts=5 (2 unit sanity + 3 fast-check property blocks, each run>=100 times internally -- fast-check runs count as one vitest test case per `it`, not per iteration), bound-4.structural.test.ts=13 structural. The remaining 19 are auto-scaling per-new-file coverage in two PRE-EXISTING self-scanning structural suites that walk src/ or src/domain/ and emit one `it` per file discovered: domain-boundary.structural.test.ts grew from 48->60 (+12, verified by temporarily relocating the 5 new src/domain/ files and re-running standalone) and engine-boundary.structural.test.ts grew from 105->110 (+5, same verification method) as they picked up the 5 new src/domain/ files; the residual +2 was not traced to a single named assertion but the aggregate total (640->696) was independently and repeatedly confirmed via full-suite runs, and no test file's count decreased.",
+  "judgment_calls": [
+    "task-reducer.ts (src/store) is NOT edited by this story -- kept exactly as-is with its own inline three-level comparator. bound-4.structural.test.ts's repo-wide duplicate-comparator scan explicitly allowlists it (ALLOWLISTED_LEGACY_FILES) with an expiry comment pointing at S9 (task-store-projection-cutover) / S12 (legacy-listener-removal). Chosen over delegating task-reducer.ts to taskWinsOver in this story despite architecture.md Implementation Constraint 10 naming task-reducer.ts:18-32 as one of two required delegation sites, because (1) stories.json's S3 scope.includes lists exactly six files, none of which is task-reducer.ts, (2) the story text explicitly instructs 'do NOT change task-reducer.ts's behavior in this story', and (3) task-reducer.ts carries a 147/147 mutation-kill record on a file-scoped Stryker config (stryker.task-reducer.conf.json) that delegation would silently relocate/stale without an in-scope mutation re-run. Implementation Constraint 10 is read as satisfied incrementally, matching this epic's stated strangler-fig pattern elsewhere (device-sync.ts / task-store.tsx: 'Shrinking: internals migrate story-by-story'). Documented in architecture.json judgment call 'task-reducer-allowlist-not-delegate' and verification.json VQ-S3-010 (post-impl, confidence 1.0).",
+    "TaskProjection is a bare `ReadonlyMap<string, Task>` (mirroring task-reducer.ts's TaskState = Map<string, Task> exactly), with NO explicit applied-event-id bookkeeping (no Set<string> of seen ids). AC-INV-2's projector-side duplicate-id idempotency is satisfied purely because taskWinsOver's strict inequalities make every TaskEvent variant naturally idempotent under re-application (task.created is first-write-wins via a has() guard; the four tie-break variants all require a STRICT win over the current existing state, and a byte-identical duplicate re-delivery can never strictly beat the state it already produced). Proven directly by the >=100-run AC-INV-2 property test (splicing a reference-identical duplicate adjacent to the original and asserting buildProjection is unchanged), not asserted only by argument. Documented in architecture.json judgment calls 'projection-shape-readonly-map' and 'no-explicit-dedup-bookkeeping', and verification.json VQ-S3-013 (post-impl, confidence 1.0).",
+    "src/domain/domain-boundary.structural.test.ts (an S2-authored file, outside S3's stories.json scope.includes) was amended to add 'fast-check' to the existing *.test.ts import allowlist, plus two new liveness tests proving the exception is real and test-file-scoped only. Necessary because the story's own instructions mandate a fast-check property test living under src/domain/, and the pre-existing scanner (zero exceptions beyond vitest for *.test.ts files) would otherwise have failed the mandated file's own import. Same class of authorized, documented, mandated-by-the-task-itself deviation as S2's own analogous engine-boundary.structural.test.ts amendment. Documented in architecture.json judgment call 'domain-boundary-fast-check-exception' and verification.json VQ-S3-011 (post-impl, confidence 1.0).",
+    "bound-4.structural.test.ts's CANONICAL_FILES allowlist (the set exempted from the AC-BOUND-4 duplicate-comparator scan as 'the one true implementation') contains two exact paths: src/domain/task-crdt.ts (the real implementation) and src/domain/task-crdt.test.ts (whose legacyInlineComparator helper deliberately reconstructs the exact legacy expression as a parity-proof fixture, never called by production code). This is a closed exact-path allowlist, not a pattern, so it cannot be satisfied by any differently-named file; documented in architecture.json judgment call 'bound-4-scanner-canonical-files-includes-parity-test' and verification.json VQ-S3-012 (post-impl, confidence 0.95)."
+  ],
+  "empirical_verification": {
+    "ac_bound_4_flip_check": "Performed manually per the story's quality-gate instruction: temporarily re-pasted the exact deleted inline comparator body back into device-sync.ts's `wins` computation (undoing the taskWinsOver delegation), ran `npx vitest run src/domain/bound-4.structural.test.ts`, and confirmed 3 of 13 tests went RED (the two import-assertion-adjacent checks and the repo-wide violations=[] assertion, which reported `violations: [\"src/marmot/device-sync.ts\"]`). Reverted device-sync.ts back to the taskWinsOver call and re-ran the same test file, confirming all 13 tests green again. Re-ran the full suite (696/696) and `npx tsc --noEmit` (exit 0) after the revert to confirm no residual damage from the manual edit-revert cycle."
+  },
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "Reconciling the exact tests_added breakdown against the full-suite baseline/final delta required discovering, empirically, that two PRE-EXISTING structural test suites (domain-boundary.structural.test.ts and engine-boundary.structural.test.ts, both authored in S1/S2) walk the filesystem and emit one test-case per file discovered under src/domain/ -- so simply summing the 'obvious' new test files' own standalone counts (19+5+13=37) undercounted the true delta (56) by 19, all silently absorbed into two files this story never touched. Diagnosed by temporarily relocating the new src/domain/ files out of the tree and re-running the two suites standalone to get true before/after per-file deltas (48->60 and 105->110). Not a correctness problem -- the self-scaling scanners are working exactly as designed by S1/S2 -- but it is a real reporting trap for any story that adds files under a directory a self-scanning structural test already covers, worth flagging so a future story doesn't just report its own new test files' counts as the total tests_added delta without checking for this effect.",
+    "surprised_by": "",
+    "scope": "meta",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [
+      {
+        "agent": "dev",
+        "spawn_index": 1,
+        "note": "dev-task-projector reported 680/680 mid-run (before dev-bound4's files landed); final combined count after both dev threads and my own verification pass is 696/696. No implementation-level flags raised by this thread; task-projector.ts and its property tests matched the frozen public API spec exactly with no deviation."
+      },
+      {
+        "agent": "dev",
+        "spawn_index": 2,
+        "note": "dev-bound4 reported net-negative branch count in the device-sync.ts diff (removing a 4-line OR-chain for a single function call), a 13-test bound-4.structural.test.ts suite with CANONICAL_FILES/ALLOWLISTED_LEGACY_FILES classification, and confirmed the manual empirical red/green flip-check independently before returning. No disagreement with its framing; its CANONICAL_FILES design (including task-crdt.test.ts's parity fixture) is folded into this story's own judgment-call documentation and verification.json VQ-S3-012 above."
+      }
+    ],
+    "lead_clarifications": []
+  },
+  "decider_caveats": [
+    "FAST PATH pass (no Decider needed): 12 YES conf 1.0 + 1 favorable-polarity NO (sev 1 — CANONICAL_FILES inclusion does NOT weaken AC-BOUND-4).",
+    "S4 GATE (from review): AC-INV-2 is a SPLIT invariant — projector half proven here under the unique-id-log PRECONDITION; S4 examiners MUST prove appendAcceptedEvent idempotency on id or the invariant has a hole.",
+    "S8 surface: applyEvent identity contract (=== no-op / !== changed, verified tight) is sanctioned public surface — S8 must use it as the change signal and must not re-wrap outputs."
+  ]
+}

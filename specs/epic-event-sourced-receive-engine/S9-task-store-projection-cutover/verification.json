@@ -1,0 +1,50 @@
+{
+  "story_id": "S9",
+  "authored_by": "story-planner",
+  "authored_at": "2026-07-12T13:15:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S9-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the feature flag gating task-store.tsx's read path perform a real runtime branch selecting between the legacy applicationMessage listener path and react-engine-hooks' projected state, with both code paths still functionally reachable (no dead branch, no flag hard-coded to always resolve one way), rather than a flag that exists in name only while the delegation is already unconditional?"
+    },
+    {
+      "question_id": "VQ-S9-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Is task-store.tsx's engine-path branch a pure delegation to react-engine-hooks' projected state with zero new decision logic (no new if/switch/ternary branches, no new correctness-bearing exported function), per Boundary Rule 5 / AC-MIG-2?"
+    },
+    {
+      "question_id": "VQ-S9-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `task-store` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list (react-engine-hooks' exposed projected state and hooks)? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S9-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does task-store.cutover.test.tsx exercise both flag states (legacy listener path and engine-delegation path) and assert the UI-visible task state is equivalent between them for the same fixture events, proving the cutover doesn't silently change observable behavior?"
+    },
+    {
+      "question_id": "VQ-S9-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does the legacy second applicationMessage listener at task-store.tsx:181-255 remain present and unremoved in this story (removal is explicitly S12/Phase 8 scope), with both paths running side by side per the Phase-3 listener-observation amendment?"
+    },
+    {
+      "question_id": "VQ-S9-006",
+      "phase": "pre-impl",
+      "category": "BEST_PRACTICES",
+      "question": "Is the feature flag's default value documented, and does flipping it require no code change beyond the flag's own value -- i.e. is it a genuine runtime toggle, not a compile-time dead-code-eliminated constant that only ever resolves one way in the shipped build?"
+    },
+    {
+      "question_id": "VQ-S9-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MIG-2",
+      "question": "does the implementation satisfy AC-MIG-2's observable -- does a scripted diff check (git diff <phase-1-baseline>..<current> -- src/marmot/device-sync.ts src/store/task-store.tsx) assert zero added control-flow-branch lines in task-store.tsx that lack a matching removed line, proving the cutover is straight branch relocation/delegation rather than net-new branching, and is this check run at this phase-boundary commit rather than deferred?"
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "module_name": "raw-event-log-store",
+  "purpose": "Idempotent, ordering-preserving fact/accepted-event half of PersistenceAdapter (architecture.md \"Seam Contracts › PersistenceAdapter\"): appendFact/loadFacts/appendAcceptedEvent/loadAcceptedEvents over createKVStore (src/marmot/storage.ts), replacing src/store/persistence.ts:appendEvent's non-idempotent read-modify-write. The store is the SOLE seq authority for RawProtocolFact (assigns `seq` monotonically per group on append). checkpoint/deferred methods (S11) and clearGroupState are explicitly out of this story's scope -- this module implements a strict subset of PersistenceAdapter, composable with S11's checkpoint-store.ts/deferred-store.ts into a full adapter later.",
+  "public_api": [
+    { "name": "appendFact", "signature": "(fact: RawProtocolFactInput) => Promise<AppendFactResult>", "description": "Idempotent on fact.id (lookup-before-insert against the per-group array). A duplicate id returns { fact: <existing stored fact, original seq>, duplicate: true } and mints no new seq, writes nothing. A new id gets seq = (current max seq in the group's log) + 1 (1 if the log is empty), is appended to the group's array, persisted via a single setItem, and returned as { fact: <new, sequenced>, duplicate: false }." },
+    { "name": "loadFacts", "signature": "(groupId: string) => Promise<RawProtocolFact[]>", "description": "Returns the group's facts sorted by seq ascending (defense-in-depth explicit sort on top of natural append order -- never derived from idb-keyval keys() or content-hash id). Empty array if the group has no stored facts." },
+    { "name": "appendAcceptedEvent", "signature": "(event: AcceptedDomainEvent) => Promise<void>", "description": "Idempotent on event.id (lookup-before-insert against the per-group array). A duplicate id is a strict no-op: no second entry, no mutation of the existing entry, no write. A new id is pushed to the end of the group's array and persisted via a single setItem -- array index at push time IS the monotonic append position; AcceptedDomainEvent carries no explicit position/seq field (architecture.md's exact-shape contract), so position is implicit in array order, never recomputed from content." },
+    { "name": "loadAcceptedEvents", "signature": "(groupId: string) => Promise<AcceptedDomainEvent[]>", "description": "Returns the group's accepted events in APPEND/insertion order (the stored array's own order -- never re-sorted by id or any content field). Empty array if the group has no stored events." }
+  ],
+  "private_files": [],
+  "owned_data": [
+    "IDB notestr:raw-facts:${groupId} (key from src/engine/engine-types.ts rawFactsKey) -- RawProtocolFact[] per group, seq-ascending by construction",
+    "IDB notestr:accepted-events:${groupId} (key from src/engine/engine-types.ts acceptedEventsKey) -- AcceptedDomainEvent[] per group, append-order by construction"
+  ],
+  "dependencies_allowed": [
+    "src/engine/engine-types.ts (types RawProtocolFact/RawProtocolFactInput/AppendFactResult/AcceptedDomainEvent + key builders rawFactsKey/acceptedEventsKey ONLY -- the sanctioned architecture.md Forbidden-Rule-3 carve-out: types and IDB key constants, never receive-engine.ts or any other src/engine/* file)",
+    "src/marmot/storage.ts (createKVStore -- IDB infrastructure, per-pubkey `notestr-${pubkey}-${name}` namespacing preserved and required)"
+  ],
+  "dependencies_forbidden": [
+    "src/engine/receive-engine.ts and every other src/engine/* file besides engine-types.ts",
+    "src/integration/* (does not exist yet; forbidden regardless)",
+    "react, next, next/navigation",
+    "src/store/* (legacy persistence.ts owns notestr:events:${groupId} exclusively -- AC-MIG-1)"
+  ],
+  "external_ports": [
+    "PersistenceAdapter (partial: appendFact, loadFacts, appendAcceptedEvent, loadAcceptedEvents) -- the engine's sole persistence seam per architecture.md; S5's receive-engine.ts consumes these four methods for real, mocking only the S11-owned checkpoint/deferred methods (MOCK-05-002)."
+  ],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "src/persistence/raw-event-log-store.test.ts",
+    "src/persistence/legacy-key-guard.structural.test.ts"
+  ],
+  "seam": {
+    "cross_story": true,
+    "consumed_by": ["S5", "S9", "S11"]
+  },
+  "judgment_calls": [
+    {
+      "id": "single-array-per-group-storage-layout",
+      "decision": "Storage layout is ONE array value per group key (RawProtocolFact[] under rawFactsKey(groupId), AcceptedDomainEvent[] under acceptedEventsKey(groupId)) rather than one IDB key per item. This mirrors the existing house pattern (src/store/persistence.ts's task-events store: TaskEvent[] under a per-group key) and makes both ordering contracts hold BY CONSTRUCTION rather than by a derived sort: array push order === insertion order === the 'monotonic position' architecture.md requires for loadAcceptedEvents, with no separate position field needed (AcceptedDomainEvent's shape is fixed by src/domain/domain-events.ts and carries no such field). This also sidesteps the documented KNOWN TRAP entirely (idb-keyval keys() returns key-sorted order) since there ARE no per-item keys to enumerate. loadFacts still applies an explicit `.sort((a,b) => a.seq - b.seq)` on top of natural append order as defense-in-depth (cheap, and makes the seq-ascending contract independently verifiable even if a future bug ever reordered the array).",
+      "escalation_needed": false
+    },
+    {
+      "id": "seq-assignment-strategy",
+      "decision": "seq for a new fact = (current stored array's max seq) + 1, or 1 if the array is empty. Since the array is always seq-ascending by construction (single append point per group, never reordered), this reduces to `existing.length === 0 ? 1 : existing[existing.length - 1].seq + 1` -- O(1) rather than an O(n) max-scan. No global/cross-group seq counter (seq is scoped per-group, matching architecture.md 'monotonic per-group seq' and RawProtocolFact.groupId scoping the store key).",
+      "escalation_needed": false
+    },
+    {
+      "id": "no-concurrency-lock-matches-precedent",
+      "decision": "appendFact/appendAcceptedEvent do read-then-write (getItem, compute, setItem) with no in-process mutex. This is the SAME concurrency posture as the existing src/store/persistence.ts:appendEvent it replaces (also read-modify-write, no lock) -- not a regression, and out of this story's explicit scope (idempotency + ordering, not concurrent-write safety). Not introducing a new lock/queue mechanism here avoids scope creep beyond stories.json's S4 description.",
+      "escalation_needed": false
+    },
+    {
+      "id": "ac-mig-1-scanner-is-write-call-site-specific-not-blanket-presence",
+      "decision": "legacy-key-guard.structural.test.ts's AC-MIG-1 scan is deliberately NARROWER than engine-boundary.structural.test.ts's AC-BOUND-3 pattern (which flags ANY occurrence of a key literal outside the owner file). A blanket-presence scan for the legacy marker would false-positive on src/marmot/storage.ts's PRE-EXISTING, legitimate migrateLegacyPartition code (`k.startsWith(\"notestr:events:\")` at storage.ts:217 is a READ/filter over already-existing legacy keys during one-time migration, and the subsequent `set(key, ...)` at storage.ts:222 writes under a dynamically-enumerated `key` variable, never a literal). Excluding storage.ts entirely (in addition to persistence.ts) was considered and rejected: the AC's own text only names persistence.ts as excluded, and a write-call-site-specific scanner (matching literal marker text appearing as the first argument to a setItem(/set( call) correctly ignores storage.ts's read-only filter and its variable-keyed migration write WITHOUT needing a second file exclusion, while still flipping to failing on a realistic new violation (a hardcoded or template-literal legacy-key write introduced anywhere else). Verified empirically (see result.json empirical_verification).",
+      "escalation_needed": false
+    },
+    {
+      "id": "storage-test-ts-second-exclusion-not-pinned-down-by-story-brief",
+      "decision": "The write-call-site scanner also trips on src/marmot/storage.test.ts (NOT storage.ts) -- a pre-existing test file outside this story's file scope (src/persistence/ only) containing a legacy-migration fixture that seeds simulated pre-migration data via a LITERAL raw idb-keyval write (`set(\"notestr:events:g1\", [{ id: \"e1\" }])`, storage.test.ts:174), unlike storage.ts's own variable-routed pattern. This is a genuine, not-anticipated-by-the-story-brief scanner hit (the brief only pre-authorized excluding src/store/persistence.ts). Surfaced by the implementing dev agent rather than silently resolved. Judgment call: excluded storage.test.ts alongside persistence.ts, on the reasoning that it is a test-only, historical-state-simulation write (mirroring what a pre-epic app version would already have persisted on disk) serving the identical migration-testing purpose as storage.ts's own sanctioned read pattern -- not a new production write path bypassing persistence.ts, which is what AC-MIG-1 exists to prevent. legacy-key-guard.structural.test.ts documents this in its module doc comment and includes an explicit test proving the exclusion IS load-bearing for storage.test.ts (unlike the persistence.ts exclusion, which is not load-bearing against persistence.ts's CURRENT indirection-based write shape but guards against a future direct-literal refactor). A stricter reading that holds test fixtures to the letter of 'no write call site outside persistence.ts' would require either rewriting storage.test.ts's fixture to seed data via a raw IDB connection (mirroring storage.ts's own readAllRaw raw-connection pattern) or accepting this as a second permanent sanctioned exclusion -- both are out of this story's src/persistence/-only file scope to resolve unilaterally. Recorded as VQ-S4-P1 (post-impl) in verification.json for examiner review; not treated as a silent scope decision.",
+      "escalation_needed": false
+    }
+  ]
+}

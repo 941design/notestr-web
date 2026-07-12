@@ -40,6 +40,7 @@ import { appendFailedWelcome, pruneOlderThan, type FailedWelcomeRecord } from ".
 import { TASK_EVENT_KIND, TASK_STATE_SYNC_KIND, type Task, type TaskEvent, type TaskStateSyncPayload } from "../store/task-events";
 import { appendEvent, loadEvents } from "../store/persistence";
 import { replayEvents, type TaskState } from "../store/task-reducer";
+import { taskWinsOver } from "../domain/task-crdt";
 import {
   createPendingRetryQueue,
   type PendingRetryQueue,
@@ -1431,20 +1432,11 @@ export async function fetchAndApplyTaskBootstrap(
       }
 
       // CRDT merge gate: FWW for tasks not yet seen, LWW (updatedAt) for
-      // existing, deterministic three-level tie-break:
-      //   1. newer updatedAt wins
-      //   2. equal updatedAt → lower updatedBy pubkey wins
-      //   3. equal updatedAt + equal updatedBy → lower updatedByDevice clientId wins
-      //   (missing updatedByDevice treated as "" for backward compat with persisted tasks)
+      // existing, deterministic tie-break delegated to the shared
+      // taskWinsOver authority (src/domain/task-crdt.ts).
       for (const task of payload.tasks) {
         const existing = accepted.get(task.id);
-        const wins =
-          !existing ||
-          task.updatedAt > existing.updatedAt ||
-          (task.updatedAt === existing.updatedAt &&
-            (task.updatedBy < existing.updatedBy ||
-              (task.updatedBy === existing.updatedBy &&
-                (task.updatedByDevice ?? "") < (existing.updatedByDevice ?? ""))));
+        const wins = !existing || taskWinsOver(task, existing);
         if (wins) {
           accepted.set(task.id, task);
           wonFromBootstrap.set(task.id, task);

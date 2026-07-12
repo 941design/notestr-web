@@ -1,0 +1,74 @@
+{
+  "story_id": "S6",
+  "status": "done",
+  "final_outcome": "accepted",
+  "completed_at": "2026-07-12T20:57:28.643Z",
+  "modules_touched": [
+    "receive-engine",
+    "ingest-policy"
+  ],
+  "files_created": [
+    "src/engine/receive-engine.persistence-failure.test.ts",
+    "src/engine/receive-engine.malformed-signal.test.ts",
+    "specs/epic-event-sourced-receive-engine/S6-receive-engine-ingest-hardening/architecture.json",
+    "specs/epic-event-sourced-receive-engine/S6-receive-engine-ingest-hardening/baseline.json",
+    "specs/epic-event-sourced-receive-engine/S6-receive-engine-ingest-hardening/result.json"
+  ],
+  "files_modified": [
+    "src/engine/receive-engine.ts",
+    "src/engine/ingest-policy.ts",
+    "src/engine/ingest-policy.test.ts",
+    "specs/epic-event-sourced-receive-engine/S6-receive-engine-ingest-hardening/verification.json"
+  ],
+  "implementation_summary": "AC-PERS-1 (Implementation Constraint 11): added a new BLOCKING bounded-backoff retry helper (withPersistenceRetry) and two thin wrappers (appendFactWithRetry, appendAcceptedEventWithRetry, acceptDeferredFactWithRetry) used at every primary-state write call site (handleMessage, handleDeferred, handleSkipped, handleMalformed, and all four handleDeferredRetrySignal cases) -- exponential backoff (factor 2) from 1000ms, capped at 30000ms, bounded at 8 total attempts (PERSISTENCE_RETRY_* constants), backed by a new shared, REF-COUNTED 'persistence-write-failing' DegradationReason (not plain Set membership, so one write's success can never prematurely clear health while an unrelated write is still failing -- proven by a dedicated concurrent-overlap test). A failed write holds ONLY its own signal's processing (the FIFO always eventually resolves -- success, generation-stale abandonment, or bounded exhaustion -- never a permanent deadlock); on exhaustion the engine never pretends the write succeeded and stays degraded for the rest of the session ('parked retrying until next start', architecture.json's explicit disposition) since the fact/event was never durably appended and will be redelivered by relay re-sync on the next start(). saveCheckpoint (derived state) instead goes through a NON-BLOCKING saveCheckpointResilient() -- one synchronous attempt (byte-identical timing to S5's plain call on the success path) with failures handed off to a detached background withPersistenceRetry() the caller never awaits, applied at all four saveCheckpoint call sites (transitionTo, the periodic-checkpoint timer callback, runBootstrapFetch's late-merge branch, and stop()'s final save). A new retryDelay()/activeRetryCancellers mechanism is the sole new scheduler.setTimeout call site added, tracked so stop()/reset() can force-resolve any in-flight backoff wait immediately (both clearTimeout AND resolve the promise directly) instead of leaving an awaiting retry -- and the FIFO it may be blocking -- hung until a real timer would otherwise elapse; every loop iteration re-checks the generation token before/after each attempt and wait, matching the file's existing sev-9 discipline. AC-PERS-3 (Implementation Constraint 13): confirmed S5's handleMalformed() already satisfied the letter (never calls ingestPolicy.enqueueDeferred) by re-reading it line-by-line; this story's contribution is a new differential test file proving the divergence against a sibling unreadable/epoch_mismatch fact in the same scenario, plus applying the new appendFact retry wrapper uniformly (no malformed-specific branching added). S6 ledger obligations: (1) wired ingest-policy.pruneDeferred (now returning removed entries instead of void) into a new pruneAndReportTtlExpired() helper called at the top of enterRetryingDeferred, ahead of computing the retry batch; pruned entries are persisted via saveDeferredIds and reported as domain_event_rejected{reason:'deferred-ttl-expired'} -- deliberately a periodic-timer-free, epoch_advanced-only invocation point (documented trade-off, not a silent gap); (2) added IngestPolicy.exhaustedEntries() and a new reportAndRemoveExhausted() helper called after every retry pass, evicting + persisting + reporting attempt-budget-exhausted entries as domain_event_rejected{reason:'retry-exhausted'} -- previously these rotted in the queue forever, now proven differential against a fresh sibling entry; (3) strengthened (did not change) the R2 restart-rebuild's known-lossy DeferredReason comment into an explicit CONTRACT NOTE ('acceptable known-lossy by design', not a deferred TODO) -- no reason persistence added to deferred-store, per the obligation's own suggested disposition.",
+  "test_counts": {
+    "baseline": 813,
+    "final": 830,
+    "note": "830 = 813 (baseline) + 13 (this story's new tests, below) + 4 (unrelated, from other concurrently-active agents -- dev-bound4/dev-task-projector -- landing work in this same non-isolated, fully-uncommitted working tree during this story; confirmed via git status showing modifications to files this story never touched, e.g. src/marmot/device-sync.ts, src/marmot/storage.ts, src/store/task-events.ts). Zero regressions either way -- all 830 pass."
+  },
+  "tests_added": {
+    "persistence_failure_conformance": 9,
+    "malformed_signal_differential": 2,
+    "ingest_policy_unit": 2,
+    "total": 13
+  },
+  "mocks": [
+    {
+      "name": "MOCK-05-002",
+      "reason": "Unchanged from S5 -- still resolved by S11. This story's new test files each carry their own in-memory PersistenceAdapter mock (with per-method failure injection added on top of S5's replicate-not-import pattern, since AC-BOUND-1 forbids src/engine test files from importing src/persistence/*) rather than reusing S5's fsm.test.ts mock, matching this repo's established per-test-file mock duplication convention.",
+      "resolution_story": "S11"
+    }
+  ],
+  "remediation_rounds": 1,
+  "empirical_verification": {
+    "flip_proof_a_disable_backoff_retry": "Temporarily replaced withPersistenceRetry's catch-branch backoff/retry logic with an immediate `return { ok: false }` (fail-fast, no retry at all). Re-ran receive-engine.persistence-failure.test.ts: 5 of 8 tests (at that point in the implementation) went RED, including the core AC-PERS-1 K+1-calls-then-success scenario and the appendAcceptedEvent-holds-its-signal scenario. Restored via `cp` from a pre-edit backup, confirmed byte-identical restoration via `diff`, re-ran: 8/8 green again (later grew to 9/9 after the concurrent-overlap test was added).",
+    "flip_proof_b_malformed_into_deferred_queue": "Temporarily added an `ingestPolicy.enqueueDeferred(fact.id, fact, \"unreadable\", scheduler.now())` call into handleMalformed (simulating the exact bug AC-PERS-3 forbids). Re-ran receive-engine.malformed-signal.test.ts: the core differential test went RED (`expect(call.some(f => f.id === malformedFactId)).toBe(false)` failed -- the malformed fact's id reappeared in a later ingestPersisted retry-pass call). Restored via `cp` from a pre-edit backup, confirmed byte-identical restoration via `diff`, re-ran: 2/2 green again.",
+    "flip_proof_c_disable_exhausted_entry_removal": "Temporarily commented out the `await reportAndRemoveExhausted(gen)` call in enterRetryingDeferred. Re-ran receive-engine.persistence-failure.test.ts: the S6 ledger-obligation-2 disposition test went RED (timed out waiting for a domain_event_rejected{reason:'retry-exhausted'} that never arrives, since the exhausted entry was never evicted or reported). Restored via `cp` from a pre-edit backup, confirmed byte-identical restoration via `diff`, re-ran: 8/8 green again.",
+    "full_suite_after_all_checks": "npx tsc --noEmit exit 0; npm run test:unit: 38 test files passed, 830/830 tests passed -- re-confirmed by the architect as the final state after all three flip-proof cycles were reverted (each restoration verified byte-identical to a pre-edit backup via `diff` before re-running)."
+  },
+  "judgment_calls": [
+    "AC-PERS-1's three named methods (appendFact/appendAcceptedEvent/saveCheckpoint) split into two retry disciplines: BLOCKING for primary-state writes (appendFact/appendAcceptedEvent/acceptDeferredFact -- held inline in the serial FIFO), NON-BLOCKING/detached for saveCheckpoint (derived state). See architecture.json 'persistence-retry-blocking-vs-background'.",
+    "Bounded backoff = exponential (factor 2) from 1000ms, capped at 30000ms, bounded at 8 total attempts -- independent of ingest-policy.ts's own maxRetryAttempts (a different, deferred-queue-scoped budget). See architecture.json 'persistence-retry-bounded-backoff-constants'.",
+    "Exhaustion disposition: 'parked retrying until next start' -- stop retrying THIS write this session, stay degraded (ref-counted, never auto-clears via an unrelated later success), never discard (the fact was never durably appended, so it is naturally redelivered via relay re-sync on the engine's next start()). See architecture.json 'persistence-retry-exhaustion-disposition'.",
+    "Shared degradation reason 'persistence-write-failing' is REF-COUNTED (activePersistenceFailures), not plain Set membership -- proven necessary by a dedicated test where a background checkpoint retry succeeds while a concurrent FIFO-blocking appendAcceptedEvent retry (different signal) is still failing; a boolean reason would have incorrectly cleared health there. See architecture.json 'persistence-retry-shared-degradation-reason-refcounted'.",
+    "TTL-prune invocation point is epoch_advanced-only (inside enterRetryingDeferred, ahead of computing the retry batch) -- deliberately NOT also periodic, to avoid a third scheduler.setTimeout continuation family for a problem maxDeferredSize's cap-with-evict-eldest already partially bounds. See architecture.json 'deferred-ttl-prune-invocation-point'.",
+    "TTL-pruned entries (age-based) and retry-exhausted entries (attempt-count-based) get DISTINCT domain_event_rejected reasons (REJECTED_REASON_DEFERRED_TTL_EXPIRED vs REJECTED_REASON_RETRY_EXHAUSTED) rather than being collapsed into one -- both share the same disposition and mechanics but are triggered by genuinely different conditions. See architecture.json 'deferred-ttl-prune-vs-retry-exhaustion-distinct-reasons'.",
+    "R2's known-lossy DeferredReason-on-restart behavior is kept exactly as S5 left it (SETTLED as acceptable-by-design, not a deferred TODO) -- no reason persistence added to deferred-store, since neither retryBatch() nor the L8/L9 pass ever branches on `reason`. See architecture.json 'r2-deferred-reason-lossiness-kept-as-documented-known-lossy'.",
+    "handleMalformed's terminal behavior needed zero source changes beyond the shared appendFact retry wrapper -- S5 already implemented it correctly; this story's job was proving it differentially. See architecture.json 'malformed-signal-hardening-is-differential-test-only'."
+  ],
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "A hand-rolled deterministic EngineScheduler (ManualScheduler, built for tests needing EXACT backoff-boundary bookkeeping that vi.useFakeTimers()+vi.waitFor() could not reliably provide -- vi.waitFor silently nudges vitest's fake-timer clock forward via its own internal polling interval while it waits, which corrupted precise millisecond arithmetic in 3 of the first 8 tests written against vi.advanceTimersByTimeAsync) initially had its OWN correctness bug: its advanceTo(ms) set the virtual clock straight to the target time before firing any due timers, rather than advancing through each timer's own due time in order. For a SINGLE pending timer this is harmless, but for a CASCADING retry chain (a failed attempt schedules the next backoff wait as `scheduler.now() + delay`), jumping nowMs straight to a later target before the cascade's intermediate continuations run anchors every subsequent wait to the wrong (too-late) base time, silently compressing/corrupting the whole chain. This was caught only because a specific test (added to close a self-identified post-impl verification question about ref-counted health, VQ-S6-010) needed to advance through TWO independently-scheduled timer chains at once (a periodic checkpoint tick due at t=5000 and an already-cascading appendAcceptedEvent retry chain due at t=1000/3000/7000) in a single advanceTo(5000) call -- every earlier test happened to only ever advance to exactly one timer's own due time per call, which never exercised the jump-ahead bug. Fixed by making advanceTo async and processing timers strictly in due-order, yielding microtask ticks between each fire (mirroring how vi.advanceTimersByTimeAsync itself behaves) -- documented at length in the class's own doc comment as a warning for future scheduler test helpers.",
+    "surprised_by": "The full-suite test count grew by 4 more than my own 10 new tests accounted for (813 baseline -> 823 expected -> 827 actual mid-implementation) purely from OTHER concurrently-active agents (dev-bound4, dev-task-projector, visible in this session's active-agent list) landing unrelated work in the same non-isolated working tree during this story -- confirmed via `git status` showing modified src/marmot/device-sync.ts, src/marmot/storage.ts, src/store/task-events.ts, BACKLOG.json, and several spec/ADR markdown files I never touched. Not a defect in this story (all 830 tests are green, zero regressions), but worth flagging: the entire event-sourced-receive-engine epic (S1-S5, and now S6) sits fully uncommitted in this working tree -- `git status` shows src/engine/ and every specs/epic-event-sourced-receive-engine/S*/ directory as untracked, so this story's regression baseline was implicitly shared with sibling agents' concurrent, unrelated changes rather than being a clean isolated diff.",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  },
+  "decider_caveats": [
+    "FAST PATH pass: 12/12 YES (conf 0.95-1.0). Cold Stage-2 batch (2xsev-8: stale-checkpoint supersession + watermark-before-durability; sev-7 L9 latch; sev-6 saveDeferredIds; P3s incl. persistence-exhausted emission + refundAttempt) all landed and Opus-verified.",
+    "Rejection vocabulary is FOUR engine reasons: parse_error, retry-exhausted, deferred-ttl-expired, persistence-exhausted (ledger + S8 obligation updated).",
+    "RUN PAUSED after this story (user directive). Resume: /base:feature specs/epic-event-sourced-receive-engine/ — RESUME mode; reviewer rehydrates from ownership-ledger.json; next story S7 (frozen fetchBootstrap contract)."
+  ]
+}

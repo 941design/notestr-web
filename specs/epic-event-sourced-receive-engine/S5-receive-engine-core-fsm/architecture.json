@@ -1,0 +1,142 @@
+{
+  "module_name": "receive-engine",
+  "purpose": "Per-group receive-engine state machine implementing fsm.md's authoritative transition table (L1-L11, H1-H2, the {lifecycle,health} pair, the gap-free catching_up->buffering_live->live cutover protocol, the T_join=8000ms joining-gate with background-continue/late-merge, and the L8/L9 epoch-triggered deferred-retry flow). Companion module ingest-policy.ts wraps a PendingRetryQueue-equivalent (dedupe + bounded-retry-budget deferred queue), consumed exclusively by receive-engine.ts. The engine drives ingest via the IngestSource control interface (catchUp/openLive/ingestPersisted/close), consumes marmot-free IngestSignals, and persists through the PersistenceAdapter seam -- S4's real fact/accepted-event methods plus S11-owned checkpoint/deferred methods (mocked here, MOCK-05-002).",
+  "public_api": [
+    {
+      "name": "createReceiveEngine",
+      "signature": "(deps: ReceiveEngineDeps) => ReceiveEngine",
+      "description": "Factory. Constructs a per-group engine instance in lifecycle 'uninitialized', health 'nominal'. No I/O happens until start() is called."
+    },
+    {
+      "name": "ReceiveEngine.start",
+      "signature": "(options: StartOptions) => Promise<void>",
+      "description": "Only callable from lifecycle 'uninitialized' (throws otherwise). origin:'welcome' always routes to L2 joining. origin:'restored' evaluates the reconciled L1/L2 guard (see judgment call 'l1-l2-restart-routing'). The returned promise resolves once the deterministic portion of the initial transition chain settles (it does NOT await an in-flight T_join background bootstrap continuation past a timeout -- callers must not block UI rendering on this promise; use subscribe() for progress)."
+    },
+    {
+      "name": "ReceiveEngine.stop",
+      "signature": "() => Promise<void>",
+      "description": "L10. Idempotent (no-op if already 'stopped' or 'uninitialized'). Unsubscribes the live subscription, calls adapter.close() as its final adapter interaction, sets lifecycle='stopped'/health='nominal', persists a final checkpoint."
+    },
+    {
+      "name": "ReceiveEngine.reset",
+      "signature": "() => Promise<void>",
+      "description": "L11. Callable from any lifecycle. Defensively unsubscribes any open live subscription (in-memory hygiene; does NOT call adapter.close() -- that remains stop()'s exclusive responsibility per fsm.md's L10/L11 action split), clears all in-memory bookkeeping (lastEpoch, lastIngestedSeq, lastAcceptedDomainEventId, bootstrapCompleted, degradation reasons, ingest-policy dedupe+deferred state), calls persistence.clearGroupState(groupId), and lands in 'uninitialized'/'nominal' WITHOUT a trailing saveCheckpoint call (a post-clear checkpoint write would leave a non-null checkpoint behind, contradicting clearGroupState's 'loadCheckpoint returns null after' postcondition)."
+    },
+    {
+      "name": "ReceiveEngine.subscribe",
+      "signature": "(listener: (event: EngineOutputEvent) => void) => Unsubscribe",
+      "description": "Registers a listener for all ten EngineOutputEvent variants. Returns an unsubscribe function."
+    },
+    {
+      "name": "ReceiveEngine.getState",
+      "signature": "() => EngineState",
+      "description": "Synchronous snapshot of { lifecycle, health }."
+    },
+    {
+      "name": "createRealEngineScheduler",
+      "signature": "() => EngineScheduler",
+      "description": "Production EngineScheduler backed by the global setTimeout/clearTimeout/Date.now. The sole sanctioned call site for these globals in src/engine/ (mirrors src/domain/task-events.ts's precedent of confining nondeterministic calls to one documented factory)."
+    },
+    {
+      "name": "EngineScheduler (interface)",
+      "signature": "{ now(): number; setTimeout(fn: () => void, ms: number): EngineTimerHandle; clearTimeout(handle: EngineTimerHandle): void }",
+      "description": "Injected timer/clock abstraction (constructor dep) so T_join and periodic-checkpoint timing are test-controllable via a fake implementation (vitest fake timers, wrapped) without the engine ever referencing Date/setTimeout globals directly."
+    },
+    {
+      "name": "StartOptions / EngineOrigin",
+      "signature": "type EngineOrigin = 'restored' | 'welcome'; interface StartOptions { origin: EngineOrigin }",
+      "description": "Not re-exported from engine-types.ts (frozen, S1-owned, out of this story's scope.includes) -- owned here as receive-engine.ts's own public-surface addition, matching the module map's 'new construction; explicit start()/stop()/reset() lifecycle' ownership grant."
+    },
+    {
+      "name": "ReceiveEngineDeps",
+      "signature": "interface ReceiveEngineDeps { groupId: string; adapter: IngestSource; persistence: PersistenceAdapter; scheduler: EngineScheduler; tJoinMs?: number; checkpointIntervalMs?: number; ingestPolicyOptions?: IngestPolicyOptions }",
+      "description": "Constructor deps. tJoinMs defaults to 8000 (fsm.md T_join). checkpointIntervalMs defaults to 30000 (periodic live-phase save, AC-FSM-4). ingestPolicyOptions defaults to ingest-policy.ts's DEFAULT_INGEST_POLICY_OPTIONS."
+    }
+  ],
+  "private_files": [],
+  "owned_data": [
+    "In-memory: lifecycle, health-degradation-reason set, lastEpoch, lastIngestedSeq, lastAcceptedDomainEventId, bootstrapCompleted flag, pendingBootstrapReinfer flag, live-signal buffer, live-subscription unsubscribe handle, checkpoint periodic-save timer handle, an ingest-policy instance (dedupe-processed-id set + deferred/retry-budget queue) -- exactly the module map's 'Lifecycle state, lastEpoch, retry budget, PendingRetryQueue (in-memory)' grant."
+  ],
+  "dependencies_allowed": [
+    "src/engine/engine-types.ts (EngineState/EngineLifecycleState/EngineHealth, EngineCheckpoint, EngineOutputEvent, IngestSignal, IngestSource, PersistenceAdapter, RawProtocolFact/RawProtocolFactInput/AppendFactResult, AcceptedDomainEvent, DeferredReason, Unsubscribe -- all type-only plus the frozen interfaces this story consumes, never modifies)",
+    "src/domain/domain-events.ts (deriveMlsAcceptedEventId, deriveBootstrapAcceptedEventId, SOURCE_KIND_PHASE_ORDER -- per the story's explicit 'import DIRECTLY, engine-types re-exports types only' instruction)",
+    "src/domain/task-events.ts (TaskEvent type only, for the local taskIdOf(payload) helper that distinguishes task.created's payload.task.id from every other variant's payload.taskId)",
+    "src/engine/ingest-policy.ts (this story's own sibling module)"
+  ],
+  "dependencies_forbidden": [
+    "src/marmot/* (including src/marmot/ingest-queue.ts -- see judgment call 'ingest-policy-cannot-import-marmot-ingest-queue' for why the story text's 'wrap the existing PendingRetryQueue' is honored in algorithm, not in import)",
+    "src/persistence/* (the engine calls PersistenceAdapter methods on an injected instance; it never imports an implementation file)",
+    "src/integration/*, react, next, next/navigation",
+    "src/store/* (legacy, migration-owned)",
+    "src/domain/task-projector.ts and src/domain/task-crdt.ts (the engine stays projection-free by design -- see judgment call 'engine-stays-projection-free')"
+  ],
+  "external_ports": [
+    "IngestSource (consumed: catchUp, openLive, ingestPersisted, close) -- MOCK-05-001 in this story's tests, real S7 marmot-adapter.ts later, zero receive-engine.ts changes required at that swap per the interface boundary",
+    "PersistenceAdapter (consumed: all ten methods -- appendFact/loadFacts/appendAcceptedEvent/loadAcceptedEvents are REAL S4 raw-event-log-store.ts semantics in integration-style tests; saveCheckpoint/loadCheckpoint/saveDeferredIds/loadDeferredIds/acceptDeferredFact/clearGroupState are MOCK-05-002 here, real S11 checkpoint-store.ts/deferred-store.ts later)"
+  ],
+  "events_emitted": [
+    "envelope_received",
+    "envelope_deferred",
+    "domain_event_accepted",
+    "domain_event_rejected",
+    "group_epoch_advanced",
+    "group_ratchet_advanced",
+    "engine_state_changed",
+    "deferred_retry_started",
+    "recovered"
+  ],
+  "events_consumed": [],
+  "test_targets": [
+    "src/engine/receive-engine.fsm.test.ts",
+    "src/engine/receive-engine.cutover.property.test.ts",
+    "src/engine/ingest-policy.test.ts"
+  ],
+  "seam": {
+    "cross_story": true,
+    "consumed_by": [
+      "S6",
+      "S7",
+      "S8",
+      "S9",
+      "S11"
+    ]
+  },
+  "judgment_calls": [
+    {
+      "id": "ingest-policy-cannot-import-marmot-ingest-queue",
+      "decision": "The story brief says ingest-policy.ts wraps 'the existing PendingRetryQueue (from src/marmot/ingest-queue.ts -- READ it; wrap, don't rewrite)'. architecture.md's Boundary Rules (Forbidden Rule 5, added S2 Stage-2 cold review P2-8) and engine-boundary.structural.test.ts's AC-BOUND-1 scanner explicitly and unconditionally forbid ANY src/engine/* file from importing anything matching '/marmot/' -- verified by reading the scanner source directly (disallowedCategory() flags any specifier containing '/marmot/', with a scanner-liveness fixture proving it flips to failing on exactly this import shape) and by the story's own gate text ('the engine boundary structural suite auto-covers your new files -- they must pass it as-is'). A literal import is therefore not an option; the structural, review-blocking gate outranks the story prose. Resolved by PORTING createPendingRetryQueue's algorithm (dedupe-by-id Map preserving insertion order, cap-with-evict-eldest, TTL-prune) into a new, engine-native implementation in ingest-policy.ts operating on RawProtocolFact + factId (never importing applesauce-core's NostrEvent or crossing into src/marmot/). This mirrors engine-types.ts's own S1 precedent of declaring a structural NostrEvent type rather than importing applesauce-core's for the identical boundary reason (see engine-types.ts's NostrEvent doc comment). 'Wrap, don't rewrite' is honored in the sense that matters for review -- proven algorithm shape, not a duplicated-and-diverged reimplementation -- while remaining structurally compliant.",
+      "escalation_needed": false
+    },
+    {
+      "id": "engine-stays-projection-free",
+      "decision": "Per the story's explicit framing ('Constraint 7 puts incremental projection in the integration layer; the engine may stay projection-free -- decide and document'), receive-engine.ts holds NO in-memory TaskProjection and never imports task-projector.ts/task-crdt.ts. It emits domain_event_accepted (and the other nine EngineOutputEvent variants); folding into a TaskProjection is the integration layer's job (S8 react-engine-hooks.ts, per Implementation Constraint 7's applyEvent(currentProjection, event.payload) mandate). This story's tests independently fold emitted events with the real task-projector.applyEvent to stand in for that consumer when an AC's observable talks about 'the projection' (AC-FSM-3, AC-INV-5) -- the fold happens in test code, never inside the engine.",
+      "escalation_needed": false
+    },
+    {
+      "id": "bootstrap-fetch-is-a-catchup-call-raced-against-t-join",
+      "decision": "IngestSource (frozen by S1, out of this story's scope to modify) exposes exactly four methods -- catchUp, openLive, ingestPersisted, close -- with no dedicated bootstrap-fetch method, yet fsm.md's L2 entry action says 'begin bootstrap snapshot fetch with timeout T_join' and L4/L5's guards are bootstrapResolved/bootstrapTimedOut/bootstrapFailed. Resolved by treating the joining-phase bootstrap fetch as ONE adapter.catchUp() call, raced against an 8000ms scheduler.setTimeout: bootstrapResolved = the async iterable completes before the timer; bootstrapTimedOut = the timer fires first (the iterable is NOT cancelled -- it keeps draining signals through the SAME shared per-signal handler in the background; when it eventually completes, its late resolution clears the 'bootstrap-unresolved' degradation reason, restoring health:nominal per H2, exactly as fsm.md's Joining-timeout section describes for the un-cancelled fetch); bootstrapFailed = the iterable rejects before the timer. On EVERY entry into catching_up (L3 from recovering, L4/L5 from joining) the engine performs its OWN fresh openLive()+catchUp() cycle (the cutover-protocol drain, AC-FSM-2) -- this is a SEPARATE, second catchUp() call from the joining-phase bootstrap fetch, not a reuse of the same iterable. Documented rather than silently decided because it is the one place this story's design fills a gap the frozen IngestSource contract left open.",
+      "escalation_needed": false
+    },
+    {
+      "id": "l1-l2-restart-routing",
+      "decision": "Implements the reconciled fsm.md L1/L2 guard verbatim as specified in this story's brief: L1 (recovering) iff (a usable, shape-valid checkpoint with bootstrapCompleted===true) OR (an absent/corrupt checkpoint with a non-empty raw-log or accepted-log -- preserve-and-replay, lastIngestedSeq forced to 0, health degraded via a 'preserve-and-replay-recovery' reason that clears specifically at the FIRST checkpoint save coincident with reaching live, which also re-infers bootstrapCompleted=true at that same moment). L2 (joining) otherwise: origin='welcome' unconditionally, OR origin='restored' with a usable checkpoint whose bootstrapCompleted===false, OR an absent/corrupt checkpoint with BOTH logs empty. loadCheckpoint's return is additionally shape-validated (isValidCheckpoint) so a deserialize-succeeded-but-malformed value is treated identically to null/thrown, matching Implementation Constraint 12.",
+      "escalation_needed": false
+    },
+    {
+      "id": "recovering-r1-r3-best-effort-not-full-ac-rec-coverage",
+      "decision": "S5's acceptance criteria are AC-FSM-1..8 and AC-INV-5 only; AC-REC-1..9 (Recovery Sequencing) belong to a later story (S11, which also resolves MOCK-05-002's checkpoint/deferred mocking). This story's 'recovering' entry action still performs a functionally coherent R1-R3 pass (loads rawLog/acceptedLog/deferredIds via the mocked persistence methods, prunes+rebuilds the ingest-policy deferred queue per R2a/R2, marks every already-accepted id as processed so R3's full-log resubmission on a corrupt-checkpoint path cannot re-emit a duplicate domain_event_accepted, and resubmits only rawLog facts with seq>lastIngestedSeq via adapter.ingestPersisted per R3) so that L1 is a real, FSM-conformant transition rather than a decorative label -- but it is not held to AC-REC's exact observables (e.g. it does not independently prove R-INV-4's crash-plus-continuation equality). Flagged as an explicit S11 follow-up obligation, not a silent gap.",
+      "escalation_needed": false
+    },
+    {
+      "id": "start-does-not-block-on-an-in-flight-t-join-continuation",
+      "decision": "engine.start() awaits the full deterministic transition chain UP TO the point where the FSM is genuinely waiting on an outstanding external operation it cannot control the timing of. Concretely: the T_join timeout branch runs as a detached async continuation (fired from the injected scheduler's setTimeout callback, not part of start()'s own await chain), so start()'s returned promise does not resolve at the 8000ms degraded-transition point -- it resolves only once the underlying bootstrap catchUp() iterable itself eventually settles (success, late-merge, or failure), which may be arbitrarily later. This matches real usage: a caller (S8's react-engine-hooks.ts) must not block UI rendering on awaiting start() to observe a slow/hung relay; it should call start() and observe progress via subscribe(). Tests in this story that need to observe the mid-flight degraded transition therefore do NOT await start() directly -- they let it run detached (start().catch(()=>{})) and drive fake timers, matching this documented contract rather than fighting it.",
+      "escalation_needed": false
+    }
+  ],
+  "amendments": [
+    {
+      "date": "2026-07-12",
+      "note": "JUDGMENT-CALL SUPERSEDED (Stage-1 review sev-6 resolution): the \"IngestSource exposes exactly four methods / bootstrap = catchUp raced against T_join\" judgment call reflects the ORIGINAL implementation, which review rejected as unsound (concurrent stateful catchUp drains). The landed design: IngestSource has FIVE methods — fetchBootstrap(): AsyncIterable<IngestSignal> is the dedicated joining-phase bootstrap channel (NIP-44, ratchet-free, overlap-safe, no-abandonment-on-timeout); catchUp() runs exactly once per start(), runtime-guarded. See engine-types.ts IngestSource JSDoc (the S7-binding contract) and architecture.md IngestSource table."
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "story_id": "S5",
+  "status": "done",
+  "final_outcome": "accepted",
+  "completed_at": "2026-07-12T19:25:14.132Z",
+  "modules_touched": [
+    "receive-engine",
+    "ingest-policy"
+  ],
+  "files_created": [
+    "src/engine/receive-engine.ts",
+    "src/engine/ingest-policy.ts",
+    "src/engine/receive-engine.fsm.test.ts",
+    "src/engine/receive-engine.cutover.property.test.ts",
+    "src/engine/ingest-policy.test.ts",
+    "specs/epic-event-sourced-receive-engine/S5-receive-engine-core-fsm/architecture.json",
+    "specs/epic-event-sourced-receive-engine/S5-receive-engine-core-fsm/baseline.json",
+    "specs/epic-event-sourced-receive-engine/S5-receive-engine-core-fsm/result.json"
+  ],
+  "files_modified": [
+    "specs/epic-event-sourced-receive-engine/S5-receive-engine-core-fsm/verification.json",
+    "specs/epic-event-sourced-receive-engine/mocks-registry.json"
+  ],
+  "implementation_summary": "Authored src/engine/receive-engine.ts (the per-group receive-engine FSM: createReceiveEngine(deps) -> {start, stop, reset, subscribe, getState}) implementing fsm.md's full transition table -- 8 lifecycle states as a {lifecycle, health} pair (health computed from an internal degradation-reason Set, never encoded as a lifecycle value, I-FSM-1), L1-L11 lifecycle transitions, H1/H2 health transitions, the gap-free catching_up->buffering_live->live cutover protocol (openLive() called before catchUp() on every entry per I-FSM-2/AC-FSM-2; live signals buffered during catching_up/buffering_live and applied in arrival order once draining, I-FSM-3), the T_join=8000ms joining-gate with background-continue-and-late-merge (bootstrap fetch modeled as one adapter.catchUp() call raced against an injected EngineScheduler's setTimeout, never cancelled on timeout), and the L8/L9 epoch-triggered deferred-retry flow (I-FSM-6: fires only on group_epoch_advanced with a non-empty deferred queue, never on group_ratchet_advanced -- which the 'skipped' IngestSignal now emits). All signal processing (historical drain, buffered-live drain, direct-live application, deferred-retry) is funneled through a single internal FIFO promise chain (`enqueue`) to guarantee ordering under concurrent arrival. The engine is projection-free by design (holds no in-memory TaskProjection; emits domain_event_accepted for the integration layer to fold via applyEvent) and imports only src/domain/domain-events.ts's derive*AcceptedEventId helpers plus src/domain/task-events.ts's TaskEvent type, consuming IngestSource/PersistenceAdapter purely through their interfaces. Authored src/engine/ingest-policy.ts (createIngestPolicy): a dedupe gate (hasProcessed/markProcessed on derived AcceptedDomainEvent ids, closing AC-FSM-8's exactly-once-emission property) plus a deferred/retry-budget queue (enqueueDeferred/retryBatch/recordAttempt/isExhausted/pruneDeferred) that ports PendingRetryQueue's cap+evict-eldest+TTL-prune algorithm to engine-native RawProtocolFact/factId types rather than importing src/marmot/ingest-queue.ts directly, which engine-boundary.structural.test.ts's AC-BOUND-1 scanner unconditionally forbids for any file under src/engine/ (verified against the scanner source; documented as a judgment call). Both files typecheck clean and pass the pre-existing engine-boundary.structural.test.ts (AC-BOUND-1/AC-BOUND-3) as-is.",
+  "test_counts": {
+    "baseline": 745,
+    "final": 799
+  },
+  "tests_added": {
+    "unit": 20,
+    "fsm_conformance": 24,
+    "property": 1
+  },
+  "mocks": [
+    {
+      "name": "MOCK-05-001",
+      "reason": "In-memory mock IngestSource standing in for the real marmot-adapter.ts (S7).",
+      "resolution_story": "S7"
+    },
+    {
+      "name": "MOCK-05-002",
+      "reason": "In-memory mock of PersistenceAdapter's checkpoint/deferred methods standing in for checkpoint-store.ts/deferred-store.ts (S11). In practice this story's tests mock all ten PersistenceAdapter methods in one in-memory adapter rather than importing the real S4 raw-event-log-store.ts, because that import is ALSO forbidden by AC-BOUND-1 for any file under src/engine/ (tests included) -- see verification.json VQ-S5-018.",
+      "resolution_story": "S11"
+    }
+  ],
+  "remediation_rounds": 3,
+  "empirical_verification": {
+    "flip_proof_l1_l2_guard": "Temporarily changed the restored+usable-checkpoint+bootstrapCompleted===false branch in start() to call enterRecovering(checkpoint, false) instead of enterJoining() (an L1/L2 guard violation). Re-ran receive-engine.fsm.test.ts: 1 of 23 tests went RED ('usable checkpoint with bootstrapCompleted=false -> L2 joining', expected 'joining' got 'recovering'). Restored the original branch via `cp` from a pre-edit backup, confirmed byte-identical restoration via `diff`, re-ran: 23/23 green again.",
+    "flip_proof_cutover_gap_i_fsm_2": "Temporarily reordered enterCatchingUp() to drain adapter.catchUp() BEFORE calling adapter.openLive() (an I-FSM-2 violation -- opening live after the historical drain instead of before). Re-ran the FSM and property test files: 6 of 24 tests went RED -- all three AC-FSM-2 call-order tests (L3/L4/L5), both AC-FSM-3 buffering-order tests, and the AC-FSM-8 property test (which timed out because a live push arriving before the now-late openLive() call was silently dropped, deadlocking the test's wait-for-live-open). Restored the original order via `cp` from a pre-edit backup, confirmed byte-identical restoration via `diff`, re-ran: all tests green again (167/167 in src/engine/, 799/799 full suite).",
+    "full_suite_after_all_checks": "npx tsc --noEmit exit 0; npm run test:unit: 36 test files passed, 799 tests passed -- re-confirmed by the architect as the final state after both flip-proof cycles were reverted."
+  },
+  "judgment_calls": [
+    "ingest-policy.ts ports (does not import) PendingRetryQueue's algorithm from src/marmot/ingest-queue.ts, because AC-BOUND-1's structural scanner unconditionally forbids any src/engine/* file from importing anything matching '/marmot/'. See architecture.json 'ingest-policy-cannot-import-marmot-ingest-queue'.",
+    "The engine stays projection-free by explicit design choice (Constraint 7 permits this); tests fold emitted domain_event_accepted events with the real task-projector.applyEvent to stand in for the integration layer where an AC talks about 'the projection'. See architecture.json 'engine-stays-projection-free'.",
+    "IngestSource exposes no dedicated bootstrap-fetch method, so the joining-phase bootstrap fetch is modeled as one adapter.catchUp() call raced against T_join, distinct from the separate openLive()+catchUp() cycle every catching_up entry performs for the cutover drain. See architecture.json 'bootstrap-fetch-is-a-catchup-call-raced-against-t-join' and verification.json VQ-S5-017 (post-impl).",
+    "recovering's (L1) entry action performs a functionally coherent but not AC-REC-exhaustive R1-R3 pass (rebuilds the deferred queue per R2a/R2, resubmits only the seq>watermark crash-gap tail per R3) -- AC-REC-1..9 belong to S11. See architecture.json 'recovering-r1-r3-best-effort-not-full-ac-rec-coverage'.",
+    "Both test files mock all ten PersistenceAdapter methods in-memory (replicating raw-event-log-store.ts's exact algorithm) rather than importing the real S4 store, since that import is ALSO forbidden under src/engine/ by the same AC-BOUND-1 scanner. See verification.json VQ-S5-018 (post-impl)."
+  ],
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "Two aspects of the story brief were in direct tension with hard, pre-existing structural gates that this story's new files were told they 'must pass as-is': (1) the instruction to wrap PendingRetryQueue from src/marmot/ingest-queue.ts is unconditionally forbidden by engine-boundary.structural.test.ts's AC-BOUND-1 scanner for ANY file under src/engine/, verified directly against the scanner's source and its own liveness fixture proving that exact import shape flips it to failing; (2) the instruction that 'fact/accepted-event persistence uses the real S4 raw-event-log-store... in integration-style tests' is equally impossible for any TEST file under src/engine/, since the scanner has no test-file carve-out and also forbids '/persistence/' imports. Both required reading the scanner's actual source code (not just the AC prose) to confirm the constraint was absolute before committing to a workaround, and both were resolved the same way -- porting the proven algorithm/behavior rather than importing across the forbidden boundary -- mirroring engine-types.ts's own S1 precedent for exactly this situation (declaring a structural NostrEvent type instead of importing applesauce-core's). A second, more subtle issue was a genuine implementation bug caught only by TDD: routing the L8/L9 deferred-retry pass's per-signal handling through the same `enqueue()` serial-chain helper used everywhere else created a real deadlock, because runDeferredRetryPass only ever executes from within a job that is ITSELF already running as an enqueued job (reached via handleEpochAdvanced <- processSignal <- enqueue) -- the nested enqueue call chained a new job behind the very job awaiting it. This was caught by receive-engine.fsm.test.ts's AC-INV-5 test hanging (not a clean assertion failure), diagnosed by tracing the promise chain, and fixed by calling the handler directly rather than re-entering enqueue() from an already-serialized context.",
+    "surprised_by": "The AC-FSM-8 property test's initial numRuns=100 run was not hanging but was simply slow enough (~5.26s) to trip the vitest default 5000ms per-test timeout, entirely due to vi.waitFor's polling interval overhead multiplied across 100 runs -- replacing it with an event-driven wait (resolving a Promise from inside the engine's own subscribe callback, zero poll interval) dropped the same 100-run property test to 13ms. Separately, the SAME polling-vs-event-driven distinction surfaced a genuine test-authoring race: waiting only for the 'catching_up' lifecycle event (which fires synchronously inside transitionTo, before its own internal `await persistence.saveCheckpoint(...)`) is NOT sufficient proof that adapter.openLive() has actually been called yet (that happens on the next line of enterCatchingUp, after transitionTo's await resolves) -- a live signal pushed in that narrow window is silently dropped by a test's mock adapter (onSignal still null), which is exactly what caused an early property-test counterexample (a live fact simply vanishing). Fixed by exposing an explicit 'live subscription is actually open' signal from the mock and awaiting that instead.",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  },
+  "decider_caveats": [
+    "FAST PATH retry-then-pass: 19/19 YES after two doc-only PARTIALs remediated (architecture.json judgment-call supersession note; keep-in-sync mock comment).",
+    "Review cycle was the deepest of the epic: Stage-1 sev-6 (bootstrap seam — IngestSource gained fetchBootstrap, catchUp exactly-once) + cold Stage-2 sev-9 (stop/reset lifecycle cancellation — generation token, empirically flip-proven) + sev-7 (re-infer point) + 3 sev-6 + P3 tail. fsm.md and Constraint 12 amended with dated markers.",
+    "S6 obligations: ingest-policy TTL prune + exhausted-entry disposition; R2 deferred-reason lossiness disposition. S7 bound by the frozen fetchBootstrap contract. S8/S9 owe the engine+real-store integration proof. S11: checkpoint-first + submission-order clear discipline."
+  ]
+}

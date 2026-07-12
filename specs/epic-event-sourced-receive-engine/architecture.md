@@ -2,7 +2,7 @@
 
 **ADR**: docs/adr/ADR-002-event-sourced-receive-engine.md
 **Status**: current
-**Last updated**: 2026-06-29
+**Last updated**: 2026-07-12 (Stage-2 cold review amendments — see inline "(amended 2026-07-12, Stage-2 cold review)" markers)
 
 ---
 
@@ -30,6 +30,8 @@ Functional core + imperative shell, three nested shells: pure domain inner core 
 | device-sync | MODIFIED — stub during migration; no new correctness logic | `src/marmot/device-sync.ts` | Shrinking: internals migrate story-by-story |
 | task-store | MODIFIED — second `applicationMessage` listener removed when engine takes over | `src/store/task-store.tsx` | Shrinking |
 | persistence | DEPRECATED — removed Phase 8 | `src/store/persistence.ts` | Legacy `notestr:events:${groupId}` (read-only during migration) |
+| task-events | ADDED BY S2 (2026-07-12, S1 review Finding 2 / Decider gate) — the TaskEvent wire type + `createTask` factory, relocated from `src/store`: **the pure inner core owns the domain wire type.** `createTask`'s `crypto.randomUUID()`/`Date.now()` are the ONLY sanctioned nondeterministic calls in `src/domain/` (allowlisted in the boundary scanner); projector/CRDT code must stay pure | `src/domain/task-events.ts` | Wire type + createTask factory |
+| task-events-shim | FROZEN (2026-07-12) — pure re-export shim (`export * from "../domain/task-events"`) kept so 15 legacy importers work unchanged; do NOT add declarations here (structural test enforces) | `src/store/task-events.ts` | None (re-export only) |
 
 ---
 
@@ -54,6 +56,7 @@ Functional core + imperative shell, three nested shells: pure domain inner core 
 - `epochAtReceipt` MUST NOT be used as a retrieval key for past `SerializedClientState`. No snapshot-at-epoch API exists in marmot-ts. This field is diagnostic metadata only.
 - Bootstrap-sourced facts enter the same store as MLS-sourced facts; `receiptSource` discriminates origin.
 - `nostrEvent.content` is encrypted MLS ciphertext; raw-fact storage does not attempt decryption.
+- **Producer/store split (amended 2026-07-12, Codex review):** `seq` is assigned by the raw log ON APPEND, so producers (`marmot-adapter.ts`, and `IngestSignal` variants carrying a pre-persistence fact) construct a seq-less `RawProtocolFactInput` (`RawProtocolFact` minus `seq`). `PersistenceAdapter.appendFact` accepts the `RawProtocolFactInput` and returns the store-assigned, sequenced `RawProtocolFact` (see `PersistenceAdapter` below).
 
 **Produced by:** `src/integration/marmot-adapter.ts`
 **Consumed by:** `src/engine/receive-engine.ts` (ingest), `src/persistence/raw-event-log-store.ts` (durability)
@@ -66,7 +69,7 @@ Functional core + imperative shell, three nested shells: pure domain inner core 
 | Field | Type | Optional |
 |---|---|---|
 | id | string | no — MLS path: `rumor.id`; bootstrap: `"bootstrap:${groupId}:${task.id}"` |
-| factId | `string \| null` | no — `null` for bootstrap-sourced (no `RawProtocolFact` backing) |
+| factId | string | no — the backing `RawProtocolFact.id` (amended 2026-07-12, Stage-2 cold review — P2-7). MLS path: the kind-445 envelope's fact. Bootstrap path: the kind-30078 snapshot event's fact — the snapshot IS persisted as a `RawProtocolFact` (`receiptSource: "bootstrap-kind-30078"`), and every synthetic per-task bootstrap event links to it; many accepted events may share one `factId`. |
 | sourceKind | `"mls-rumor" \| "bootstrap-kind-30078"` | no |
 | groupId | string | no |
 | acceptedAt | number | no — client ms at acceptance |
@@ -93,15 +96,17 @@ Functional core + imperative shell, three nested shells: pure domain inner core 
 | groupId | string | no |
 | savedAt | number | no — client ms |
 | engineState | EngineLifecycleState | no — enum value at checkpoint time |
-| lastEpoch | string | no — MLS epoch string |
+| lastEpoch | `string \| null` | no — MLS epoch string; `null` until the first epoch is observed (amended 2026-07-12, Stage-2 cold review — P3-11). A checkpoint saved during `joining` legally carries `null`. |
 | lastIngestedSeq | number | no — `seq` of the last `RawProtocolFact` that COMPLETED `group.ingest` (processed, skipped, or deferred). Recovery re-ingests only facts with `seq > lastIngestedSeq`. |
-| lastAcceptedDomainEventId | string | no — last `AcceptedDomainEvent.id` produced |
-| deferredNostrEventIds | string[] | no — events in `PendingRetryQueue` at checkpoint time |
+| lastAcceptedDomainEventId | `string \| null` | no — last `AcceptedDomainEvent.id` produced; `null` until the first accepted event is produced (amended 2026-07-12, Stage-2 cold review — P3-11). A checkpoint saved during `joining` legally carries `null`. |
+| bootstrapCompleted | boolean | no — **added 2026-07-12, Stage-2 cold review — P1-2.** True once the join-time kind-30078 bootstrap has been fully applied for this group. MONOTONIC once true until `reset()` clears the checkpoint; every `saveCheckpoint` must carry it forward. Restart routing keys on this flag — see `fsm.md` L1/L2. |
 
 **Invariants:**
 - `lastIngestedSeq` and `lastAcceptedDomainEventId` are DISTINCT markers. An unreadable/deferred event advances `lastIngestedSeq` but NOT `lastAcceptedDomainEventId`. Conflating them is a known anti-pattern from the original proposal.
 - Recovery sequencing is SPECIFIED in the "Recovery Sequencing" section (resolves Open Questions §7). A fact's recovery disposition is decided by store membership + the `seq` watermark, never by comparing content-hash ids.
 - On restart, the engine re-ingests only raw-log facts with `seq > lastIngestedSeq`; facts at or below the watermark already have their outcome in the accepted-log or deferred-store.
+- **Single deferred truth (amended 2026-07-12, Stage-2 cold review — P2-6):** the deferred queue has exactly ONE durable source of truth: `deferred-store` (R2a prune, then R2 rebuild). The checkpoint carries no deferred ids (removed `deferredNostrEventIds` — a stale checkpoint copy could bypass the R2a accepted-wins prune).
+- **Bootstrap-completed lives in the checkpoint (amended 2026-07-12, Stage-2 cold review — P1-2):** the `bootstrap-completed` flag referenced by "Re-join and Reset" below is the `bootstrapCompleted` field on this checkpoint — clearing the checkpoint (via `reset()` / `PersistenceAdapter.clearGroupState`) clears it too. This still satisfies Decision 3 (re-join clears the accepted-log AND the bootstrap-completed marker) because a full `clearGroupState` clears the checkpoint that carries it.
 
 **Produced by:** `src/engine/receive-engine.ts` (on phase transition and periodic save)
 **Consumed by:** `src/engine/receive-engine.ts` (on restart, to reconstruct `PendingRetryQueue`)
@@ -118,7 +123,7 @@ Functional core + imperative shell, three nested shells: pure domain inner core 
 
 **Variants:**
 - `envelope_received` — `{ factId, groupId }`
-- `envelope_deferred` — `{ factId, groupId, reason: "unreadable" | "epoch_mismatch" | "parse_error" }`
+- `envelope_deferred` — `{ factId, groupId, reason: "unreadable" | "epoch_mismatch" }` *(parse failures are NOT deferrable — see invariant below)*
 - `domain_event_accepted` — `{ event: AcceptedDomainEvent }`
 - `domain_event_rejected` — `{ factId, groupId, reason: string }`
 - `projection_invalidated` — `{ groupId }`
@@ -133,6 +138,7 @@ Functional core + imperative shell, three nested shells: pure domain inner core 
 - `group_ratchet_advanced` MUST NOT trigger deferred-retry.
 - `projection_invalidated` MUST NOT be emitted on ratchet-advance `stateChanged`. Emission is reserved for restart recovery and explicit epoch-level invalidation. Emitting it on every ratchet advance would force full projection rebuild on every own-dispatch — a performance regression.
 - On `domain_event_accepted`: integration layer MUST call `applyEvent(currentProjection, event.payload)` — NOT `buildProjection(fullLog)`. Full rebuild is only for restart and `projection_invalidated`.
+- **Parse errors are terminal, never parked (added 2026-07-12).** A payload that decrypted but fails to decode into a `TaskEvent` can never become decodable by an epoch advance. The engine emits `domain_event_rejected` with `reason: "parse_error"` and does NOT enqueue the fact into the deferred queue. Only `unreadable` / `epoch_mismatch` participate in the L8 epoch-advance retry (I-FSM-6). This prevents both infinite unproductive retries and silent loss without signal.
 
 **Produced by:** `src/engine/receive-engine.ts`
 **Consumed by:** `src/integration/react-engine-hooks.ts`
@@ -160,14 +166,16 @@ Functional core + imperative shell, three nested shells: pure domain inner core 
 
 | Method | Notes |
 |---|---|
-| `appendFact(fact: RawProtocolFact): Promise<void>` | Idempotent on `fact.id` |
-| `loadFacts(groupId: string): Promise<RawProtocolFact[]>` | |
+| `appendFact(fact: RawProtocolFactInput): Promise<AppendFactResult>` | Idempotent on `fact.id`. **Amended 2026-07-12 (Codex review, P1):** `seq` is assigned by the store on append, so the caller passes a seq-less `RawProtocolFactInput`; the store returns `{ fact, duplicate }`. A duplicate append (same `id`) mints NO new `seq` — it returns the EXISTING stored fact with `duplicate: true`. |
+| `loadFacts(groupId: string): Promise<RawProtocolFact[]>` | **Ordering contract (amended 2026-07-12, S3 Stage-1 review — sev-5):** returns facts sorted by `seq` ascending (= append order). NEVER content-hash-id order. R3's watermark scan and replay depend on it. |
 | `appendAcceptedEvent(event: AcceptedDomainEvent): Promise<void>` | Idempotent on `event.id` |
-| `loadAcceptedEvents(groupId: string): Promise<AcceptedDomainEvent[]>` | |
+| `loadAcceptedEvents(groupId: string): Promise<AcceptedDomainEvent[]>` | **Ordering contract (amended 2026-07-12, S3 Stage-1 review — sev-5):** returns events in APPEND/insertion order — `appendAcceptedEvent` assigns a monotonic position; load returns sorted by it, NEVER by content-hash `id`. Load-bearing for projection determinism: `applyEvent` is order-sensitive (hard delete, no tombstone — a delete-then-higher-timestamp-update interleaving projects differently under reordering), and `replayOrder` sorts by phase ONLY, delegating within-phase order to this contract (`AcceptedDomainEvent` carries no `seq`). S4 MUST assert order preservation in a real store→load round-trip test, including a delete-before-update interleaving. |
 | `saveCheckpoint(checkpoint: EngineCheckpoint): Promise<void>` | |
 | `loadCheckpoint(groupId: string): Promise<EngineCheckpoint \| null>` | |
 | `saveDeferredIds(groupId: string, ids: string[]): Promise<void>` | |
 | `loadDeferredIds(groupId: string): Promise<string[]>` | |
+| `acceptDeferredFact(groupId: string, factId: string, event: AcceptedDomainEvent): Promise<void>` | **Added 2026-07-12 (Codex review, P1); atomicity model revised same day (Stage-1 review, sev-6):** the single API entry point for deferred→accepted acceptance, implementing R-INV-3 via **crash-safe ordering, not a cross-store transaction** (the mandated `createKVStore` infra places each store in its own IndexedDB database, and IDB transactions cannot span databases). Contract: (1) append `event` to the accepted-log FIRST (idempotent on `event.id`); (2) only after that write resolves, remove `factId` from the deferred ids. A crash between the two leaves the fact transiently in BOTH stores — never in neither — and recovery's R2a prune step reconciles it (accepted wins). Implementations MUST NOT reverse the write order and MUST NOT interleave other writes between the two steps. Owned by S11. |
+| `clearGroupState(groupId: string): Promise<void>` | **Added 2026-07-12, Stage-2 cold review — P1-2 / P2-4 / P2-5.** Full per-group purge implementing FSM L11 `reset()`: deletes the raw-fact log, accepted-event log, checkpoint (which carries `bootstrapCompleted`), and deferred ids for the group. After it resolves, `loadCheckpoint` returns `null` and all `load*` methods return empty. |
 
 **Implementation:** uses `createKVStore` (`src/marmot/storage.ts:100-133`); per-pubkey IDB namespacing (`notestr-${pubkey}-${name}`) preserved and required.
 
@@ -191,21 +199,26 @@ The ET-1 contradiction is resolved by **direction of control vs. direction of co
 
 | Method | Purpose |
 |---|---|
-| `catchUp(): AsyncIterable<IngestSignal>` | Drain historical events through `group.ingest()` once; yields one signal per event. |
+| `catchUp(): AsyncIterable<IngestSignal>` | Drain historical events through `group.ingest()` once; yields one signal per event. **Exactly-once invariant (amended 2026-07-12, S5 Stage-1 review — sev-6):** invoked EXACTLY ONCE per engine `start()`, never concurrently with itself — the sole historical cutover drain (fsm.md L3/L4/L5 funnel into one `catching_up` entry per start). It is NOT the joining-phase bootstrap channel; see `fetchBootstrap` below. |
 | `openLive(onSignal: (s: IngestSignal) => void): Unsubscribe` | Open the live `client.network.subscription()`; pushes signals as they arrive. |
+| `ingestPersisted(facts: RawProtocolFact[]): AsyncIterable<IngestSignal>` | **Added 2026-07-12 (Codex review, P1).** R3 crash-gap replay + L8 deferred retry: submit persisted facts through `group.ingest()`; yields one `IngestSignal` per fact. Distinct from `catchUp()` because these facts already exist in the raw log (recovery/retry re-submission), not new adapter-discovered facts. |
+| `fetchBootstrap(): AsyncIterable<IngestSignal>` | **Added 2026-07-12 (amended, S5 Stage-1 review — sev-6).** Joining-phase bootstrap: fetch and decode the group's kind-30078 task-state snapshot, yielding one `IngestSignal` per synthesized bootstrap event (`message` variants with `receiptSource "bootstrap-kind-30078"`, all sharing the snapshot's fact). Drain completion = `bootstrapResolved` (fsm.md L4 guard); `T_join` races THIS drain only — NOT `catchUp()`. **CONCURRENCY INVARIANTS:** (1) `fetchBootstrap` decrypts via NIP-44 and NEVER touches the MLS ratchet, so a late-running background `fetchBootstrap` MAY safely overlap `openLive()`/`catchUp()`/`ingestPersisted()` — the adapter MUST preserve that property; (2) `catchUp()` is invoked exactly once per engine `start()` and never concurrently with itself (see its row above); (3) after a `T_join` timeout the engine proceeds to `catching_up` while the same `fetchBootstrap` iterator continues in the background — its late signals enter the normal serial signal chain (LWW-safe merge) and completion restores nominal health (H2). The adapter MUST NOT require the drain to be abandoned on timeout. Replaces the S5-original design where the joining-phase bootstrap raced `catchUp()` against `T_join` and the timeout path spawned a second concurrent `catchUp()` iterator — unimplementable, since `group.ingest()` is stateful and cannot support two concurrent drains. |
 | `close(): void` | Close subscription and release marmot handles. Called by the engine during `stop()`. |
 
 **Data interface — `IngestSignal` (discriminated union, marmot-free):**
 
 | Variant | Fields | Meaning |
 |---|---|---|
-| `message` | `{ fact: RawProtocolFact, rumorId: string, payload: TaskEvent, epoch: string, receiptSource }` | `group.ingest` decrypted an application message; `payload` already decoded via `deserializeApplicationData` (in the adapter). |
-| `deferred` | `{ fact: RawProtocolFact, reason: "unreadable" \| "epoch_mismatch", epoch }` | Event received but not yet decryptable; engine parks it. |
-| `skipped` | `{ factId: string }` | Ratchet already consumed this id (own-echo / duplicate); no payload. |
+| `message` | `{ fact: RawProtocolFactInput, rumorId: string, payload: TaskEvent, epoch: string, receiptSource }` | `group.ingest` decrypted an application message; `payload` already decoded via `deserializeApplicationData` (in the adapter). |
+| `deferred` | `{ fact: RawProtocolFactInput, reason: "unreadable" \| "epoch_mismatch", epoch }` | Event received but not yet decryptable; engine parks it. |
+| `skipped` | `{ fact: RawProtocolFactInput }` | **Amended 2026-07-12 (Codex review, P2):** Ratchet already consumed this id (own-echo / duplicate); fact still carried so the engine can append + advance the seq watermark. Previously `{ factId: string }` — that shape could not append an own-echo/duplicate envelope not yet in the raw log. |
+| `malformed` | `{ fact: RawProtocolFactInput, error: string }` | Decryption succeeded but the payload failed to decode into a `TaskEvent` (added 2026-07-12). Terminal: the engine emits `domain_event_rejected` with `reason: "parse_error"`; never parked, never retried. |
 | `epoch_advanced` | `{ newEpoch: string, prevEpoch: string }` | Translated from marmot `stateChanged` when the epoch changed; triggers deferred-retry. |
 
+**Amended 2026-07-12 (Codex review):** every variant's `fact` field is `RawProtocolFactInput` (seq-less), not `RawProtocolFact`. These facts are adapter-produced pre-persistence (or, for `ingestPersisted`, already-persisted `RawProtocolFact`s — structurally assignable to `RawProtocolFactInput` since it is a strict field subset), and `seq` is assigned only by `PersistenceAdapter.appendFact` on append. This lets `ingestPersisted` reuse the same `IngestSignal` type as `catchUp`/`openLive`.
+
 **Invariants:**
-- `IngestSignal` carries **no marmot-ts types**. `payload` is the app's own `TaskEvent` wire type; `RawProtocolFact` is already marmot-free (a `NostrEvent` envelope). Decoding and epoch reads happen inside the adapter.
+- `IngestSignal` carries **no marmot-ts types**. `payload` is the app's own `TaskEvent` wire type; `RawProtocolFact`/`RawProtocolFactInput` are already marmot-free (a `NostrEvent` envelope). Decoding and epoch reads happen inside the adapter.
 - The engine never calls `group.ingest()` or the subscription directly. The adapter never makes accept/defer/dedupe/normalize decisions — those are engine-owned.
 - `catchUp()` must be drained to completion before `openLive()` is invoked for the same group (the engine's `catching_up → buffering_live` transition); live signals arriving during catch-up are buffered by the engine, not the adapter.
 - `epoch_advanced` maps to the engine's `group_epoch_advanced` output and the deferred-retry flush; a bare ratchet advance (no epoch change) produces no signal.
@@ -222,6 +235,7 @@ The ET-1 contradiction is resolved by **direction of control vs. direction of co
 - `src/domain/*` → nothing (pure; zero external imports)
 - `src/engine/*` → `src/domain/*` (types and pure helpers only)
 - `src/persistence/*` → `src/domain/*` (types only), `src/marmot/storage.ts` (IDB infrastructure)
+- `src/persistence/*` → `src/engine/engine-types.ts` ONLY (amended 2026-07-12, Stage-2 cold review — P1-1): seam types + IDB key constants only — never `receive-engine.ts` or any other `src/engine/` file. **Rationale:** AC-BOUND-3 mandates persistence reference the exported key constants; without this edge the contract deadlocks (persistence cannot durably satisfy Boundary Rule 8/9 without importing the file that defines the keys).
 - `src/engine/*` → `src/persistence/*` via `PersistenceAdapter` interface only (calls methods; never imports implementation)
 - `src/integration/*` → `src/engine/*`, `src/domain/*`, `src/persistence/*`, React/Next.js
 - `src/integration/marmot-adapter.ts` → marmot-ts (`MarmotGroup`, `MarmotClient`) — this is the ONLY file permitted to import marmot-ts types outside the engine receive path
@@ -229,7 +243,7 @@ The ET-1 contradiction is resolved by **direction of control vs. direction of co
 **Forbidden:**
 1. `src/engine/*` must not import `react`, `next`, `next/navigation`, or any file under `src/integration/`.
 2. `src/domain/*` must not import `src/engine/`, `src/persistence/`, `src/integration/`, or the DOM.
-3. `src/persistence/*` must not import `src/engine/` or `src/integration/`. Persistence never calls the engine.
+3. `src/persistence/*` must not import `src/engine/` (EXCEPT `engine-types.ts`, types/constants only) or `src/integration/`. Persistence never calls the engine. (amended 2026-07-12, Stage-2 cold review — P1-1)
 4. Any layer other than `src/integration/*` calling `useState`, `useEffect`, `useRef`, or dispatching DOM events.
 5. Any new correctness logic added to `src/marmot/device-sync.ts` or `src/store/task-store.tsx` during migration. Both are scheduled for replacement.
 6. `ensureMonotonicTimestamp` entering the projector or domain reducer.
@@ -255,14 +269,15 @@ accepted-log, yet already ingested" ambiguity.
 | Step | Action |
 |---|---|
 | **R1 — Rebuild projection** | `projection = buildProjection(replayOrder(acceptedLog))`, where `replayOrder` = bootstrap-sourced events first, then MLS-sourced, each in `seq`/append order (NOT `acceptedAt` clock). Deterministic per Invariants 1 & 4. |
-| **R2 — Rebuild deferred queue** | Re-queue every id in `deferredIds` into the `PendingRetryQueue`. Their ciphertext lives in `rawLog` keyed by id; they await `epoch_advanced` (FSM L8). Do NOT re-ingest them now. |
+| **R2a — Prune stale deferred ids** *(added 2026-07-12)* | Compute `deferredIds ∩ {e.factId \| e ∈ acceptedLog}`; remove every such id from `deferred-store`. These are facts whose `acceptDeferredFact` crashed between the accepted-append and the deferred-remove — accepted wins (see R-INV-3). Runs BEFORE R2 so an already-accepted fact is never re-queued. |
+| **R2 — Rebuild deferred queue** | Re-queue every id in `deferredIds` (post-R2a) into the `PendingRetryQueue`. Their ciphertext lives in `rawLog` keyed by id; they await `epoch_advanced` (FSM L8). Do NOT re-ingest them now. **Ids-only contract, known-lossy by design:** `deferred-store` persists fact ids ONLY — no `DeferredReason`, no `queuedAt`, no attempt count. Every rebuilt entry is therefore given a synthetic, current `queuedAt` (rebuild time) and a reset `attempts: 0`, regardless of how long the fact had actually been parked or how many retry passes it had already survived before the restart. **(extended 2026-07-12, S6 Stage-2 cold review — P3-6):** this means an entry's TTL age (`maxDeferredAgeSec`) and retry-attempt budget (`maxRetryAttempts`) BOTH reset on every restart, by the same mechanism — they are in-memory-only bookkeeping (`ingest-policy.ts`'s `DeferredPolicyEntry.queuedAt`/`attempts`), not durable fields. A parked entry can therefore evade both budgets indefinitely across repeated restarts (e.g. an entry one retry pass away from TTL-pruning or attempt-exhaustion gets a fresh budget on every crash/restart before either fires) — this is ACCEPTABLE KNOWN-LOSSY behavior BY DESIGN, not a gap to close by persisting more fields to `deferred-store` (a real format change, rejected for the same reason `DeferredReason` persistence was rejected — see `receive-engine.ts`'s `enterRecovering` R2 contract-note comment). The backstops are: relay re-sync (the fact keeps arriving on subsequent live/catch-up drains regardless of local budget state) and the deferred-queue's own `maxDeferredSize` cap-with-evict-eldest eviction, neither of which depends on age/attempt accuracy surviving a restart. |
 | **R3 — Re-ingest the crash-gap tail** | For each `rawLog` fact with `seq > checkpoint.lastIngestedSeq`, submit it to the adapter for ingest. These were persisted to the raw-log but the crash preceded their ingest. Facts with `seq <= lastIngestedSeq` are NEVER re-submitted (ratchet already consumed them; outcome already in `acceptedLog` or `deferredIds`). |
 | **R4 — Resume** | `recovering → catching_up` (L3): open live + drain `catchUp()` for anything that arrived on the relay while offline. |
 
 **Invariants:**
 - **R-INV-1:** Recovery disposition uses store membership + `seq` watermark only. Never order or compare facts by `id`.
 - **R-INV-2:** No fact with `seq <= lastIngestedSeq` is re-submitted to ingest. (At best a no-op skip; at worst a double-apply.)
-- **R-INV-3:** `deferredIds ∩ {e.factId | e ∈ acceptedLog} = ∅`. A fact is parked XOR accepted. When a deferred fact is later accepted on retry, it is removed from `deferred-store` and appended to `accepted-log` atomically (single persistence transaction) so a crash cannot leave it in both or neither.
+- **R-INV-3 (revised 2026-07-12, Stage-1 review sev-6):** *steady-state invariant:* `deferredIds ∩ {e.factId | e ∈ acceptedLog} = ∅` — a fact is parked XOR accepted. Acceptance goes through the single typed entry point `PersistenceAdapter.acceptDeferredFact(groupId, factId, event)`, whose contract is **accepted-first crash-safe ordering** (append accepted, then remove deferred — see the PersistenceAdapter seam contract): a hard cross-store IDB transaction is impossible under the mandated `createKVStore` per-database layout. Consequence: after a crash the intersection may be transiently non-empty (fact in BOTH stores — never in neither, because deferred-removal only follows a successful accepted-append). Recovery step **R2a** restores the invariant before the queue is rebuilt: accepted wins, the stale deferred id is pruned. Implementations MUST NOT satisfy acceptance with reversed ordering or with ad-hoc separate calls outside `acceptDeferredFact`.
 - **R-INV-4:** Projection after R1+R3 equals the in-memory projection at crash time plus any gap-tail facts — i.e. Invariant 4 (rebuild equality) holds across restart.
 
 ---
@@ -286,6 +301,10 @@ layer handles it as a **dispose-then-recreate**:
 1. If an engine instance for the group is live, `stop()` it (L10).
 2. Call `reset()` (L11) — clears **all** persisted per-group state: raw-log,
    accepted-log, checkpoint, deferred ids, and the `bootstrap-completed` flag.
+   **Realized by `PersistenceAdapter.clearGroupState(groupId)`** (amended
+   2026-07-12, Stage-2 cold review — P1-2). Note the `bootstrap-completed`
+   flag lives IN the checkpoint (`EngineCheckpoint.bootstrapCompleted`) —
+   clearing the checkpoint clears it too; this still satisfies Decision 3.
 3. `start({origin:"welcome"})` → `joining` → fresh bootstrap snapshot rebuilds
    current task state.
 
@@ -317,7 +336,7 @@ Numbered constraints that integration-architect subagents must comply with befor
 
 2. **Joining-gate timeout — DECIDED (ADR-002, 2026-06-29) and SPECIFIED.** `T_join = 8000 ms` (configurable). On timeout or terminal bootstrap failure the engine takes transition L5 → `catching_up` with `health = degraded`, rather than blocking the group. The bootstrap fetch is NOT cancelled on timeout: it continues in the background and a late result merges (LWW-safe) and restores nominal health (H2). Full wiring in [`./fsm.md`](./fsm.md) → "Joining timeout (`T_join`)". Preserves today's graceful relay-down behavior.
 
-3. **Engine + adapter stories require a human decision before implementation:** Resolve who calls `group.ingest()` and who drives the subscription before either `receive-engine.ts` or `marmot-adapter.ts` stories are written. Both cannot simultaneously call `group.ingest()` — this is the ET-1 contradiction identified in Round 2. Deliver a typed contract specifying what the engine receives from the adapter (raw `NostrEvent[]`, `IngestResult` async iterable, or other) as a precondition.
+3. **Engine↔adapter ingest ownership — DELIVERED (2026-06-29; stale "requires a human decision" wording removed 2026-07-12).** The precondition this constraint demanded is satisfied by the `IngestSource` / `IngestSignal` seam contract (see Seam Contracts and Open Question §4): `marmot-adapter.ts` is the sole caller of `group.ingest()` and the subscription; the engine drives via `catchUp()`/`openLive()`/`close()` and consumes marmot-free `IngestSignal`s. Stories MUST implement that contract; do not re-open the ET-1 question.
 
 4. **FSM transition table — DELIVERED in [`./fsm.md`](./fsm.md).** `receive-engine.ts` stories MUST conform to it: the `{ lifecycle, health }` encoding (degraded is orthogonal health, never a lifecycle peer), transitions L1–L11 + H1–H2, the cutover protocol, and invariants I-FSM-1..6. Any state-machine deviation from `fsm.md` is a review-blocking defect.
 
@@ -332,6 +351,14 @@ Numbered constraints that integration-architect subagents must comply with befor
 9. **Legacy `notestr:events:${groupId}` is read-only from Phase 2 onward.** No new writes after `raw-event-log-store.ts` is introduced. Removed in Phase 8.
 
 10. **`task-crdt.ts` is the single tie-break authority.** Both `applyEvent` (`task-reducer.ts:18-32`) and the bootstrap merge gate (`device-sync.ts:1433-1452`) must delegate to `taskWinsOver`. Any new tie-break logic must go into `task-crdt.ts`; implementing it independently in either call site reconstitutes the duplicate-projection drift risk.
+
+11. **Persistence I/O failure → degraded, never silent drop (added 2026-07-12, spec validation).** A failed `appendFact` / `appendAcceptedEvent` / `saveCheckpoint` (IDB quota exceeded, transaction abort) is a new H1 trigger cause: the engine enters `health: degraded`, retries the write with bounded backoff, and MUST NOT silently discard the fact or continue as nominal. A fact that cannot be durably appended is held in memory while degraded; if the engine stops before the write succeeds, the fact is recovered on next start via relay re-sync (same recovery channel as cross-epoch loss). Recovery of write capability restores nominal health (H2).
+
+12. **Malformed/unreadable `EngineCheckpoint` at restart → route by store contents (added 2026-07-12, spec validation; reconciled with the L2 widening same day, Stage-1 review sev-6).** A checkpoint that exists but fails to deserialize is treated as absent, and the restored-start routing then disambiguates on the local logs (this is the single authority, mirrored by fsm.md L1/L2 guards):
+    - **Raw-log or accepted-log non-empty → L1 `recovering` (preserve-and-replay).** Recovery runs with `lastIngestedSeq = 0` — R3 re-submits the full raw-log, safe because already-consumed facts yield adapter `skipped` (no-op) and `appendAcceptedEvent` is idempotent on `id`. Do NOT escalate to a full `reset()` — intact logs are more authoritative than a lost checkpoint. `health = degraded` until the first successful checkpoint save; **the preserve-and-replay arm re-infers `bootstrapCompleted = true` IMMEDIATELY on taking the arm (before any checkpoint is saved), so a crash mid-recovery re-routes the next start back to L1 preserve-and-replay rather than L2 joining over non-empty logs (revised 2026-07-12, S5 Stage-2 cold review — P2-1; the prior on-reaching-live wording allowed mid-recovery checkpoints to persist `false` and poison the routing)**.
+    - **Both logs empty → L2 `joining`.** Nothing local to preserve (migration-cutover population, or corruption before anything landed); run the joining-phase bootstrap fetch.
+
+13. **`parse_error` is terminal (added 2026-07-12, spec validation).** See the EngineOutputEvent invariant and the `malformed` IngestSignal variant: a payload that decrypted but cannot decode into a `TaskEvent` routes to `domain_event_rejected` (permanent, observable) — never to the deferred queue, never into L8 epoch-advance retry. Rationale: an epoch advance can never fix a parse error; parking it means either infinite unproductive retries or silent permanent loss.
 
 ---
 

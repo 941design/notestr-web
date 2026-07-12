@@ -1,0 +1,126 @@
+{
+  "module_name": "receive-engine",
+  "purpose": "Hardens S5's receive-engine.ts (no new public surface, no new files besides tests) against two review-flagged failure modes: Implementation Constraint 11 (AC-PERS-1, persistence I/O failure -> degraded + bounded-backoff retry, never silent discard) and Implementation Constraint 13 (AC-PERS-3, malformed IngestSignal is terminal -- differential proof it is never enqueued/retried, unlike a sibling unreadable/epoch_mismatch fact). Also discharges three S5-ledger watch-item obligations against the companion ingest-policy.ts module: wiring pruneDeferred's TTL sweep into the L8 retry-pass entry point, disposing of retry-budget-exhausted deferred entries (removed + reported, never left to rot), and strengthening (not changing) the known-lossy DeferredReason-on-restart comment into an explicit contract note. No new module is created; module map ownership (receive-engine / ingest-policy) is unchanged from S5.",
+  "public_api": [
+    {
+      "name": "PERSISTENCE_RETRY_BASE_DELAY_MS / PERSISTENCE_RETRY_MAX_DELAY_MS / PERSISTENCE_RETRY_BACKOFF_FACTOR / PERSISTENCE_RETRY_MAX_ATTEMPTS",
+      "signature": "export const (number)",
+      "description": "AC-PERS-1 bounded-backoff schedule constants for appendFact/appendAcceptedEvent/acceptDeferredFact/saveCheckpoint retries: exponential (factor 2) starting at 1000ms, capped at 30000ms per wait, bounded at 8 total attempts before the write is treated as exhausted for this session. Exported (matching DEFAULT_T_JOIN_MS/DEFAULT_CHECKPOINT_INTERVAL_MS precedent) so tests can compute expected wait sequences from the constants rather than duplicating magic numbers."
+    },
+    {
+      "name": "REJECTED_REASON_RETRY_EXHAUSTED",
+      "signature": "export const \"retry-exhausted\"",
+      "description": "domain_event_rejected.reason value emitted when a deferred entry's ingest-policy ATTEMPT budget (maxRetryAttempts) is exhausted and the entry is permanently removed from the deferred queue (ledger obligation 2). No EngineOutputEvent type change -- reason remains the existing free-form string field."
+    },
+    {
+      "name": "REJECTED_REASON_DEFERRED_TTL_EXPIRED",
+      "signature": "export const \"deferred-ttl-expired\"",
+      "description": "domain_event_rejected.reason value emitted when a deferred entry ages out via ingest-policy's TTL (maxDeferredAgeSec) before ever being retried (ledger obligation 1). Deliberately distinct from REJECTED_REASON_RETRY_EXHAUSTED -- the two are different mechanisms (elapsed wall-clock age vs consumed attempt count) and collapsing them into one string would destroy an observable distinction a future UI/diagnostic consumer may want."
+    },
+    {
+      "name": "IngestPolicy.exhaustedEntries",
+      "signature": "() => DeferredPolicyEntry[]",
+      "description": "NEW ingest-policy.ts method (ledger obligation 2). Companion to the existing retryBatch() (which EXCLUDES attempts>=maxRetryAttempts entries from the retry-eligible batch but previously left them queued forever with no disposition). Returns exactly those excluded entries so receive-engine.ts can evict + report them after a retry pass."
+    },
+    {
+      "name": "IngestPolicy.pruneDeferred",
+      "signature": "(nowMs: number) => DeferredPolicyEntry[]",
+      "description": "SIGNATURE CHANGE from S5 (was `(nowMs: number) => void`). Now returns the entries it removed so the caller can persist the resulting id list and report each pruned entry via domain_event_rejected -- ledger obligation 1 ('prune results must persist via saveDeferredIds; emit ... domain_event_rejected'). Purely additive to callers that discarded the old void return (verified against ingest-policy.test.ts's two existing pruneDeferred call sites, both of which discard the return value already)."
+    }
+  ],
+  "private_files": [],
+  "owned_data": [
+    "Same in-memory ownership as S5 (architecture.md Module Map): lifecycle, health-degradation-reason set (gains one new reason value 'persistence-write-failing'), lastEpoch, lastIngestedSeq, lastAcceptedDomainEventId, bootstrapCompleted, live-signal buffer, live-subscription unsubscribe handle, checkpoint periodic-save timer handle, ingest-policy instance -- PLUS two new S6 fields scoped entirely inside receive-engine.ts's closure: `activePersistenceFailures` (ref-count backing the shared degradation reason across concurrent blocking/background retries) and `activeRetryCancellers` (a Set of cancel functions for in-flight backoff waits, cleared by stop()/reset() alongside the pre-existing tJoinTimer/checkpointTimer handles)."
+  ],
+  "dependencies_allowed": [
+    "src/engine/engine-types.ts (unchanged from S5 -- type-only)",
+    "src/domain/domain-events.ts (unchanged from S5)",
+    "src/domain/task-events.ts (unchanged from S5, TaskEvent type only)",
+    "src/engine/ingest-policy.ts (unchanged from S5, this story's own sibling module)"
+  ],
+  "dependencies_forbidden": [
+    "src/marmot/* (unchanged from S5)",
+    "src/persistence/* (unchanged from S5 -- the engine calls PersistenceAdapter methods on an injected instance)",
+    "src/integration/*, react, next, next/navigation (unchanged from S5)",
+    "src/store/* (unchanged from S5)",
+    "src/domain/task-projector.ts and src/domain/task-crdt.ts (unchanged from S5 -- engine stays projection-free)"
+  ],
+  "external_ports": [
+    "EngineScheduler (consumed: now(), setTimeout, clearTimeout) -- the SOLE timing authority for the new bounded-backoff retry waits, matching the file's pre-existing 'no raw setTimeout' discipline (T_join, periodic checkpoint). No new scheduler methods needed.",
+    "PersistenceAdapter (unchanged interface; appendFact/appendAcceptedEvent/acceptDeferredFact/saveCheckpoint calls are now wrapped in retry helpers at their existing call sites -- no new methods added to the interface)"
+  ],
+  "events_emitted": [
+    "engine_state_changed (unchanged variant; new degradation-reason cause 'persistence-write-failing' can now trigger it)",
+    "domain_event_rejected (unchanged variant; two new reason strings -- REJECTED_REASON_RETRY_EXHAUSTED, REJECTED_REASON_DEFERRED_TTL_EXPIRED -- surfaced from the L8 retry-pass entry point; existing 'parse_error' reason unchanged)"
+  ],
+  "events_consumed": [],
+  "test_targets": [
+    "src/engine/receive-engine.persistence-failure.test.ts",
+    "src/engine/receive-engine.malformed-signal.test.ts",
+    "src/engine/receive-engine.fsm.test.ts (regression -- must stay green unmodified)",
+    "src/engine/receive-engine.cutover.property.test.ts (regression -- must stay green unmodified)",
+    "src/engine/ingest-policy.test.ts (extended with exhaustedEntries()/pruneDeferred() return-value coverage)"
+  ],
+  "seam": {
+    "cross_story": true,
+    "consumed_by": [
+      "S7",
+      "S8",
+      "S9",
+      "S11"
+    ]
+  },
+  "judgment_calls": [
+    {
+      "id": "persistence-retry-blocking-vs-background",
+      "decision": "AC-PERS-1's three named methods split into two retry disciplines per the story's own design note (c). appendFact/appendAcceptedEvent/acceptDeferredFact (PRIMARY state -- the fact/event itself) go through withPersistenceRetry(), a BLOCKING bounded-backoff loop that the calling handler `await`s inline, inside the existing serial FIFO chain: this literally 'holds' that signal's processing (no envelope_received/domain_event_accepted emission, no watermark advance) until the write succeeds, the generation goes stale (stop()/reset()), or PERSISTENCE_RETRY_MAX_ATTEMPTS is exhausted -- at which point the handler returns early, abandoning ONLY that one signal (never the whole FIFO: the queue itself always resolves and the next enqueued job runs normally). saveCheckpoint (DERIVED state) goes through saveCheckpointResilient(), which awaits exactly ONE synchronous attempt (preserving S5's exact call-count/timing on the success path, verified against every fsm.test.ts assertion that counts saveCheckpointCalls) and, only on failure, hands off to a DETACHED background withPersistenceRetry() call that is never awaited by transitionTo/scheduleNextPeriodicCheckpoint/runBootstrapFetch/stop() -- satisfying the story's 'MUST NOT block the signal chain (checkpoint is derived state)' instruction verbatim.",
+      "escalation_needed": false
+    },
+    {
+      "id": "persistence-retry-bounded-backoff-constants",
+      "decision": "'Bounded' (AC-PERS-1) is defined as BOTH a growing, capped per-attempt delay AND a finite attempt count, per the story's design note (b) ('bounded = max attempts + growing delay'): exponential backoff (factor 2) from a 1000ms base, capped at a 30000ms ceiling per wait, for a maximum of 8 total attempts (7 backoff waits) before the write is treated as exhausted. These are new PERSISTENCE_RETRY_* constants, independent of ingest-policy.ts's pre-existing maxRetryAttempts (which bounds the UNRELATED deferred-queue epoch-triggered retry budget, not raw persistence I/O retries) -- the two mechanisms are deliberately not conflated; a single deferred-retry-pass write failure exhausting its 8 I/O attempts does not consume any of that entry's ingest-policy attempt budget (recordAttempt is called once per PASS, before submission, not per I/O retry).",
+      "escalation_needed": false
+    },
+    {
+      "id": "persistence-retry-exhaustion-disposition",
+      "decision": "On exhausting PERSISTENCE_RETRY_MAX_ATTEMPTS for appendFact/appendAcceptedEvent/acceptDeferredFact, the engine 'parks retrying until next start' (story design note (b)'s own suggested disposition, adopted): it stops retrying THIS specific write within the current session, remains health:degraded (the shared 'persistence-write-failing' reason is NOT cleared by an exhaustion give-up -- only a genuine SUCCESS decrements the ref-count), and does not discard the fact -- since the write never durably landed, the raw-log seq watermark never advanced, so the SAME fact is naturally redelivered by the relay/catchUp() on the engine's next start() (architecture.md Constraint 11's own text: 'recovered on next start via relay re-sync'). This is a session-scoped, not fact-scoped, degradation: once ANY write exhausts, health stays degraded for the rest of that session even if later, unrelated writes succeed cleanly (their own success only decrements their OWN contribution to the shared ref-count) -- a deliberately conservative choice, since a write that gave up mid-backoff represents a real unresolved failure the engine cannot itself verify has cleared. A fresh engine session (post reset()+start(), or a page reload) starts with a zeroed ref-count and a fresh degradationReasons Set, so this is never permanent.",
+      "escalation_needed": false
+    },
+    {
+      "id": "persistence-retry-shared-degradation-reason-refcounted",
+      "decision": "The story instructs 'pick a dedicated reason key' (singular) rather than reusing 'bootstrap-unresolved'/'preserve-and-replay-recovery'. A single new DegradationReason value, 'persistence-write-failing', is shared by BOTH the blocking (appendFact/appendAcceptedEvent/acceptDeferredFact) and background (saveCheckpoint) retry paths, backed by a numeric ref-count (activePersistenceFailures) rather than the plain Set.add/delete every other reason uses -- a boolean-membership reason would let a checkpoint retry's success incorrectly clear degraded status while an UNRELATED concurrent appendFact retry (from the FIFO-blocking path) is still failing, or vice versa, since both paths can be genuinely in flight at once (a background checkpoint retry does not block the FIFO, so a live signal's appendFact retry can start while a prior transition's checkpoint retry is still running). The ref-count is incremented once per call that ever fails at least once, and decremented once per call that SUCCEEDS after having failed; it is never decremented on exhaustion/generation-stale abandonment (see persistence-retry-exhaustion-disposition). stop()/reset() reset the ref-count to 0 alongside their existing degradationReasons.clear() call, for symmetry with a fresh session.",
+      "escalation_needed": false
+    },
+    {
+      "id": "persistence-retry-generation-token-discipline",
+      "decision": "Every backoff wait is issued through a new retryDelay(ms) helper that (a) is the sole NEW scheduler.setTimeout call site in this story (no raw setTimeout, matching the file's existing NONDETERMINISM discipline) and (b) is tracked in a Set of cancel functions (activeRetryCancellers) that stop()/reset() drain FIRST, immediately after their existing generation bump -- each cancel both calls scheduler.clearTimeout AND resolves the wait's promise directly (rather than relying solely on the timer callback, which a real clearTimeout may successfully prevent from ever firing, which would otherwise leave the awaiting retry loop -- and the serial FIFO chain it may be blocking -- permanently hung). Every withPersistenceRetry loop iteration re-checks `gen !== generation` immediately before EVERY attempt() call and immediately after every await (both the attempt and the backoff wait), matching the file's existing 'silent abandonment, not a throw' idiom used throughout T_join/checkpoint/drain-loop continuations. A stop()/reset() mid-backoff therefore both (1) unblocks the FIFO immediately (no multi-second hang waiting for a real timer to elapsed) and (2) guarantees the abandoned continuation performs zero further I/O, matching sev-9's established generation-token contract from S5. Verified by a new flip-proof-style test (see verification.json post-impl and this story's flip-proof (a)).",
+      "escalation_needed": false
+    },
+    {
+      "id": "deferred-ttl-prune-invocation-point",
+      "decision": "Ledger obligation 1 asked to decide the TTL-prune invocation point(s). Chose ONLY 'on epoch_advanced before building the retry batch' (inside enterRetryingDeferred, before ingestPolicy.retryBatch()) -- explicitly did NOT add a periodic/timer-driven prune. Rationale: a dedicated periodic-prune timer would be a THIRD scheduler.setTimeout continuation family (after T_join and periodic-checkpoint) requiring its own generation-token wiring, its own start/stop lifecycle management, and its own tests, for a bounded-severity problem the existing maxDeferredSize cap-with-evict-eldest already partially mitigates (an unbounded-growth deferred queue cannot occur even without TTL pruning; TTL pruning only improves WHEN stale entries are noticed, not WHETHER the queue can grow without bound). If a future story needs TTL pruning to fire without waiting for an epoch bump (e.g. a group that never advances epoch again), a periodic hook can be added purely additively at that time by having a future story wire a call to the same ingestPolicy.pruneDeferred() this story already routes results through (saveDeferredIds persistence + domain_event_rejected reporting) -- no rework of this story's plumbing would be needed.",
+      "escalation_needed": false
+    },
+    {
+      "id": "deferred-ttl-prune-vs-retry-exhaustion-distinct-reasons",
+      "decision": "Ledger obligation 1's text floated 'retry-exhausted' as a candidate reason for TTL-pruned entries too, then explicitly said DECIDE. Chose to keep TTL-pruning (age-based, ledger obligation 1) and attempt-budget-exhaustion (count-based, ledger obligation 2) as two DISTINCT domain_event_rejected reason strings (REJECTED_REASON_DEFERRED_TTL_EXPIRED vs REJECTED_REASON_RETRY_EXHAUSTED) rather than collapsing them into one. Both share the same underlying disposition (relay re-sync is the recovery path, never local replay -- Constraint 11/Recovery Sequencing's own text) and the same mechanical handling (remove from ingest-policy + persist via saveDeferredIds + emit domain_event_rejected), but they are triggered by genuinely different conditions (elapsed wall-clock age vs consumed retry attempts) and a future UI/diagnostic consumer reading domain_event_rejected.reason should not have to guess which one actually happened. No EngineOutputEvent type change was needed either way -- reason remains the pre-existing free-form string field, per the story's own explicit instruction.",
+      "escalation_needed": false
+    },
+    {
+      "id": "exhausted-entry-cleanup-runs-after-every-retry-pass",
+      "decision": "Ledger obligation 2's disposition (remove + persist + report) runs as the LAST step of every enterRetryingDeferred() invocation that actually ran a retry pass (batch.length > 0), immediately after runDeferredRetryPass() returns and before the final transitionTo(gen, 'live'). Because recordAttempt() is called once per entry PER PASS (before submission, in runDeferredRetryPass), and this cleanup step runs at the end of every pass, no entry can ever sit exhausted-but-unreported for more than one pass -- there is no scenario (given ingest-policy's enqueueDeferred always creates fresh entries at attempts:0, including R2's restart-rebuild path) where an entry could reach exhaustion outside a pass this story's cleanup step doesn't immediately follow.",
+      "escalation_needed": false
+    },
+    {
+      "id": "r2-deferred-reason-lossiness-kept-as-documented-known-lossy",
+      "decision": "Ledger obligation 3: kept the R2 restart-rebuild's hardcoded DeferredReason 'unreadable' behavior UNCHANGED (no code change) -- disposition is 'acceptable known-lossy', per the obligation's own suggested resolution. deferred-store persists fact ids ONLY, by design (architecture.md 'Recovery Sequencing' -- the checkpoint explicitly carries no deferred ids either, per S5's P2-6 removal of deferredNostrEventIds), and neither retryBatch() nor the L8/L9 pass branches on `reason` today, so this has zero effect on retry correctness. Strengthened the existing 'KNOWN LOSSY' code comment at the R2 rebuild site in enterRecovering() into an explicit CONTRACT NOTE stating persisting the true reason is out of scope BY DESIGN, not merely 'out of this story's scope' (S5's wording, which read as a deferred TODO rather than a settled decision) -- so a future story does not reopen this as an oversight.",
+      "escalation_needed": false
+    },
+    {
+      "id": "malformed-signal-hardening-is-differential-test-only",
+      "decision": "S5's handleMalformed() already satisfies AC-PERS-3's letter (never calls ingestPolicy.enqueueDeferred; defensive un-park via removeDeferred/saveDeferredIds only guards against a STALE prior park, never creates a new one) -- confirmed by re-reading the S5 implementation line-by-line before writing any new code. This story's malformed-signal work is therefore a NEW differential test (receive-engine.malformed-signal.test.ts) proving the divergence against a sibling unreadable/epoch_mismatch fact in the SAME scenario, not a source change. The only source-adjacent touch is receive-engine.persistence-failure.test.ts/malformed-signal.test.ts's own fixtures plus the AC-PERS-1 retry wrapping applied uniformly to handleMalformed's shared appendFact call (the same wrapper every other signal handler now uses) -- no malformed-specific branching was added.",
+      "escalation_needed": false
+    }
+  ],
+  "amendments": []
+}

@@ -1,0 +1,18 @@
+{
+  "captured_at": "2026-07-12T19:35:19Z",
+  "unit_tests": {
+    "command": "npm run test:unit",
+    "status": "PASS",
+    "test_files": 36,
+    "tests": 813
+  },
+  "typecheck": {
+    "command": "npx tsc --noEmit",
+    "status": "clean",
+    "exit_code": 0
+  },
+  "lint": {
+    "status": "NO_LINT",
+    "note": "No lint script in package.json; no eslint config file present in the repo root (consistent with S3/S4/S5's baseline.json)."
+  }
+}

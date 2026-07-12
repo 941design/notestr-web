@@ -1,0 +1,64 @@
+{
+  "module_name": "domain-events",
+  "purpose": "Establishes src/domain/ as the pure inner core of the functional-core/imperative-shell paradigm (architecture.md \"Paradigm\"). Owns the canonical, authoritative AcceptedDomainEvent<T> type with sourceKind discriminator and the dual idempotency-key derivation helpers (MLS path: id=rumor.id; bootstrap path: id=bootstrap:${groupId}:${task.id}). Also relocates the TaskEvent wire type into src/domain/ (task-events.ts) per the S1-review DECIDER GATE, since AcceptedDomainEvent.payload:TaskEvent must be reachable from a zero-external-import module — TaskEvent living in src/domain is what makes 'src/domain/* -> nothing' satisfiable. src/engine/engine-types.ts now imports+re-exports AcceptedDomainEvent/DomainEventSourceKind from this module rather than keeping its S1 forward-declared copy, and its TaskEvent import flips from ../store/task-events to ../domain/task-events. src/store/task-events.ts becomes a pure re-export shim so all 15 existing importers (src/marmot/, src/components/, src/store/, e2e/) keep working unchanged.",
+  "public_api": [
+    { "name": "DomainEventSourceKind", "signature": "type = \"mls-rumor\" | \"bootstrap-kind-30078\"", "description": "AcceptedDomainEvent.sourceKind discriminant. Canonical home (moved from engine-types.ts forward declaration)." },
+    { "name": "AcceptedDomainEvent<T = TaskEvent>", "signature": "interface { id: string; factId: string; sourceKind: DomainEventSourceKind; groupId: string; acceptedAt: number; epoch: string; payload: T }", "description": "Canonical, authoritative definition (architecture.md Module Map: domain-events owns this). Generic over payload, defaulting to TaskEvent so every existing call site's bare reference is structurally identical to the prior non-generic shape. factId is a non-null string (architecture.md seam table: optional column = 'no', type = 'string' — not 'string | null')." },
+    { "name": "deriveMlsAcceptedEventId", "signature": "(rumorId: string) => string", "description": "MLS-path idempotency key: passthrough of rumor.id. A named, tested seam rather than inlining rumor.id ad hoc at every producer call site." },
+    { "name": "deriveBootstrapAcceptedEventId", "signature": "(groupId: string, taskId: string) => string", "description": "Bootstrap-path idempotency key: `bootstrap:${groupId}:${taskId}`. Deterministic; groupId prefix prevents cross-group task.id collision (architecture.md Implementation Constraint §1(a))." },
+    { "name": "SOURCE_KIND_PHASE_ORDER", "signature": "Readonly<Record<DomainEventSourceKind, number>>", "description": "Encodes the 'replay sort order is phase order, not acceptedAt clock order' invariant (architecture.md AcceptedDomainEvent invariants) as shared data so S3's task-projector replayOrder consumes one authority instead of re-deriving the ranking independently. bootstrap-kind-30078 sorts before mls-rumor." },
+    { "name": "TaskEvent (relocated)", "signature": "see src/domain/task-events.ts — unchanged shape, moved from src/store/task-events.ts", "description": "Pure inner-core domain wire type. src/store/task-events.ts is now `export * from \"../domain/task-events\"` (verbatim re-export shim, zero behavior change for the 15 existing importers)." }
+  ],
+  "private_files": [],
+  "owned_data": [
+    "Type definitions and two pure derivation functions only — no runtime state, no IDB keys, no side effects (architecture.md Module Map row: 'domain-events | ... | Type definitions only')."
+  ],
+  "dependencies_allowed": [
+    "src/domain/task-events.ts (intra-domain relative import — both files live under src/domain/, so this does not violate 'src/domain/* -> nothing', which bars imports of anything OUTSIDE the domain directory)"
+  ],
+  "dependencies_forbidden": [
+    "src/engine/*", "src/persistence/*", "src/integration/*", "src/store/*", "src/marmot/*",
+    "react", "next", "next/navigation", "marmot-ts", "any other external npm package",
+    "node builtins in production files (fs/path/os/crypto-as-import; global crypto.randomUUID() in task-events.ts is a global reference, not an import, and is unaffected by this rule)",
+    "DOM globals (document, window)"
+  ],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "src/domain/domain-boundary.structural.test.ts",
+    "src/domain/domain-events.test.ts",
+    "src/engine/engine-boundary.structural.test.ts (existing S1 suite — must stay green; amended with the new src/store forbidden-import category per the DECIDER GATE)"
+  ],
+  "seam": {
+    "cross_story": true,
+    "consumed_by": ["S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11", "S12", "S13"]
+  },
+  "judgment_calls": [
+    {
+      "id": "generic-default-satisfies-non-generic-alias",
+      "decision": "AcceptedDomainEvent<T = TaskEvent> is generic (permitted by the story text: 'generic <T = TaskEvent> permitted if it stays assignable to the engine-types non-generic alias'). engine-types.ts re-exports it via `export type { AcceptedDomainEvent, DomainEventSourceKind } from \"../domain/domain-events\"` with no type-argument rewriting needed: every bare reference to AcceptedDomainEvent (with no explicit type argument) resolves via the default T=TaskEvent, which is structurally identical to the S1 forward-declared non-generic interface. No engine-types.ts call site passes an explicit type argument, so the 'non-generic alias' requirement holds by construction, not by a second wrapper type.",
+      "escalation_needed": false
+    },
+    {
+      "id": "two-separate-derivation-functions-not-one-dispatcher",
+      "decision": "Implemented deriveMlsAcceptedEventId and deriveBootstrapAcceptedEventId as two independent pure functions rather than one deriveAcceptedEventId(sourceKind, ...) dispatcher. This structurally eliminates the failure mode VQ-S2-001 asks about (a branch that silently falls through to a default id when sourceKind is unrecognized) — there is no sourceKind-keyed branch at all; each producer (S5's receive-engine, on its known path) calls the specific function for its own path. Matches the story text's literal phrasing: 'the dual idempotency-key derivation helpers' (plural, not a single dispatcher).",
+      "escalation_needed": false
+    },
+    {
+      "id": "source-kind-phase-order-constant-not-a-sort-function",
+      "decision": "Added SOURCE_KIND_PHASE_ORDER as an exported data constant (not a sort/comparator function) to answer VQ-S2-008's ask that the 'replay sort order is phase order' invariant be encoded so S3's task-projector can rely on it rather than re-deriving independently. A comparator or sort function would cross into 'projection or reducer logic' (this story's explicit scope.excludes); a typed ranking table is data, consistent with 'type and key-derivation only' scope, and S3 composes it into its own replayOrder function.",
+      "escalation_needed": false
+    },
+    {
+      "id": "factid-non-null-per-mandatory-obligation-overrides-stale-verification-wording",
+      "decision": "AcceptedDomainEvent.factId is typed as non-null `string`, per this story's mandatory obligation #1 ('factId is non-null string (do NOT reintroduce string | null)') and architecture.md's current seam table (optional column = 'no', type = 'string'). The pre-authored verification.json (VQ-S2-005, VQ-S2-008) still reads 'factId being string | null with null reserved for bootstrap-sourced events' — that phrasing predates the 2026-07-12 Stage-2 cold review amendment (P2-7) that made factId always-present on both paths (the bootstrap snapshot IS itself persisted as a RawProtocolFact, so factId is never null even on the bootstrap path). Per the immutability rule, verification.json questions are not edited; a post-impl record is appended documenting the discrepancy for the verifier.",
+      "escalation_needed": false
+    },
+    {
+      "id": "engine-boundary-structural-test-edit-outside-stories-json-scope-includes",
+      "decision": "stories.json's S2 scope.includes lists src/engine/engine-types.ts but NOT src/engine/engine-boundary.structural.test.ts. This story's task instructions (mandatory obligation #2, a DECIDER GATE, triple-recorded) explicitly require adding src/store to that file's AC-BOUND-1 forbidden-import list with a liveness fixture, and the quality gates explicitly require 'the S1 structural tests MUST stay green — including the new src/store forbidden entry you add.' Treated as an authorized, explicit scope amendment carried by the task instructions themselves (which supersede the stale stories.json listing), not a silent gate-remediation-style widening. Documented here and in result.json rather than applied silently.",
+      "escalation_needed": false
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "story_id": "S2",
+  "status": "done",
+  "final_outcome": "accepted",
+  "completed_at": "2026-07-12T16:11:09.786Z",
+  "files_created": [
+    "src/domain/task-events.ts",
+    "src/domain/domain-events.ts",
+    "src/domain/domain-boundary.structural.test.ts",
+    "src/domain/domain-events.test.ts",
+    "specs/epic-event-sourced-receive-engine/S2-domain-events-contract/architecture.json",
+    "specs/epic-event-sourced-receive-engine/S2-domain-events-contract/baseline.json",
+    "specs/epic-event-sourced-receive-engine/S2-domain-events-contract/result.json"
+  ],
+  "files_modified": [
+    "src/store/task-events.ts",
+    "src/engine/engine-types.ts",
+    "src/engine/engine-boundary.structural.test.ts",
+    "specs/epic-event-sourced-receive-engine/S2-domain-events-contract/verification.json"
+  ],
+  "tests_added": {
+    "structural": 24,
+    "unit": 18,
+    "type_level": 1,
+    "engine_boundary_additions": 2
+  },
+  "test_counts": {
+    "baseline": 570,
+    "final": 618
+  },
+  "mocks": [],
+  "remediation_rounds": 2,
+  "modules_touched": [
+    "domain-events",
+    "engine-types"
+  ],
+  "escalation_history": [],
+  "decider_gate_status": {
+    "gate": "S1 acceptance Q2 waiver — engine-types -> src/store type edge must be DEAD before S2 closes",
+    "resolution": "DISCHARGED: src/engine/engine-types.ts's TaskEvent import flipped from ../store/task-events to ../domain/task-events; AcceptedDomainEvent/DomainEventSourceKind now import + re-export from src/domain/domain-events.ts (no independent copy); src/engine/engine-boundary.structural.test.ts's AC-BOUND-1 forbidden-import list amended with a new src/store category + liveness fixture, so any future reintroduction of the edge is a hard structural-test failure, not just a convention. Grep evidence: no `import ... from \"../store/task-events\"` statement exists anywhere under src/engine/ or src/domain/ (only comments and the deliberately-constructed liveness-fixture strings in the two structural test files reference the string)."
+  },
+  "importer_inventory_covered_by_store_shim": [
+    "src/types/notestr-test-hooks.d.ts",
+    "src/marmot/device-sync.ts",
+    "src/marmot/device-sync.test.ts",
+    "src/marmot/storage.test.ts",
+    "src/components/TaskCard.tsx",
+    "src/components/Board.tsx",
+    "src/store/task-reducer.property.test.ts",
+    "src/store/task-store.tsx",
+    "src/store/task-store-utils.ts",
+    "src/store/task-store.monotonic.test.ts",
+    "src/store/persistence.ts",
+    "src/store/task-reducer.test.ts",
+    "src/store/multi-client.property.test.ts",
+    "e2e/tests/task-publish-contract.spec.ts",
+    "e2e/fixtures/two-party.ts"
+  ],
+  "judgment_calls": [
+    "AcceptedDomainEvent<T = TaskEvent> is generic per the story's explicit allowance; engine-types.ts re-exports it and every reference is the bare (no type-argument) form, resolving via the default to the same shape the S1 forward declaration had.",
+    "Two independent derivation functions (deriveMlsAcceptedEventId, deriveBootstrapAcceptedEventId) rather than one sourceKind-dispatching function -- structurally eliminates the 'silent fallthrough on unrecognized sourceKind' failure mode VQ-S2-001 asks about.",
+    "Added SOURCE_KIND_PHASE_ORDER as an exported data constant (not a sort/comparator function, which would be projection logic and out of scope) to answer VQ-S2-008's ask that the replay-phase-order invariant be encoded for S3 to consume rather than re-derive.",
+    "factId typed as non-null string per mandatory obligation #1 and architecture.md's current (post-amendment) seam table; documented in verification.json post-impl VQ-S2-009 that this diverges from the pre-authored (now-stale) VQ-S2-005/VQ-S2-008 wording, which predates the 2026-07-12 Stage-2 cold review amendment.",
+    "Edited src/engine/engine-boundary.structural.test.ts even though stories.json's S2 scope.includes does not list it -- the task's mandatory obligation #2 (a DECIDER GATE, triple-recorded) explicitly requires this edit; documented as an authorized deviation in architecture.json and verification.json post-impl VQ-S2-010, not applied silently.",
+    "Domain boundary scanner widened beyond AC-BOUND-2's literal three-category minimum (engine/persistence/integration) to a full 'zero external imports' design (also catching src/store, src/marmot, node builtins, external packages) per mandatory obligation #3's explicit broader phrasing; documented in verification.json post-impl VQ-S2-011."
+  ],
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "Writing src/domain/domain-boundary.structural.test.ts surfaced two variants of the self-referential-scan trap that S1's engine-boundary.structural.test.ts had already solved for its own narrower classifier but that did not automatically carry over. First: the split-string fixture arrays used to build fake import statements at runtime (the established S1 pattern, e.g. `[\"import \", \"{ Foo }\", \" from \", '\"path\"', \";\\n\"]`) create regex-artifact 'ghost' matches when the scanner's own extractImportSpecifiers runs over this file's own array-literal source text -- harmless for S1's narrow allowlist-of-violations classifier (unrecognized garbage silently passes as 'not a violation'), but this story's broader 'anything non-relative/non-intra-domain is a violation' design (needed to satisfy mandatory obligation #3's 'zero external imports' phrasing, not just AC-BOUND-2's three named categories) wrongly self-flagged those ghosts as 'external-package' violations. Diagnosed by actually running the test, reading the garbage captured specifiers in the failure output, and tracing them to the array-boundary punctuation. Second, separate trap: writing the literal English words for the two forbidden DOM globals in prose comments and test titles (not just in fixture *content*, which the S1 discipline already guarded) also self-triggered the identifier scanner, since a naive regex sweep doesn't distinguish comments from code. Both were root-caused and fixed (a whitespace-based plausibility filter for the first; driving all DOM-global fixture/test-title text off the runtime-computed DOM_GLOBAL_NAMES array for the second) and verified by re-running the suite to green, including the scanner's own self-scan.",
+    "surprised_by": "The pre-authored verification.json (VQ-S2-005, VQ-S2-008) still described factId as 'string | null' -- stale relative to architecture.md's current, binding seam table (amended same day, Stage-2 cold review, P2-7) and this story's own mandatory obligation #1, which both say factId is always a non-null string. Implemented per the current, binding spec and the mandatory obligation, and flagged the discrepancy as an immutable-question caveat (VQ-S2-009) rather than editing the pre-impl question text.",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  },
+  "decider_caveats": [
+    "VQ-S2-005/VQ-S2-008 NOs WAIVED (Decider ACCEPT): immutable pre-impl questions encode the pre-amendment factId contract (string|null); binding contract changed by P2-7 BEFORE implementation. VQ-S2-009 (YES conf 1.0) is the authoritative reconciliation — readers of the NOs route there and to architecture.md P2-7.",
+    "Premise to keep visible: factId nullability is an internal domain contract, NOT the cross-client wire format owned by ../protocol — if factId ever leaks into the shared wire contract, revisit this waiver.",
+    "S1-Q2 Decider gate CLOSED: engine->store edge dead, grep-proven, scanner-enforced."
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "story_id": "S1",
+  "captured_at": "2026-07-12T15:09:00Z",
+  "commands": {
+    "test": "npm run test:unit  (vitest run, via make-aware path — make ensure-platform confirmed Linux aarch64 stamp matched, no reinstall triggered)",
+    "typecheck": "npx tsc --noEmit",
+    "lint": "NO_LINT — package.json has no \"lint\" script and no eslint config file (.eslintrc*/eslint.config.*) exists in the repo"
+  },
+  "results": {
+    "test": {
+      "status": "PASS",
+      "test_files": 25,
+      "tests": 471
+    },
+    "typecheck": {
+      "status": "clean",
+      "errors": 0
+    },
+    "lint": {
+      "status": "NO_LINT"
+    }
+  },
+  "notes": [
+    "src/domain/ and src/persistence/ do not exist yet at S1 baseline (created in S2/S4 respectively).",
+    "src/engine/ does not exist yet at S1 baseline (this story creates it)."
+  ]
+}

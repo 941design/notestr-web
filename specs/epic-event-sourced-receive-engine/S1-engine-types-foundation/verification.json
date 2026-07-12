@@ -1,0 +1,110 @@
+{
+  "story_id": "S1",
+  "authored_by": "story-planner",
+  "authored_at": "2026-07-12T13:15:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S1-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does src/engine/engine-types.ts define RawProtocolFact, AcceptedDomainEvent, EngineCheckpoint, EngineOutputEvent, IngestSource/IngestSignal, and PersistenceAdapter as real type definitions and IDB key string constants with no placeholder `any`, no TODO-stubbed field, and no exported type that resolves to `unknown`/`never` as a stand-in for an unfinished shape?"
+    },
+    {
+      "question_id": "VQ-S1-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does src/engine/engine-types.ts contain zero runtime logic beyond type definitions and IDB key string constants (per this story's scope.excludes), keeping engine-types as a pure type-authority module with no behavior a later story could silently depend on?"
+    },
+    {
+      "question_id": "VQ-S1-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `engine-types` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list (src/domain/* for types and pure helpers only)? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S1-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does src/engine/engine-boundary.structural.test.ts assert, via a grep/AST scan of every .ts file under src/engine/, zero matches for react, next, next/navigation, any src/integration/ path, and any marmot-ts package specifier -- and does the test fail (not silently pass) when a disallowed import is deliberately introduced into a scratch fixture or existing engine file?"
+    },
+    {
+      "question_id": "VQ-S1-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does the shape of RawProtocolFact/AcceptedDomainEvent/EngineCheckpoint/EngineOutputEvent/IngestSignal/PersistenceAdapter authored in engine-types.ts match the field tables in architecture.md's Seam Contracts section field-for-field (name, type, optionality), not just approximately?"
+    },
+    {
+      "question_id": "VQ-S1-006",
+      "phase": "pre-impl",
+      "category": "BEST_PRACTICES",
+      "question": "Are all IDB key literals (notestr:raw-facts:, notestr:accepted-events:, notestr:engine-checkpoints:, notestr:deferred-ids:) exported as named constants from engine-types.ts rather than inlined as bare strings, so every consumer imports the constant instead of retyping the literal?"
+    },
+    {
+      "question_id": "VQ-S1-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-BOUND-1",
+      "question": "does the implementation satisfy AC-BOUND-1's observable -- does a grep-based structural test scanning every .ts file under src/engine/ for import statements matching react, next, next/navigation, src/integration/, or any marmot-ts specifier assert zero matches, and does introducing a single disallowed import (proven, not merely asserted) flip the test from pass to fail?"
+    },
+    {
+      "question_id": "VQ-S1-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-BOUND-3",
+      "question": "does the implementation satisfy AC-BOUND-3's observable -- does a grep-based test scanning src/persistence/*.ts and src/engine/*.ts for inlined notestr:raw-facts:/notestr:accepted-events:/notestr:engine-checkpoints:/notestr:deferred-ids: string or template literals outside engine-types.ts assert zero matches, does introducing an inlined duplicate elsewhere flip the test to fail, and is there evidence persistence implementations reference the exported constants rather than retyping the literal?"
+    },
+    {
+      "question_id": "VQ-S1-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-BOUND-1",
+      "question": "Does the IngestSignal type exported from engine-types.ts assert full membership over exactly the five variants (message, deferred, skipped, malformed, epoch_advanced) -- no sixth variant, no missing variant -- each with the exact field set from architecture.md's IngestSource/IngestSignal table, and is there a structural/type-level test proving no marmot-ts type appears in any IngestSignal field?"
+    },
+    {
+      "question_id": "VQ-S1-010",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-BOUND-3",
+      "question": "Does the PersistenceAdapter interface exported from engine-types.ts assert the exact eight-method signature set (appendFact, loadFacts, appendAcceptedEvent, loadAcceptedEvents, saveCheckpoint, loadCheckpoint, saveDeferredIds, loadDeferredIds) with the exact parameter/return types from architecture.md's PersistenceAdapter table, and does a test or type-level assertion confirm the idempotency invariants (appendFact idempotent on fact.id; appendAcceptedEvent idempotent on event.id) are encoded as part of the contract rather than left implicit for implementers to guess?"
+    },
+    {
+      "question_id": "VQ-S1-011",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-BOUND-1",
+      "question": "Does the EngineOutputEvent discriminated union exported from engine-types.ts assert full membership over exactly the ten variants (envelope_received, envelope_deferred, domain_event_accepted, domain_event_rejected, projection_invalidated, group_epoch_advanced, group_ratchet_advanced, engine_state_changed, deferred_retry_started, recovered), with no missing or extra variant, matching architecture.md's EngineOutputEvent variant table field-for-field?"
+    },
+    {
+      "question_id": "VQ-S1-012",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "When S2 authors src/domain/domain-events.ts, does it import and re-export (or an assignment-compatible generic specialization of) engine-types.ts's forward-declared AcceptedDomainEvent rather than introducing a second, independently-defined AcceptedDomainEvent shape whose fields could silently diverge from architecture.md's Seam Contracts table over time?"
+    },
+    {
+      "question_id": "VQ-S1-013",
+      "phase": "post-impl",
+      "category": "TEST",
+      "ac_id": "AC-BOUND-3",
+      "question": "Once S4 creates src/persistence/raw-event-log-store.ts, checkpoint-store.ts, and deferred-store.ts, does engine-boundary.structural.test.ts's candidate-file scan (which recursively walks src/persistence/*.ts once the directory exists) actually pick up those new files and correctly flag any inlined IDB key literal in them, without requiring an edit to the test itself?"
+    },
+    {
+      "question_id": "VQ-S1-014",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "question": "When S4/S7 wire a real relay event (from applesauce-core or NDK) into RawProtocolFact.nostrEvent, does the runtime value remain structurally assignable to engine-types.ts's locally-declared minimal NostrEvent interface without a cast, or does a field mismatch (e.g. extra required fields, tags typed as a branded array, additional discriminant properties) force one at the marmot-adapter.ts boundary?"
+    },
+    {
+      "question_id": "VQ-S1-015",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "ac_id": "AC-BOUND-1",
+      "question": "engine-boundary.structural.test.ts's import scanner is regex-based (matches `from`/`require(`/`import(` followed by a quoted specifier), not a real TS/AST parser. As S5 (receive-engine.ts) and S6 (ingest-policy.ts) add substantive logic with more import variety, does any legitimate import form slip past the regex undetected (e.g. a re-export statement, a multi-line import, or a specifier assembled via string concatenation rather than a literal), producing a false negative the scanner would miss?"
+    },
+    {
+      "question_id": "VQ-S1-016",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "engine-types.ts chose \"type\" as the discriminant field name for both IngestSignal and EngineOutputEvent — a naming judgment call, since architecture.md's Seam Contract tables list variant names and fields but never name the discriminant key itself. Do S5 (receive-engine.ts, the IngestSignal consumer / EngineOutputEvent producer) and S7 (marmot-adapter.ts, the IngestSignal producer) actually implement against the \"type\" key as defined here, with no independent reinterpretation that would break the discriminated-union narrowing this file's typing was designed to guarantee?"
+    }
+  ]
+}

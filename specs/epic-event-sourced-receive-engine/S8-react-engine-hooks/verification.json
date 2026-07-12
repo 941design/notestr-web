@@ -1,0 +1,57 @@
+{
+  "story_id": "S8",
+  "authored_by": "story-planner",
+  "authored_at": "2026-07-12T13:15:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S8-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does react-engine-hooks.ts's incremental fold call applyEvent(currentProjection, event.payload) on every real domain_event_accepted output, with buildProjection reserved strictly for restart/projection_invalidated -- i.e. is there no code path where the hook silently calls buildProjection on every event, which would make the 'incremental' claim pass tests only because a full-rebuild-every-time implementation happens to produce the same output?"
+    },
+    {
+      "question_id": "VQ-S8-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does react-engine-hooks.ts manage exactly one useEffect per group whose cleanup calls engine.stop(), with marmot-adapter.ts (S7) registering zero independent React lifecycle hooks of its own, per Boundary Rule 10?"
+    },
+    {
+      "question_id": "VQ-S8-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `react-engine-hooks` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list (src/engine/*, src/domain/*, src/persistence/*, React/Next.js)? If not, which cross-module dependencies exist and do they flow through the declared EngineOutputEvent seam contract in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S8-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does react-engine-hooks.test.tsx drive the engine through a sequence of domain_event_accepted outputs, fold an in-memory projection incrementally via the hook, independently load the same events via PersistenceAdapter.loadAcceptedEvents, call buildProjection, and assert deep-equality between the two -- using real applyEvent/buildProjection functions, not a mock projector that returns identical canned output regardless of input events?"
+    },
+    {
+      "question_id": "VQ-S8-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does react-engine-hooks.ts expose engine lifecycle/health to the UI matching the EngineOutputEvent engine_state_changed{groupId, state, health} shape exactly, with no UI-layer reinterpretation of health beyond the nominal/degraded union?"
+    },
+    {
+      "question_id": "VQ-S8-006",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does unmounting the engine hook always call engine.stop() exactly once (never zero times, never more than once on rapid remount/unmount cycles), preventing a leaked live subscription or a double-close race on the underlying adapter?"
+    },
+    {
+      "question_id": "VQ-S8-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-BOUND-5",
+      "question": "does the implementation satisfy AC-BOUND-5's observable -- does a grep-based test assert zero occurrences of useEffect/useState/useRef in marmot-adapter.ts, and does a runtime test unmount the engine hook and assert engine.stop was called exactly once with adapter.close invoked as the last call inside stop()'s execution, via a call-order assertion on a mock adapter rather than merely asserting both were called at some point?"
+    },
+    {
+      "question_id": "VQ-S8-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-INV-4",
+      "question": "does the implementation satisfy AC-INV-4's observable -- does a test drive the engine through a sequence of domain_event_accepted outputs (folding an in-memory projection incrementally via the hook), independently load the same events via PersistenceAdapter.loadAcceptedEvents, call buildProjection, and assert deep-equality between the incrementally-folded and freshly-rebuilt projections, with evidence the incremental path actually executed applyEvent per event rather than a hidden full-rebuild masquerading as incremental?"
+    }
+  ]
+}

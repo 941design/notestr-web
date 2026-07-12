@@ -1,0 +1,50 @@
+{
+  "story_id": "S13",
+  "authored_by": "story-planner",
+  "authored_at": "2026-07-12T13:15:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S13-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Is the feature flag introduced in S9 actually removed (both branches converged, dead legacy-path code deleted) rather than merely defaulted to always-true while the legacy branch and flag machinery remain present as unreachable dead code?"
+    },
+    {
+      "question_id": "VQ-S13-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does the full boundary-rule structural sweep (AC-BOUND-1..5 grep tests) re-run and pass at this final phase boundary, confirming no boundary violation was introduced by any of S1-S12's changes cumulatively, not just at each story's individual landing?"
+    },
+    {
+      "question_id": "VQ-S13-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `receive-engine` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list (src/domain/*, src/persistence/* via PersistenceAdapter only)? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md, now that the strangler scaffolding is fully removed?"
+    },
+    {
+      "question_id": "VQ-S13-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Do the vitest and Playwright suites exit zero with zero tests skipped, .only-scoped, or deleted solely to force a pass, verified by a diff of the test-file list between this phase boundary and the prior one showing no pre-existing test file was deleted or had assertions weakened without a replacement covering the same behavior?"
+    },
+    {
+      "question_id": "VQ-S13-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Are the extraction seams documented per the Library Character section, giving a future consumer enough seam-contract documentation (type_name, fields, invariants) to extract src/domain/ and src/engine/ as a standalone package without re-deriving the contracts from source?"
+    },
+    {
+      "question_id": "VQ-S13-006",
+      "phase": "pre-impl",
+      "category": "BEST_PRACTICES",
+      "question": "Does this story introduce zero new correctness logic anywhere (per scope.excludes), confirmed by a diff review showing only deletions of dead strangler-flag scaffolding and documentation additions?"
+    },
+    {
+      "question_id": "VQ-S13-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-MIG-4",
+      "question": "does the implementation satisfy AC-MIG-4's observable -- does CI run make test and the e2e suite at this phase-boundary tag and assert exit code 0 for both, and does a diff of the test-file list between phase boundaries assert no pre-existing test file was deleted or had assertions weakened without a replacement covering the same behavior?"
+    }
+  ]
+}

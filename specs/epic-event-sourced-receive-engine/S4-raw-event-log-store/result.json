@@ -1,0 +1,71 @@
+{
+  "story_id": "S4",
+  "status": "done",
+  "final_outcome": "accepted",
+  "completed_at": "2026-07-12T17:44:47.045Z",
+  "modules_touched": [
+    "raw-event-log-store"
+  ],
+  "files_created": [
+    "src/persistence/raw-event-log-store.ts",
+    "src/persistence/raw-event-log-store.test.ts",
+    "src/persistence/legacy-key-guard.structural.test.ts",
+    "specs/epic-event-sourced-receive-engine/S4-raw-event-log-store/architecture.json",
+    "specs/epic-event-sourced-receive-engine/S4-raw-event-log-store/baseline.json",
+    "specs/epic-event-sourced-receive-engine/S4-raw-event-log-store/result.json"
+  ],
+  "files_modified": [
+    "specs/epic-event-sourced-receive-engine/S4-raw-event-log-store/verification.json"
+  ],
+  "implementation_summary": "Authored src/persistence/raw-event-log-store.ts, the fact/accepted-event half of PersistenceAdapter (appendFact, loadFacts, appendAcceptedEvent, loadAcceptedEvents), as idempotent lookup-before-insert IDB stores over createKVStore (src/marmot/storage.ts). Storage layout is one array value per group key (RawProtocolFact[] under rawFactsKey(groupId), AcceptedDomainEvent[] under acceptedEventsKey(groupId)) rather than one IDB key per item -- this makes both ordering contracts (loadFacts seq-ascending, loadAcceptedEvents append-order) hold by construction (array push order === insertion order === the monotonic append position) and sidesteps the documented idb-keyval keys()-is-key-sorted trap entirely, since there are no per-item keys to enumerate. appendFact is the sole seq authority: a duplicate id returns the existing stored fact with its original seq and duplicate:true, minting no new seq; a fresh id gets (current max seq)+1, scoped per group. appendAcceptedEvent is a strict no-op on a duplicate id (no second entry, no write at all) -- this is the AC-INV-2 persistence-side proof the S3 task-projector formally depends on as a precondition. IDB keys are sourced exclusively from src/engine/engine-types.ts's rawFactsKey/acceptedEventsKey function calls (never inlined literals), satisfying the sanctioned persistence -> engine-types carve-out and AC-BOUND-3. legacy-key-guard.structural.test.ts implements AC-MIG-1's CI gate: a write-call-site-specific scanner (inspects only the first-argument text of setItem(/set( calls, not a blanket occurrence scan) that flags any write to the legacy notestr:events: key outside src/store/persistence.ts, deliberately narrow enough to not false-positive on src/marmot/storage.ts's pre-existing, legitimate migration read/copy code.",
+  "test_counts": {
+    "baseline": 707,
+    "final": 733
+  },
+  "tests_added": {
+    "unit": 14,
+    "structural": 9
+  },
+  "test_count_reconciliation_note": "Explicit new-file test counts (14 in raw-event-log-store.test.ts + 9 in legacy-key-guard.structural.test.ts = 23) do not fully reconcile the full-suite baseline->final delta (707->733 = +26) on their own -- the residual +3 is the same self-scaling-structural-test effect S3's result.json documented: engine-boundary.structural.test.ts's AC-BOUND-3 suite (a PRE-EXISTING, unmodified suite from S1) recursively scans all of src/ and emits one `it` per file discovered outside engine-types.ts, so it automatically grew by 3 (one per newly created src/persistence/*.ts file) without this story touching that test file. Verified by re-running `npx vitest run` (733/733 green, 33 test files up from 31) both before and after an independent manual flip-proof cycle (see empirical_verification) confirmed no residual state corruption.",
+  "mocks": [
+    {
+      "target": "@internet-privacy/marmot-ts's generateKeyPackageSlot",
+      "reason": "src/marmot/storage.ts (a real, unmocked dependency exercised via real createKVStore/idb-keyval/fake-indexeddb) imports this at module load; stubbed via vi.mock so the module resolves in the node test env without pulling in the real marmot-ts fork. Same stub already used by the pre-existing src/marmot/storage.test.ts -- not a new mocking pattern. The store under test (raw-event-log-store.ts) itself is never mocked; every test exercises a real IDB round-trip via fake-indexeddb."
+    }
+  ],
+  "remediation_rounds": 2,
+  "empirical_verification": {
+    "flip_proof_appendAcceptedEvent_idempotency": "Independently (architect, not just the implementing dev) temporarily replaced `if (existing.some((e) => e.id === event.id)) { return; }` with `if (false) { return; }` in raw-event-log-store.ts, re-ran `npx vitest run src/persistence/raw-event-log-store.test.ts`, confirmed 2 of 14 tests went RED (both appendAcceptedEvent idempotency tests, reporting length 2 instead of 1). Restored the original guard via `cp` from a pre-edit backup, confirmed byte-identical restoration via `diff`, and re-ran the same file plus legacy-key-guard.structural.test.ts to confirm 23/23 green again.",
+    "flip_proof_ac_mig_1_scanner": "Independently added a real scratch file src/persistence/__scratch-legacy-violation.ts containing `scratchStore.setItem(\\`notestr:events:${groupId}\\`, [])`, ran `npx vitest run src/persistence/legacy-key-guard.structural.test.ts`, confirmed the 'no violating file' assertion went RED reporting exactly `[\"src/persistence/__scratch-legacy-violation.ts\"]`. Deleted the scratch file, re-ran, confirmed 9/9 green again. `git status --porcelain src/persistence/` after cleanup shows only the three legitimate new files as untracked -- no scratch residue.",
+    "flip_proof_dev_self_reported": "The implementing dev agent additionally reported (not independently re-verified by the architect beyond the two checks above, which cover the same load-bearing contracts): appendFact idempotency flip (bypassed lookup-before-insert, confirmed RED, restored GREEN), and loadAcceptedEvents ordering flip (temporarily sorted by id, confirmed both the delete-before-update interleaving test and the general-ordering test went RED, restored GREEN, full 14/14 suite reconfirmed).",
+    "full_suite_after_all_checks": "npx tsc --noEmit exit 0; npx vitest run: 33 test files passed, 733 tests passed -- both re-confirmed by the architect as the final state after all flip-proof cycles were reverted."
+  },
+  "judgment_calls": [
+    "Storage layout is one array per group key (not per-item IDB keys), making both ordering contracts hold by construction rather than by a derived sort. See architecture.json 'single-array-per-group-storage-layout' and verification.json (pre-impl commitment set covers this via VQ-S4-004/007; no post-impl question needed -- the design choice is directly observable in the file and independently confirmed correct by the delete-before-update interleaving test).",
+    "seq assignment is O(1) via (last element's seq)+1 rather than an O(n) max-scan, relying on the array being seq-ascending by construction. See architecture.json 'seq-assignment-strategy'.",
+    "No in-process concurrency lock on the read-then-write append path -- matches the exact posture of the legacy src/store/persistence.ts:appendEvent this replaces, not a regression, out of this story's explicit scope. See architecture.json 'no-concurrency-lock-matches-precedent'.",
+    "AC-MIG-1's scanner is write-call-site-specific (inspects setItem(/set( first-argument text) rather than a blanket key-literal-presence scan (the AC-BOUND-3 style), specifically to avoid false-positiving on src/marmot/storage.ts's pre-existing legitimate migration read/copy code. See architecture.json 'ac-mig-1-scanner-is-write-call-site-specific-not-blanket-presence'.",
+    "The scanner also legitimately trips on src/marmot/storage.test.ts (a pre-existing test fixture literal-writing to the legacy key to simulate pre-migration data for a migration-correctness test) -- a genuine ambiguity not anticipated by the story brief, which pre-authorized excluding only persistence.ts. Excluded storage.test.ts alongside persistence.ts with documented reasoning (test-only historical-state simulation, not a new production write path) rather than either silently ignoring the hit or unilaterally rewriting an out-of-scope file. Recorded as verification.json VQ-S4-P1 (post-impl, confidence 0.9) for examiner/future-phase-boundary review rather than treated as settled without a paper trail. See architecture.json 'storage-test-ts-second-exclusion-not-pinned-down-by-story-brief'."
+  ],
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The AC-MIG-1 structural gate's exclusion list needed a second entry (src/marmot/storage.test.ts) that the story brief did not anticipate -- the brief's exclusion clause named only src/store/persistence.ts, but a correctly-written write-call-site scanner (needed anyway to avoid false-positiving on storage.ts's legitimate migration read/copy code) also legitimately catches a pre-existing test fixture in storage.test.ts that literally writes to the legacy key to simulate historical data for a migration test. Diagnosing this required reading storage.test.ts's actual fixture content (not just storage.ts) to distinguish 'a second real violation the AC exists to catch' from 'a pre-existing, sanctioned, test-only historical-data-simulation write that happens to share the scanner's write-call shape' -- a distinction the story brief's text alone did not resolve, since it discusses only production write paths. Resolved via a documented judgment call (excluded, with an explicit load-bearing-exclusion proof test and a post-impl verification question) rather than silently absorbing or blocking on it.",
+    "surprised_by": "The full-suite delta (707->733, +26) did not match the two new test files' own counts (14+9=23) at first glance -- the residual +3 came from engine-boundary.structural.test.ts's pre-existing AC-BOUND-3 suite auto-discovering the 3 new src/persistence/*.ts files via its own recursive src/ scan. This is the identical self-scaling-structural-test effect S3's retrospective already flagged for a different pair of suites (domain-boundary.structural.test.ts / engine-boundary.structural.test.ts against src/domain/) -- worth noting again since it recurred on a different structural test (AC-BOUND-3 this time) against a different new directory (src/persistence/), suggesting any story that adds files under a directory already covered by an existing self-scanning structural test should expect this reconciliation step, not just the two files S3 already called out.",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [
+      {
+        "agent": "dev",
+        "spawn_index": 1,
+        "note": "Implemented all four PersistenceAdapter methods exactly per the architect's pre-specified algorithm (no redesign), wrote both test files with full coverage of the mandated scenarios (idempotency, seq monotonicity, per-group seq isolation, delete-before-update interleaving ordering, AC-MIG-1 scanner with liveness fixtures), ran and reverted two flip-proof mutation cycles per file, and explicitly surfaced the storage.test.ts double-exclusion ambiguity rather than silently resolving it -- flagged in its final report and documented in the test file's own module doc comment. No disagreement with its framing; its reasoning for the storage.test.ts exclusion is folded verbatim into this story's architecture.json judgment call and verification.json VQ-S4-P1 above, and independently spot-verified by the architect (re-ran the empirical 'exclusion removed -> violations become exactly [storage.test.ts]' check) before accepting it."
+      }
+    ],
+    "lead_clarifications": []
+  },
+  "decider_caveats": [
+    "FAST PATH pass: 11/11 YES (conf 0.9-1.0). AC-INV-2 now FULLY CLOSED (projector half S3 + persistence half S4).",
+    "Review cycle hardened shared infra: KeyValueStoreBackend.updateItem (atomic single-transaction RMW) added to src/marmot/storage.ts — additive, verified against the whole marmot layer.",
+    "S11 obligations recorded: compose clearRawAndAcceptedLogs partial (checkpoint-FIRST clear ordering); reuse appendAcceptedEvent in acceptDeferredFact; use updateItem for own stores."
+  ]
+}

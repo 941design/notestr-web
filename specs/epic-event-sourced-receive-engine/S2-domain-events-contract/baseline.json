@@ -1,0 +1,29 @@
+{
+  "story_id": "S2",
+  "captured_at": "2026-07-12T17:29:00Z",
+  "commands": {
+    "test": "npm run test:unit (vitest run) — make-aware: `make ensure-platform` run first, no platform-stamp mismatch, no reinstall triggered",
+    "typecheck": "npx tsc --noEmit",
+    "lint": "NO_LINT — package.json has no \"lint\" script and no eslint config file (.eslintrc*/eslint.config.*) exists in the repo (unchanged since S1 baseline)"
+  },
+  "results": {
+    "test": {
+      "status": "PASS",
+      "test_files": 26,
+      "tests": 570
+    },
+    "typecheck": {
+      "status": "clean",
+      "errors": 0
+    },
+    "lint": {
+      "status": "NO_LINT"
+    }
+  },
+  "notes": [
+    "src/domain/ does not exist yet at S2 baseline — this story creates it.",
+    "src/persistence/ and src/integration/ still do not exist (created S4/S7 respectively) — the boundary scanner must handle both as gracefully-empty directories, matching the engine-boundary.structural.test.ts precedent.",
+    "src/engine/engine-types.ts carries the S1 forward declaration of AcceptedDomainEvent/DomainEventSourceKind and imports TaskEvent from ../store/task-events — both are replaced by this story.",
+    "src/engine/engine-boundary.structural.test.ts's disallowedCategory() does not yet forbid src/store imports for src/engine/* — added by this story per the DECIDER GATE."
+  ]
+}

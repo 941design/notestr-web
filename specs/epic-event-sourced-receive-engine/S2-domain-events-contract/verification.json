@@ -1,0 +1,82 @@
+{
+  "story_id": "S2",
+  "authored_by": "story-planner",
+  "authored_at": "2026-07-12T13:15:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S2-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does src/domain/domain-events.ts implement the dual idempotency-key derivation (MLS path: id=rumor.id; bootstrap path: id=bootstrap:${groupId}:${task.id}) as real, deterministic string construction with no hard-coded placeholder groupId/task.id and no branch that silently falls through to a default id when sourceKind is unrecognized?"
+    },
+    {
+      "question_id": "VQ-S2-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does src/domain/domain-events.ts contain zero projection or reducer logic (per scope.excludes -- type and key-derivation only), keeping domain-events as a pure type + key-derivation module?"
+    },
+    {
+      "question_id": "VQ-S2-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `domain-events` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list (nothing -- src/domain/* has zero external imports)? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S2-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does src/domain/domain-events.test.ts exercise both idempotency-key paths with concrete fixtures (an MLS rumor and a bootstrap task), asserting the exact derived id string in each case, and does src/domain/domain-boundary.structural.test.ts grep-scan every .ts file under src/domain/ for imports of src/engine/, src/persistence/, src/integration/ and for document/window identifier usages, asserting zero matches on both counts with a fixture proving the test fails on a deliberately introduced violation?"
+    },
+    {
+      "question_id": "VQ-S2-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does the AcceptedDomainEvent<T> type's sourceKind discriminator and field shape in domain-events.ts match architecture.md's AcceptedDomainEvent seam table exactly (id, factId, sourceKind, groupId, acceptedAt, epoch, payload), including factId being string | null with null reserved for bootstrap-sourced events?"
+    },
+    {
+      "question_id": "VQ-S2-006",
+      "phase": "pre-impl",
+      "category": "BEST_PRACTICES",
+      "question": "Is the bootstrap id derivation bootstrap:${groupId}:${task.id} implemented so the groupId prefix is always present (preventing cross-group task.id collision), verified by a test with two different groupIds and the same task.id asserting distinct derived ids?"
+    },
+    {
+      "question_id": "VQ-S2-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-BOUND-2",
+      "question": "does the implementation satisfy AC-BOUND-2's observable -- does a grep-based structural test scanning every .ts file under src/domain/ for import statements referencing src/engine/, src/persistence/, src/integration/ and for identifier usages of document/window assert zero matches on both counts, with evidence the test fails when such an import or DOM-global reference is deliberately introduced?"
+    },
+    {
+      "question_id": "VQ-S2-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-BOUND-2",
+      "question": "Does the AcceptedDomainEvent type exported from domain-events.ts assert the exact field set and types from architecture.md's AcceptedDomainEvent table (id: string, factId: string|null, sourceKind: mls-rumor|bootstrap-kind-30078, groupId: string, acceptedAt: number, epoch: string, payload: TaskEvent), and is there a test proving both the id-idempotency invariant and the 'replay sort order is phase order, never acceptedAt clock order' invariant are encoded so later consumers (task-projector in S3, raw-event-log-store in S4) can rely on them rather than re-deriving independently?"
+    },
+    {
+      "question_id": "VQ-S2-009",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "ac_id": "AC-BOUND-2",
+      "question": "VQ-S2-005 and VQ-S2-008 (pre-impl, immutable) both describe factId as 'string | null with null reserved for bootstrap-sourced events'. That phrasing predates the 2026-07-12 Stage-2 cold review amendment (P2-7) to architecture.md, which made factId non-optional 'string' on BOTH paths (the bootstrap-path factId is the kind-30078 snapshot's own RawProtocolFact.id, which is never null). The implementation follows the current architecture.md and this story's mandatory obligation #1 (factId: string, not string | null) — see src/domain/domain-events.ts's AcceptedDomainEvent interface and the type-level test in domain-events.test.ts ('factId is exactly string, never string | null'), plus the mirrored assertion added to src/engine/engine-boundary.structural.test.ts. Is this the correct resolution of the discrepancy between the immutable pre-impl question text and the current, binding architecture.md, or does it need Decider adjudication?"
+    },
+    {
+      "question_id": "VQ-S2-010",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "stories.json's S2 scope.includes does not list src/engine/engine-boundary.structural.test.ts, but the task's mandatory obligation #2 (a DECIDER GATE) explicitly requires adding src/store to that file's AC-BOUND-1 forbidden-import list with a liveness fixture, plus the quality gates explicitly require 'the S1 structural tests MUST stay green — including the new src/store forbidden entry you add.' The implementation edited that file (added the src/store category + liveness fixture + one new AcceptedDomainEvent type-shape assertion), documented as an explicit, authorized scope amendment in architecture.json's judgment_calls (not a silent gate-remediation-style widening). Is this treated correctly as an authorized deviation from the stale stories.json scope.includes, and does the DECIDER GATE (engine-types -> src/store edge must be dead) verifiably close? (Grep evidence: no `import ... from \"../store/task-events\"` statement exists anywhere under src/engine/ or src/domain/ outside of comments and the deliberately-constructed liveness-fixture strings in the two structural test files.)"
+    },
+    {
+      "question_id": "VQ-S2-011",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "question": "Does src/domain/domain-boundary.structural.test.ts avoid the self-referential-scan trap it explicitly documents (prior learning from S1's engine-boundary.structural.test.ts)? Two concrete failure modes were caught and fixed during implementation, both empirically verified by first reproducing the failure, then confirming the fix turns the suite green: (1) the split-string fixture arrays (`[\"import \", \"{ Foo }\", \" from \", '\"path\"', \";\\n\"]`) create regex-artifact 'ghost' matches when the scanner's own extractImportSpecifiers runs over this file's own array-literal source text — harmless for engine-boundary.structural.test.ts's narrow allowlist-of-violations classifier (S1), but this file's broader 'anything non-relative/non-intra-domain is a violation' classifier would wrongly self-flag ghost matches as 'external-package' without the isPlausibleSpecifier whitespace filter; (2) writing the literal words \"document\"/\"window\" in prose comments/test titles (not just avoiding them in fixture content) also self-triggers findDomGlobalUsages when the scanner sweeps its own file — fixed by driving all DOM-global test titles/fixtures off the runtime-computed DOM_GLOBAL_NAMES array rather than spelling the words out in on-disk text. Is the fix (isPlausibleSpecifier filter + DOM_GLOBAL_NAMES-driven dynamic fixtures) sound, and does it generalize correctly to S3's task-projector.ts/task-crdt.ts landing in the same directory (i.e. will a REAL disallowed import or DOM-global reference in one of those future files still be caught, not accidentally filtered out by isPlausibleSpecifier)?"
+    },
+    {
+      "question_id": "VQ-S2-012",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "src/store/task-events.ts became a one-line re-export shim (`export * from \"../domain/task-events\"`). The importer inventory found via grep was: src/types/notestr-test-hooks.d.ts, src/marmot/device-sync.ts, src/marmot/device-sync.test.ts, src/marmot/storage.test.ts (string literal reference only, not an import), src/components/TaskCard.tsx, src/components/Board.tsx, src/store/task-reducer.property.test.ts, src/store/task-store.tsx, src/store/task-store-utils.ts, src/store/task-store.monotonic.test.ts, src/store/persistence.ts, src/store/task-reducer.test.ts, src/store/multi-client.property.test.ts, e2e/tests/task-publish-contract.spec.ts, e2e/fixtures/two-party.ts -- none of these files were edited, and the full unit suite (618 tests, up from a 570 baseline) plus `npx tsc --noEmit` (clean) both pass unmodified. Is zero-importer-edit sufficient proof the shim is behaviorally transparent, or should a targeted runtime check (e.g. instantiating a Task via the store-path import) be added given no unit test file previously existed for src/store/task-events.ts directly?"
+    }
+  ]
+}

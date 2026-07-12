@@ -1,0 +1,66 @@
+{
+  "module_name": "task-projector",
+  "purpose": "Delivers the two pure src/domain modules named in architecture.md's Module Map: task-crdt (the single shared taskWinsOver three-level tie-break authority, extracted verbatim-behavior from task-reducer.ts) and task-projector (buildProjection full-rebuild + applyEvent incremental fold over AcceptedDomainEvent<TaskEvent>, both delegating every conflict decision to taskWinsOver). Also discharges Implementation Constraint 10's device-sync.ts half: the bootstrap-merge comparator body at device-sync.ts:1433-1452 is replaced by a single taskWinsOver call, deleting the duplicated three-level branch (Boundary Rule 5 / AC-MIG-2 — deletion + delegation only, zero new branches).",
+  "public_api": [
+    { "name": "TieBreakFields", "signature": "interface { updatedAt: number; updatedBy: string; updatedByDevice?: string }", "description": "Structural shape taskWinsOver compares. Matches both a bare TaskEvent's update-type fields and a Task's own fields, so both call sites (task-projector's applyEvent extracting fields off AcceptedDomainEvent.payload, and device-sync.ts's bootstrap gate comparing two full Task objects) pass through the same function without adapter shims." },
+    { "name": "taskWinsOver", "signature": "(candidate: TieBreakFields, existing: TieBreakFields) => boolean", "description": "Pure three-level ADR-001 tie-break: updatedAt (strictly greater wins) -> updatedBy pubkey (strictly lower wins) -> updatedByDevice MLS clientId (strictly lower wins, missing treated as \"\"). Algebraically identical to the four inlined comparator copies in task-reducer.ts:18-32 and the device-sync.ts:1433-1452 duplicate (proven by cascading strict-inequality rewrite; see task-crdt.test.ts). Ties (all three fields equal) return false, which is what makes re-applying an already-applied event a no-op (AC-INV-2)." },
+    { "name": "TaskProjection", "signature": "type = ReadonlyMap<string, Task>", "description": "Projection shape: tasks-by-id, mirroring src/store/task-reducer.ts's TaskState = Map<string, Task> so S8/S9 can adapt this projection to the UI with minimal friction (story-mandated pragmatic choice). Deliberately NOT a richer struct (e.g. no separate applied-event-id set) — see judgment call 'no-explicit-dedup-bookkeeping' in result.json for why AC-INV-2 holds without one." },
+    { "name": "EMPTY_PROJECTION", "signature": "TaskProjection", "description": "The canonical empty projection (empty Map), exported so callers/tests reference one documented identity rather than each constructing their own `new Map()`." },
+    { "name": "replayOrder", "signature": "(events: readonly AcceptedDomainEvent[]) => AcceptedDomainEvent[]", "description": "Pure stable sort: bootstrap-sourced events (SOURCE_KIND_PHASE_ORDER['bootstrap-kind-30078']=0) before MLS-sourced events (=1), preserving original array order within each phase (JS Array.sort is spec-guaranteed stable since ES2019 -- no secondary key needed). Imports SOURCE_KIND_PHASE_ORDER from src/domain/domain-events.ts; does not re-derive the ranking. Callers compose `buildProjection(replayOrder(acceptedLog))` per architecture.md's Recovery Sequencing R1 pseudocode -- buildProjection itself does NOT re-sort (see next entry)." },
+    { "name": "buildProjection", "signature": "(events: readonly AcceptedDomainEvent[]) => TaskProjection", "description": "Full rebuild: events.reduce(applyEvent, EMPTY_PROJECTION), literally. Assumes the input is already in replay order (caller composes replayOrder(log) first, per R1's `buildProjection(replayOrder(acceptedLog))` pseudocode) -- this is what makes AC-INV-1's second clause ('log.reduce(applyEvent, empty) deep-equals the one-shot buildProjection result') true by construction rather than by coincidence." },
+    { "name": "applyEvent", "signature": "(projection: TaskProjection, event: AcceptedDomainEvent) => TaskProjection", "description": "Incremental fold: dispatches on event.payload.type (TaskEvent's five variants), delegating every conflict decision (task.updated/status_changed/assigned/deleted) to taskWinsOver; task.created stays first-write-wins (no tie-break needed, mirrors task-reducer.ts). Pure -- no wall-clock reads, no mutation of the input Map (returns a new Map)." }
+  ],
+  "private_files": [],
+  "owned_data": [
+    "None -- both task-crdt.ts and task-projector.ts are pure functions per architecture.md Module Map ('Owned Data: None (pure function)' for both rows)."
+  ],
+  "dependencies_allowed": [
+    "src/domain/task-events.ts (Task, TaskEvent types -- intra-domain)",
+    "src/domain/domain-events.ts (AcceptedDomainEvent, SOURCE_KIND_PHASE_ORDER -- intra-domain)",
+    "src/domain/task-crdt.ts (task-projector.ts imports taskWinsOver -- intra-domain)"
+  ],
+  "dependencies_forbidden": [
+    "src/engine/*, src/persistence/*, src/integration/*, src/store/*, src/marmot/*, react, next, marmot-ts, any other external npm package, node builtins, DOM globals, Date/Math.random/crypto (structurally enforced by domain-boundary.structural.test.ts on both new production files)"
+  ],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "src/domain/task-crdt.test.ts",
+    "src/domain/task-projector.property.test.ts",
+    "src/domain/bound-4.structural.test.ts",
+    "src/domain/domain-boundary.structural.test.ts (existing S2 suite -- amended to allowlist the `fast-check` import for *.test.ts files under src/domain/, a necessary consequence of this story's mandated property-test file; must stay green including the new exception's own liveness coverage)",
+    "src/store/task-reducer.test.ts + src/store/task-reducer.property.test.ts (existing safety net -- untouched, must stay green; task-reducer.ts itself is not edited this story, see judgment call)"
+  ],
+  "seam": {
+    "cross_story": true,
+    "consumed_by": ["S5", "S8", "S9", "S11"]
+  },
+  "judgment_calls": [
+    {
+      "id": "task-reducer-allowlist-not-delegate",
+      "decision": "task-reducer.ts is NOT edited this story (kept exactly as-is, inline three-level comparator unchanged). bound-4.structural.test.ts's repo-wide duplicate-comparator scan explicitly allowlists src/store/task-reducer.ts with an expiry note pointing at S9 (task-store-projection-cutover) / S12 (legacy-listener-removal), the stories where task-reducer.ts itself is retired in favor of task-projector.ts. Chosen over delegating task-reducer.ts to taskWinsOver despite architecture.md Implementation Constraint 10 literally naming task-reducer.ts:18-32 as one of two required delegation sites, because: (1) stories.json's S3 scope.includes enumerates six exact files and does not include src/store/task-reducer.ts; (2) the story text's explicit instruction is 'do NOT change task-reducer.ts's behavior in this story'; (3) task-reducer.ts carries a 147/147 mutation-kill record on a per-file Stryker config (stryker.task-reducer.conf.json) that keys off the file's current content -- delegating would relocate the comparator's mutation surface into task-crdt.ts and silently stale that record without a corresponding mutation re-run in this story's scope. The incremental-migration precedent elsewhere in this epic (device-sync.ts: 'Shrinking: internals migrate story-by-story') supports retiring one call site at a time rather than both simultaneously. Implementation Constraint 10 is satisfied incrementally: S3 discharges the device-sync.ts half now; the reducer half is discharged when task-reducer.ts itself is replaced.",
+      "escalation_needed": false
+    },
+    {
+      "id": "projection-shape-readonly-map",
+      "decision": "TaskProjection = ReadonlyMap<string, Task>, mirroring task-reducer.ts's TaskState = Map<string, Task> exactly (pragmatic choice per story text, minimizing S8/S9 adaptation friction). No wrapper struct, no explicit applied-event-id bookkeeping.",
+      "escalation_needed": false
+    },
+    {
+      "id": "no-explicit-dedup-bookkeeping",
+      "decision": "AC-INV-2's projector-side observable (duplicate AcceptedDomainEvent.id replay == deduplicated replay) is satisfied WITHOUT tracking applied event ids in the projection state, because taskWinsOver's strict inequalities make every TaskEvent variant naturally idempotent under re-application: task.created is already first-write-wins (next.has(id) guard); task.updated/status_changed/assigned/deleted all require candidate to strictly beat existing on some level, and a duplicate carries byte-identical updatedAt/updatedBy/updatedByDevice to whatever it already won with, so re-applying it fails every strict-inequality check and no-ops. Proven directly in task-projector.property.test.ts by asserting buildProjection(logWithAdjacentDuplicate) deep-equals buildProjection(dedupedLog) across >=100 fast-check runs.",
+      "escalation_needed": false
+    },
+    {
+      "id": "domain-boundary-fast-check-exception",
+      "decision": "Amended src/domain/domain-boundary.structural.test.ts's allowedExceptions() to add 'fast-check' to the existing *.test.ts vitest allowlist. Necessary because this story's own instructions mandate src/domain/task-projector.property.test.ts (a fast-check property test), and domain-boundary.structural.test.ts's import scanner (which covers every .ts file under src/domain/, test files included) would otherwise flag that mandated file's own `import * as fc from \"fast-check\"` as an external-package violation. Not in stories.json's literal scope.includes list, but the same class of authorized, mandated, documented deviation as S2's engine-boundary.structural.test.ts amendment (see specs/epic-event-sourced-receive-engine/S2-domain-events-contract/architecture.json, judgment call 'engine-boundary-structural-test-edit-outside-stories-json-scope-includes').",
+      "escalation_needed": false
+    },
+    {
+      "id": "bound-4-scanner-canonical-files-includes-parity-test",
+      "decision": "bound-4.structural.test.ts's repo-wide duplicate-comparator scan (AC-BOUND-4) exempts exactly two files via a CANONICAL_FILES constant: src/domain/task-crdt.ts (the one real implementation) AND src/domain/task-crdt.test.ts (because its legacyInlineComparator helper deliberately reproduces the exact legacy three-field expression, as a parity oracle proving taskWinsOver agrees with the original task-reducer.ts inline logic on an adversarial matrix -- see task-crdt.test.ts's 'Legacy reducer parity' block). This is a closed, exact-path allowlist (not a directory/pattern match), so it cannot be satisfied by any other file, test or production, under any name. legacyInlineComparator is not imported or called by any production code path -- it exists solely inside the test file to prove equivalence, so including it in CANONICAL_FILES does not create a second live tie-break implementation; it documents the ONE canonical implementation's own proof-of-correctness fixture. Verified post-impl (VQ-S3-012): re-ran the full bound-4 scan against the actual tree and confirmed violations = [] with both allowlists (CANONICAL_FILES, ALLOWLISTED_LEGACY_FILES) applied, and confirmed neither task-projector.ts nor device-sync.ts match the fingerprint (both delegate cleanly to taskWinsOver).",
+      "escalation_needed": false
+    }
+  ]
+}

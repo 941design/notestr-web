@@ -1,0 +1,50 @@
+{
+  "story_id": "S10",
+  "authored_by": "story-planner",
+  "authored_at": "2026-07-12T13:15:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S10-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the finalized OutboxEntry contract (fields beyond createdAt/rumorId: send-attempt bookkeeping, reconciliation status, own-echo-observed flag) get real state transitions driven by actual send/receive events, rather than a status field set once at creation and never updated by the reconciliation logic, which would make AC-PUB-1's 'reconcile to the same durable projected state' claim untestable/vacuous?"
+    },
+    {
+      "question_id": "VQ-S10-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Is the optimistic local publish intent, outbox durability, send-attempt/failure observability, and own-echo reconciliation logic moved entirely behind marmot-adapter.ts's outbox bridge (extending the Maps moved from device-sync.ts:86-290), with task-store.tsx's dispatch path reduced to delegation only and no mixed optimistic-apply/persist/send logic remaining in task-store.tsx?"
+    },
+    {
+      "question_id": "VQ-S10-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `marmot-adapter` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list (src/engine/*, src/domain/*, src/persistence/*, React/Next.js, marmot-ts)? If not, which cross-module dependencies exist and do they flow through declared seam contracts, including the newly finalized OutboxEntry contract, in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S10-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does publish-outbox.test.ts publish a task mutation and restart the engine under both orderings -- (a) own-echo observed before restart, (b) own-echo observed after restart -- and assert both converge to the same final projected task state AND the same outbox reconciliation status, using real restart/reload logic rather than a test double that skips the restart boundary entirely?"
+    },
+    {
+      "question_id": "VQ-S10-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Is createdAt set exactly once before first send and never mutated on retry, with rumorId derived from and stable alongside it (Rule 8 / Boundary Rule 7), verified by a test that retries a send and asserts createdAt/rumorId are byte-identical across retries?"
+    },
+    {
+      "question_id": "VQ-S10-006",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does the outbox reconciliation logic correctly distinguish a genuine own-echo (the publisher's own relayed event returning) from a same-content event authored by a different device/pubkey, preventing a same-payload collision from being misclassified as reconciled when it originated elsewhere?"
+    },
+    {
+      "question_id": "VQ-S10-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-PUB-1",
+      "question": "does the implementation satisfy AC-PUB-1's observable -- once OutboxEntry lands, does a test publish a task mutation and restart the engine (a) after own-echo was observed and (b) before own-echo was observed, and assert both branches converge to the same final projected state and the same outbox reconciliation status, with createdAt/rumorId unchanged across retries?"
+    }
+  ]
+}

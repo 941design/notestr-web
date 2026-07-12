@@ -1,0 +1,634 @@
+{
+  "epic_name": "event-sourced-receive-engine",
+  "created_at": "2026-07-12T15:30:00Z",
+  "updated_at": "2026-07-12T20:57:28.666Z",
+  "total_stories": 13,
+  "dependency_notes": "Ordering follows the lead's explicit staging: pure core (S1-S3) -> raw-event-log persistence (S4) -> engine FSM (S5-S6) -> adapter (S7) -> React integration (S8) -> UI read-path cutover (S9) -> publish/outbox (S10, Phase 6) -> recovery persistence (S11, Phase 7) -> legacy removal (S12, Phase 8) -> hardening (S13, Phase 9). This mirrors spec.md's Phase 1-9 migration but reorders Phase-3/4 UI cutover ahead of Phase-6 outbox and Phase-7 recovery, per the lead's instruction to sequence by module dependency rather than raw phase number; Phase 3's shadow/parallel-run mechanism was rejected by ADR-002 and downgraded to listener-observation-only, so it produces no dedicated story or AC of its own -- it is satisfied as a side effect of S3 (task-projector) + S4 (raw-event-log-store) landing before S9's feature-flagged cutover, which is the observation/comparison point. EXPLICIT SHARED MODULE OWNERSHIP (Validation Checks exception): receive-engine is owned by S5 (core FSM, Phase 5), S6 (ingest hardening, Phase 5 continuation), and S11 (recovery sequencing, Phase 7) -- the epic's own phase structure separates these concerns onto the same file at different times, each independently testable via its own AC subset and its own mock boundary. marmot-adapter is owned by S7 (Phase 5, IngestSource/IngestSignal) and S10 (Phase 6, outbox bridge) for the same reason. task-store is owned by S9 (Phase 4 cutover, delegation-only) and S12 (Phase 8 removal, deletion-only) -- both are Boundary-Rule-5-compliant (no new decision logic). ingest-policy.ts (S5), checkpoint-store.ts and deferred-store.ts (S11) are folded into their sole consumer's story rather than given standalone stories: none of the 35 ACs tests them in isolation (they are thin CRUD/wrapper modules with no independent behavioral contract), and Story Design Principle 3 (vertical slices) disfavors a horizontal story with no observable result. `specs/epic-event-sourced-receive-engine/**` is implicitly in scope for every story (state bookkeeping) and is not repeated in each story's scope.includes.",
+  "mock_resolution_plan": "MOCK-05-001 (mock IngestSource/IngestSignal producer) is introduced in S5 to unit-test the FSM without live marmot-ts wiring; resolved when S7 lands the real marmot-adapter.ts implementation of the same IngestSource contract. MOCK-05-002 (mock checkpoint/deferred persistence methods) is introduced in S5, also consumed by S6; resolved when S11 lands real checkpoint-store.ts/deferred-store.ts and wires R1-R4 recovery. Both mocks are internal to receive-engine's unit-test suite only -- no production code path depends on them, and neither blocks any story's independent verifiability since each mocked contract is frozen in S1 (engine-types.ts) before any consumer is planned.",
+  "seams": [
+    {
+      "data": "AcceptedDomainEvent",
+      "contract": {
+        "type_name": "AcceptedDomainEvent",
+        "fields": [
+          {
+            "name": "id",
+            "type": "string"
+          },
+          {
+            "name": "factId",
+            "type": "string | null"
+          },
+          {
+            "name": "sourceKind",
+            "type": "\"mls-rumor\" | \"bootstrap-kind-30078\""
+          },
+          {
+            "name": "groupId",
+            "type": "string"
+          },
+          {
+            "name": "acceptedAt",
+            "type": "number"
+          },
+          {
+            "name": "epoch",
+            "type": "string"
+          },
+          {
+            "name": "payload",
+            "type": "TaskEvent"
+          }
+        ],
+        "invariants": [
+          "id is the primary dedupe key; appendAcceptedEvent is idempotent on id",
+          "MLS path: id = rumor.id from the applicationMessage callback",
+          "bootstrap path: id = `bootstrap:${groupId}:${task.id}`, deterministic across re-runs",
+          "replay sort order over a mixed-sourceKind log is phase order (bootstrap before MLS), never acceptedAt clock order"
+        ]
+      },
+      "source": {
+        "story": "S2",
+        "artifact": "src/domain/domain-events.ts"
+      },
+      "intermediaries": [
+        {
+          "story": "S3",
+          "artifact": "src/domain/task-projector.ts"
+        },
+        {
+          "story": "S4",
+          "artifact": "src/persistence/raw-event-log-store.ts"
+        }
+      ],
+      "destination": {
+        "story": "S5",
+        "artifact": "src/engine/receive-engine.ts"
+      }
+    },
+    {
+      "data": "IngestSignal",
+      "contract": {
+        "type_name": "IngestSignal",
+        "fields": [
+          {
+            "name": "type",
+            "type": "\"message\" | \"deferred\" | \"skipped\" | \"malformed\" | \"epoch_advanced\""
+          },
+          {
+            "name": "fact",
+            "type": "RawProtocolFact",
+            "optional": true
+          },
+          {
+            "name": "rumorId",
+            "type": "string",
+            "optional": true
+          },
+          {
+            "name": "payload",
+            "type": "TaskEvent",
+            "optional": true
+          },
+          {
+            "name": "epoch",
+            "type": "string",
+            "optional": true
+          },
+          {
+            "name": "reason",
+            "type": "\"unreadable\" | \"epoch_mismatch\"",
+            "optional": true
+          },
+          {
+            "name": "error",
+            "type": "string",
+            "optional": true
+          },
+          {
+            "name": "newEpoch",
+            "type": "string",
+            "optional": true
+          },
+          {
+            "name": "prevEpoch",
+            "type": "string",
+            "optional": true
+          }
+        ],
+        "invariants": [
+          "carries no marmot-ts types; payload is the app's own TaskEvent wire type",
+          "catchUp() must be drained to completion before openLive() is invoked for the same group",
+          "epoch_advanced maps to group_epoch_advanced + deferred-retry flush; a bare ratchet advance produces no signal",
+          "malformed is terminal: engine emits domain_event_rejected{reason:parse_error}, never parked, never retried"
+        ]
+      },
+      "source": {
+        "story": "S1",
+        "artifact": "src/engine/engine-types.ts"
+      },
+      "intermediaries": [
+        {
+          "story": "S5",
+          "artifact": "src/engine/receive-engine.ts (consumes via MOCK-05-001 during FSM development)"
+        }
+      ],
+      "destination": {
+        "story": "S7",
+        "artifact": "src/integration/marmot-adapter.ts"
+      }
+    },
+    {
+      "data": "PersistenceAdapter",
+      "contract": {
+        "type_name": "PersistenceAdapter",
+        "fields": [
+          {
+            "name": "appendFact",
+            "type": "(fact: RawProtocolFact) => Promise<void>"
+          },
+          {
+            "name": "loadFacts",
+            "type": "(groupId: string) => Promise<RawProtocolFact[]>"
+          },
+          {
+            "name": "appendAcceptedEvent",
+            "type": "(event: AcceptedDomainEvent) => Promise<void>"
+          },
+          {
+            "name": "loadAcceptedEvents",
+            "type": "(groupId: string) => Promise<AcceptedDomainEvent[]>"
+          },
+          {
+            "name": "saveCheckpoint",
+            "type": "(checkpoint: EngineCheckpoint) => Promise<void>"
+          },
+          {
+            "name": "loadCheckpoint",
+            "type": "(groupId: string) => Promise<EngineCheckpoint | null>"
+          },
+          {
+            "name": "saveDeferredIds",
+            "type": "(groupId: string, ids: string[]) => Promise<void>"
+          },
+          {
+            "name": "loadDeferredIds",
+            "type": "(groupId: string) => Promise<string[]>"
+          }
+        ],
+        "invariants": [
+          "appendFact is idempotent on fact.id",
+          "appendAcceptedEvent is idempotent on event.id",
+          "all IDB keys used by implementations are defined in src/engine/engine-types.ts (Boundary Rule 8)"
+        ]
+      },
+      "source": {
+        "story": "S1",
+        "artifact": "src/engine/engine-types.ts"
+      },
+      "intermediaries": [
+        {
+          "story": "S4",
+          "artifact": "src/persistence/raw-event-log-store.ts (fact + accepted-event methods)"
+        },
+        {
+          "story": "S5",
+          "artifact": "src/engine/receive-engine.ts (checkpoint/deferred methods mocked via MOCK-05-002 pending S11)"
+        }
+      ],
+      "destination": {
+        "story": "S11",
+        "artifact": "src/persistence/checkpoint-store.ts + src/persistence/deferred-store.ts"
+      }
+    },
+    {
+      "data": "EngineOutputEvent",
+      "contract": {
+        "type_name": "EngineOutputEvent",
+        "fields": [
+          {
+            "name": "type",
+            "type": "discriminated union: envelope_received | envelope_deferred | domain_event_accepted | domain_event_rejected | projection_invalidated | group_epoch_advanced | group_ratchet_advanced | engine_state_changed | deferred_retry_started | recovered"
+          }
+        ],
+        "invariants": [
+          "group_epoch_advanced triggers deferred-retry flush",
+          "group_ratchet_advanced MUST NOT trigger deferred-retry",
+          "projection_invalidated MUST NOT be emitted on ratchet-advance stateChanged",
+          "on domain_event_accepted the integration layer MUST call applyEvent incrementally, never buildProjection"
+        ]
+      },
+      "source": {
+        "story": "S1",
+        "artifact": "src/engine/engine-types.ts"
+      },
+      "intermediaries": [
+        {
+          "story": "S5",
+          "artifact": "src/engine/receive-engine.ts"
+        }
+      ],
+      "destination": {
+        "story": "S8",
+        "artifact": "src/integration/react-engine-hooks.ts"
+      }
+    }
+  ],
+  "story_order": [
+    "S1",
+    "S2",
+    "S3",
+    "S4",
+    "S5",
+    "S6",
+    "S7",
+    "S8",
+    "S9",
+    "S10",
+    "S11",
+    "S12",
+    "S13"
+  ],
+  "stories": [
+    {
+      "id": "S1",
+      "name": "engine-types-foundation",
+      "title": "Engine Type Definitions and IDB Key Authority",
+      "description": "Author src/engine/engine-types.ts as the sole IDB-key and cross-module type authority for the epic: RawProtocolFact, AcceptedDomainEvent forward-declared, EngineCheckpoint, EngineOutputEvent, IngestSource/IngestSignal, and PersistenceAdapter interfaces. Establishes src/engine/ as a directory and writes the structural boundary test that forbids react/next/next-navigation/src-integration/marmot-ts imports anywhere under src/engine/.",
+      "acceptance_criteria": [
+        "AC-BOUND-1",
+        "AC-BOUND-3"
+      ],
+      "scope": {
+        "includes": [
+          "src/engine/engine-types.ts",
+          "src/engine/engine-boundary.structural.test.ts"
+        ],
+        "excludes": [
+          "no runtime logic beyond type definitions and IDB key string constants"
+        ]
+      },
+      "complexity": "low",
+      "status": "done",
+      "owning_module": "engine-types",
+      "creates_seam": true,
+      "consumes_seams": [],
+      "notes": "First file under src/engine/; the structural grep test written here scans the whole directory and continues to protect every later engine story (S5, S6, S11, S13) as a regression net, per Rule 9 (IDB key schema authority) and Boundary Rule 1."
+    },
+    {
+      "id": "S2",
+      "name": "domain-events-contract",
+      "title": "Accepted Domain Event Type and Idempotency Keys",
+      "description": "Author src/domain/domain-events.ts: the AcceptedDomainEvent<T> type with sourceKind discriminator, and the dual idempotency-key derivation (MLS path id=rumor.id; bootstrap path id=`bootstrap:${groupId}:${task.id}`). Establishes src/domain/ and writes the structural boundary test forbidding imports of src/engine/, src/persistence/, src/integration/, or DOM globals from src/domain/.",
+      "acceptance_criteria": [
+        "AC-BOUND-2"
+      ],
+      "scope": {
+        "includes": [
+          "src/domain/domain-events.ts",
+          "src/domain/domain-boundary.structural.test.ts",
+          "src/domain/domain-events.test.ts",
+          "src/domain/task-events.ts",
+          "src/store/task-events.ts",
+          "src/engine/engine-types.ts"
+        ],
+        "excludes": [
+          "no projection or reducer logic -- type and key-derivation only"
+        ]
+      },
+      "complexity": "low",
+      "status": "done",
+      "owning_module": "domain-events",
+      "creates_seam": true,
+      "consumes_seams": [],
+      "notes": "First file under src/domain/; the boundary test scans the whole directory and protects S3 (task-projector, task-crdt) as those files land. LEAD DECISION (S1 review, 2026-07-12): TaskEvent relocates to src/domain/task-events.ts in this story; src/store/task-events.ts becomes a pure re-export shim (all legacy imports keep working); engine-types.ts flips its type-only import from ../store/task-events to ../domain/task-events. This closes the undeclared engine->store edge (S1 review finding 2). Also: MUST import+re-export AcceptedDomainEvent from engine-types (or take ownership with engine-types aliasing) — never redefine independently. DECIDER GATE (S1 acceptance, 2026-07-12): S1 Q2 waiver is contingent on this story — S2 MUST NOT close while the engine-types -> src/store type edge is live; re-verify \"engine-types rewritable within allow-list\" at S2 completion."
+    },
+    {
+      "id": "S3",
+      "name": "task-projector-and-crdt",
+      "title": "Deterministic Task Projector and Shared CRDT Tie-Break",
+      "description": "Author src/domain/task-crdt.ts (extract the three-level taskWinsOver tie-break from task-reducer.ts) and src/domain/task-projector.ts (buildProjection full-rebuild + applyEvent incremental fold over AcceptedDomainEvent, both delegating to taskWinsOver). Delegate device-sync.ts's duplicate bootstrap-merge comparator (device-sync.ts:1433-1452) to taskWinsOver -- deletion of the duplicate body plus a single call-site substitution, no new branches, per Boundary Rule 5.",
+      "acceptance_criteria": [
+        "AC-INV-1",
+        "AC-INV-2",
+        "AC-BOUND-4"
+      ],
+      "scope": {
+        "includes": [
+          "src/domain/task-projector.ts",
+          "src/domain/task-projector.property.test.ts",
+          "src/domain/task-crdt.ts",
+          "src/domain/task-crdt.test.ts",
+          "src/domain/bound-4.structural.test.ts",
+          "src/marmot/device-sync.ts"
+        ],
+        "excludes": [
+          "device-sync.ts change is limited to replacing the bootstrap comparator body with a call to taskWinsOver -- no new if/switch/ternary branches or new correctness-bearing exported functions, per Boundary Rule 5 / AC-MIG-2"
+        ]
+      },
+      "complexity": "medium",
+      "status": "done",
+      "owning_module": "task-projector",
+      "creates_seam": false,
+      "consumes_seams": [
+        "AcceptedDomainEvent"
+      ],
+      "notes": "AC-INV-2 is a two-hop AC: this story proves the pure projector-side half (replaying a log with a duplicated AcceptedDomainEvent.id yields the same projection as the deduplicated log); S4 proves the persistence-side half (appendFact/appendAcceptedEvent append idempotency). (amended 2026-07-12, S3 Stage-2 cold review: the projector-half claim above should be read as \"unique-id logs are a persistence-layer precondition (S4 appendAcceptedEvent idempotency); buildProjection/applyEvent do not dedup and re-applying an already-applied event is a no-op\" -- not general projector-side duplicate-id tolerance, per acceptance-criteria.md AC-INV-2's amended text.)"
+    },
+    {
+      "id": "S4",
+      "name": "raw-event-log-store",
+      "title": "Idempotent Raw-Fact and Accepted-Event Log Store",
+      "description": "Author src/persistence/raw-event-log-store.ts implementing the fact/accepted-event half of PersistenceAdapter (appendFact, loadFacts, appendAcceptedEvent, loadAcceptedEvents) as idempotent, lookup-before-insert IDB stores using createKVStore, replacing persistence.ts:appendEvent's read-modify-write with no idempotency key. From this point on, no file other than src/store/persistence.ts's pre-existing implementation may write to the legacy notestr:events:${groupId} key.",
+      "acceptance_criteria": [
+        "AC-INV-2",
+        "AC-MIG-1"
+      ],
+      "scope": {
+        "includes": [
+          "src/persistence/raw-event-log-store.ts",
+          "src/persistence/raw-event-log-store.test.ts",
+          "src/persistence/legacy-key-guard.structural.test.ts"
+        ],
+        "excludes": [
+          "no writes to notestr:events:${groupId} outside src/store/persistence.ts's pre-existing implementation"
+        ]
+      },
+      "complexity": "medium",
+      "status": "done",
+      "owning_module": "raw-event-log-store",
+      "creates_seam": false,
+      "consumes_seams": [
+        "AcceptedDomainEvent",
+        "PersistenceAdapter"
+      ],
+      "notes": "AC-MIG-1's grep test is written here (the trigger point per its own text: 'from Phase 2, once raw-event-log-store.ts exists, onward') and re-runs as a CI gate at every later phase-boundary commit as a regression net; ownership stays with S4. CONTRACT AMENDED 2026-07-12: appendFact(RawProtocolFactInput) -> AppendFactResult — the store is the sole seq authority; duplicates return the existing fact/seq with duplicate:true. acceptDeferredFact is NOT this story (S11 owns it); no cross-store co-location required (revised R-INV-3 uses accepted-first ordering, not a transaction). ORDERING CONTRACT (S3 review sev-5, 2026-07-12): loadFacts returns seq-ascending (= append) order; loadAcceptedEvents returns APPEND order (assign a monotonic position on append; never content-hash-id order — idb-keyval keys() sorts by key and would silently break projection determinism). S4 tests MUST assert order preservation across a real store->load round-trip incl. a delete-before-update interleaving. AC-INV-2 SPLIT GATE (S3 closure): this story MUST prove appendAcceptedEvent idempotency on event.id (lookup-before-insert) — the projector formally depends on it (unique-id-log precondition); S4 cannot close without that proof."
+    },
+    {
+      "id": "S5",
+      "name": "receive-engine-core-fsm",
+      "title": "Receive Engine Core State Machine and Cutover Protocol",
+      "description": "Author src/engine/receive-engine.ts implementing the full FSM from fsm.md: lifecycle states uninitialized/joining/recovering/catching_up/buffering_live/live/retrying_deferred/stopped, orthogonal health nominal/degraded, transitions L1-L11 and H1-H2, the gap-free catch-up->buffering_live->live cutover protocol, the T_join=8000ms joining timeout with background-continue and late-merge, and the L8/L9 deferred-retry flow on epoch_advanced. Also authors src/engine/ingest-policy.ts (dedupe + retry-budget wrapper around the existing PendingRetryQueue from ingest-queue.ts), consumed exclusively by receive-engine.ts. Tested via a mock IngestSource (MOCK-05-001) and a mock checkpoint/deferred PersistenceAdapter (MOCK-05-002); fact/accepted-event persistence uses the real S4 raw-event-log-store.",
+      "acceptance_criteria": [
+        "AC-FSM-1",
+        "AC-FSM-2",
+        "AC-FSM-3",
+        "AC-FSM-4",
+        "AC-FSM-5",
+        "AC-FSM-6",
+        "AC-FSM-7",
+        "AC-FSM-8",
+        "AC-INV-5"
+      ],
+      "scope": {
+        "includes": [
+          "src/engine/receive-engine.ts",
+          "src/engine/receive-engine.fsm.test.ts",
+          "src/engine/receive-engine.cutover.property.test.ts",
+          "src/engine/ingest-policy.ts",
+          "src/engine/ingest-policy.test.ts"
+        ]
+      },
+      "complexity": "high",
+      "status": "done",
+      "owning_module": "receive-engine",
+      "creates_seam": false,
+      "consumes_seams": [
+        "AcceptedDomainEvent",
+        "IngestSignal",
+        "PersistenceAdapter"
+      ],
+      "introduces_mocks": [
+        {
+          "mock_id": "MOCK-05-001",
+          "description": "In-memory mock IngestSource/IngestSignal producer standing in for the real marmot-adapter, used to unit-test receive-engine FSM transitions and the cutover protocol without live marmot-ts wiring.",
+          "interface_mocked": "IngestSource (src/engine/engine-types.ts)",
+          "resolution_story": "S7"
+        },
+        {
+          "mock_id": "MOCK-05-002",
+          "description": "In-memory mock of PersistenceAdapter's checkpoint/deferred methods (saveCheckpoint/loadCheckpoint/saveDeferredIds/loadDeferredIds) standing in for checkpoint-store.ts/deferred-store.ts, used to unit-test FSM checkpoint-call-count (AC-FSM-4) and reset behavior (AC-FSM-5) before real recovery persistence lands. Fact/accepted-event methods are already real (S4).",
+          "interface_mocked": "PersistenceAdapter (checkpoint + deferred portion)",
+          "resolution_story": "S11"
+        }
+      ],
+      "notes": "This is 'the receive-engine story' referenced by the Phase-5 entry gate: FSM unit tests are mandatory here per architecture.md Implementation Constraint 6, and this file will be revisited by S6 (ingest hardening) and S11 (recovery sequencing) at later phases -- see top-level dependency_notes for the shared-ownership justification."
+    },
+    {
+      "id": "S6",
+      "name": "receive-engine-ingest-hardening",
+      "title": "Receive Engine Persistence-Failure and Malformed-Signal Handling",
+      "description": "Extend receive-engine.ts (built in S5) with the two failure-mode defaults added by the 2026-07-12 spec validation: a failing appendFact/appendAcceptedEvent/saveCheckpoint call sets health degraded, retains the fact in memory, and retries with bounded backoff without silent discard (Implementation Constraint 11); a malformed IngestSignal produces a terminal domain_event_rejected{reason:parse_error}, never enqueued to the deferred queue, never retried on a later epoch_advanced (Implementation Constraint 13).",
+      "acceptance_criteria": [
+        "AC-PERS-1",
+        "AC-PERS-3"
+      ],
+      "scope": {
+        "includes": [
+          "src/engine/receive-engine.ts",
+          "src/engine/receive-engine.persistence-failure.test.ts",
+          "src/engine/receive-engine.malformed-signal.test.ts"
+        ]
+      },
+      "complexity": "medium",
+      "status": "done",
+      "owning_module": "receive-engine",
+      "creates_seam": false,
+      "consumes_seams": [
+        "PersistenceAdapter"
+      ],
+      "mock_dependencies": [
+        "MOCK-05-002"
+      ],
+      "notes": "Depends on S5's FSM skeleton existing; still uses MOCK-05-002 for the checkpoint half of PersistenceAdapter since S11 has not landed yet. Kept as a separate story from S5 to keep each story's diff independently reviewable given the size of receive-engine.ts."
+    },
+    {
+      "id": "S7",
+      "name": "marmot-adapter",
+      "title": "Marmot-ts Adapter: IngestSource/IngestSignal Implementation",
+      "description": "Author src/integration/marmot-adapter.ts as the sole file (besides receive-engine.ts's type-only consumption) permitted to import marmot-ts types. Implements catchUp()/openLive()/close() against real group.ingest(), client.network.subscription(), deserializeApplicationData, and epoch-state reads, translating every marmot-ts outcome into the marmot-free IngestSignal contract frozen in S1. Resolves MOCK-05-001.",
+      "acceptance_criteria": [
+        "AC-FSM-2",
+        "AC-ADPT-1"
+      ],
+      "scope": {
+        "includes": [
+          "src/integration/marmot-adapter.ts",
+          "src/integration/marmot-adapter.test.ts"
+        ]
+      },
+      "complexity": "high",
+      "status": "pending",
+      "owning_module": "marmot-adapter",
+      "creates_seam": false,
+      "consumes_seams": [
+        "IngestSignal"
+      ],
+      "notes": "JUDGMENT CALL / AC GAP: no AC in acceptance-criteria.md directly and solely targets marmot-adapter.ts's real marmot-ts-to-IngestSignal translation correctness. AC-FSM-2's primary observable is an engine-side mock-IngestSource unit test (owned by S5); it is attached here as a secondary conformance check -- an integration test against a stubbed marmot client asserting the real adapter's catchUp()/openLive() call order matches the same contract. Flagged to the lead as a Mode-1 coverage gap worth a future AC (e.g. an AC-DEP tag for adapter-level IngestSignal fidelity). CONTRACT AMENDED 2026-07-12: adapter produces RawProtocolFactInput (seq-less) facts in ALL IngestSignal variants incl. skipped; must implement ingestPersisted(facts) as 4th IngestSource method — include it in the AC-ADPT-1 fidelity matrix. S7 IMPLEMENTS fetchBootstrap() (5th IngestSource method, amended 2026-07-12): NIP-44 kind-30078 fetch+decode yielding bootstrap-kind-30078 message signals sharing the snapshot fact; MUST be safe to overlap catchUp/openLive (never touches the ratchet); MUST tolerate continuing past T_join (no abandonment). catchUp() contract: exactly once per engine start, never concurrent with itself."
+    },
+    {
+      "id": "S8",
+      "name": "react-engine-hooks",
+      "title": "React Engine Hooks: Incremental Projection and Health Exposure",
+      "description": "Author src/integration/react-engine-hooks.ts: subscribes to EngineOutputEvent, folds domain_event_accepted incrementally via applyEvent (never buildProjection except on restart/projection_invalidated), and exposes engine lifecycle/health to the UI. Manages exactly one useEffect per group whose cleanup calls engine.stop() (which calls adapter.close() as its final action). marmot-adapter.ts (S7) registers zero independent React lifecycle hooks of its own.",
+      "acceptance_criteria": [
+        "AC-BOUND-5",
+        "AC-INV-4"
+      ],
+      "scope": {
+        "includes": [
+          "src/integration/react-engine-hooks.ts",
+          "src/integration/react-engine-hooks.test.tsx",
+          "src/integration/adapter-lifecycle.structural.test.ts"
+        ]
+      },
+      "complexity": "medium",
+      "status": "pending",
+      "owning_module": "react-engine-hooks",
+      "creates_seam": false,
+      "consumes_seams": [
+        "EngineOutputEvent"
+      ],
+      "notes": "AC-INV-4 (incremental-fold vs. full-rebuild-from-persistence equivalence) is assigned here rather than to task-projector because the observable explicitly drives 'the engine through a sequence of domain_event_accepted outputs (folding an in-memory projection incrementally)', which is react-engine-hooks' Implementation-Constraint-7 behavior, not a pure task-projector unit test."
+    },
+    {
+      "id": "S9",
+      "name": "task-store-projection-cutover",
+      "title": "Route Task-Store Reads Through Engine Projection (Phase 3/4 Cutover)",
+      "description": "Introduce a strangler feature flag gating task-store.tsx's read path between the legacy applicationMessage listener and react-engine-hooks' projected state (Phase 2/3 strangler boundary). Behind the flag, task-store.tsx delegates reads to the new engine hook rather than adding new decision logic -- satisfying Phase 4's 'route UI reads through projected state.' The legacy second listener (task-store.tsx:181-255) is NOT removed yet (that is S12/Phase 8); both paths run side by side for listener-observation comparison per the Phase-3 amendment.",
+      "acceptance_criteria": [
+        "AC-MIG-2"
+      ],
+      "scope": {
+        "includes": [
+          "src/store/task-store.tsx",
+          "src/store/task-store.cutover.test.tsx"
+        ],
+        "excludes": [
+          "delegation/deletion only in task-store.tsx -- no new if/switch/ternary branches or new correctness-bearing exported functions, per Boundary Rule 5"
+        ]
+      },
+      "complexity": "medium",
+      "status": "pending",
+      "owning_module": "task-store",
+      "creates_seam": false,
+      "consumes_seams": [],
+      "notes": "JUDGMENT CALL: Phase 3 (listener-observation, diff-checking) is not given its own story or AC -- ADR-002 downgraded it to non-load-bearing ('Phase 3 passing does NOT indicate state-machine correctness'), and no AC in acceptance-criteria.md names a dedicated diff-checking deliverable. It is treated as satisfied by S3+S4 landing before this story's feature-flagged side-by-side read path, which is itself the observation point. AC-MIG-2's diff-based branch-count check is first exercised here and re-runs at every later phase-boundary commit (S12, S13) as a regression net."
+    },
+    {
+      "id": "S10",
+      "name": "publish-outbox-reconciliation",
+      "title": "Publish/Outbox Ownership and Own-Echo Reconciliation (Phase 6)",
+      "description": "First task: finalize the OutboxEntry contract's fields beyond createdAt/rumorId (send-attempt bookkeeping, reconciliation status, own-echo observed flag) -- TBD per architecture.md's OutboxEntry seam note. Then move optimistic local publish intent, outbox durability across restart, send-attempt/failure observability, and own-echo reconciliation behind marmot-adapter.ts's outbox bridge (extending the Maps moved from device-sync.ts:86-290), replacing task-store.tsx:dispatch's mixed optimistic-apply/persist/send path.",
+      "acceptance_criteria": [
+        "AC-PUB-1"
+      ],
+      "scope": {
+        "includes": [
+          "src/integration/marmot-adapter.ts",
+          "src/integration/publish-outbox.ts",
+          "src/integration/publish-outbox.test.ts",
+          "src/engine/engine-types.ts"
+        ],
+        "excludes": [
+          "engine-types.ts change is limited to finalizing the OutboxEntry field contract -- no new IDB key literals outside the existing Rule-9 authority"
+        ]
+      },
+      "complexity": "high",
+      "status": "pending",
+      "owning_module": "marmot-adapter",
+      "creates_seam": false,
+      "consumes_seams": [],
+      "notes": "AC-PUB-1 is explicitly phase-6-gated in acceptance-criteria.md ('this AC holds the invariant's place and MUST be re-validated against the finalized contract before Phase 6 stories close') -- this story is that re-validation point. Shares owning_module with S7 (marmot-adapter); justified in top-level dependency_notes as a Phase-5-vs-Phase-6 split of the same file."
+    },
+    {
+      "id": "S11",
+      "name": "recovery-sequencing",
+      "title": "Recovery Persistence: Checkpoint/Deferred Stores and R1-R4 Sequencing",
+      "description": "Author src/persistence/checkpoint-store.ts and src/persistence/deferred-store.ts (real IDB implementations, resolving MOCK-05-002), and wire the Recovery Sequencing R1-R4 steps into receive-engine.ts: R1 rebuild projection via buildProjection(replayOrder(acceptedLog)); R2 repopulate PendingRetryQueue from deferredIds without resubmitting to ingest; R3 resubmit only rawLog facts with seq > checkpoint.lastIngestedSeq; R4 transition recovering->catching_up and resume live drain. Also handles the malformed/unreadable-checkpoint-at-restart failure mode (treat as absent, never escalate to reset()).",
+      "acceptance_criteria": [
+        "AC-REC-1",
+        "AC-REC-2",
+        "AC-REC-3",
+        "AC-REC-4",
+        "AC-REC-5",
+        "AC-REC-6",
+        "AC-REC-7",
+        "AC-REC-8",
+        "AC-REC-9",
+        "AC-PERS-2",
+        "AC-INV-3"
+      ],
+      "scope": {
+        "includes": [
+          "src/persistence/checkpoint-store.ts",
+          "src/persistence/checkpoint-store.test.ts",
+          "src/persistence/deferred-store.ts",
+          "src/persistence/deferred-store.test.ts",
+          "src/engine/receive-engine.ts",
+          "src/engine/receive-engine.recovery.test.ts",
+          "src/engine/receive-engine.recovery.property.test.ts"
+        ]
+      },
+      "complexity": "high",
+      "status": "pending",
+      "owning_module": "receive-engine",
+      "creates_seam": false,
+      "consumes_seams": [
+        "PersistenceAdapter"
+      ],
+      "notes": "checkpoint-store.ts and deferred-store.ts are folded into this story rather than given their own earlier stories because none of the 35 ACs tests their round-trip persistence in isolation -- their entire behavioral contract is the R1-R4 recovery sequencing proven here (Phase 7, 'Persist recovery metadata explicitly'). Resolves MOCK-05-002 introduced in S5. Shares owning_module with S5/S6; justified in top-level dependency_notes. CONTRACT AMENDED 2026-07-12: S11 owns PersistenceAdapter.acceptDeferredFact (accepted-first crash-safe ordering per revised R-INV-3 — append accepted, then remove deferred) AND the new R2a prune step (deferred ∩ accepted -> prune, accepted wins) which runs before R2. Also wires IngestSource.ingestPersisted for R3 crash-gap replay and L8 deferred retry. CLEAR-ORDERING INVARIANT (S4 review, 2026-07-12): full clearGroupState spans >=2 IDB databases (non-atomic). Clear the CHECKPOINT FIRST: a crash mid-reset must degrade toward L2-joining / L1-second-arm, never leave a usable bootstrapCompleted checkpoint over already-emptied logs (stranded empty recovery). Compose S4 exported clearGroupState partial for raw/accepted stores; reuse S4 appendAcceptedEvent inside acceptDeferredFact."
+    },
+    {
+      "id": "S12",
+      "name": "legacy-listener-removal",
+      "title": "Remove Legacy applicationMessage Listeners and Persistence Path",
+      "description": "Delete device-sync.ts's persistence-side applicationMessage listener (874-892) and task-store.tsx's second applicationMessage listener (181-255), now that react-engine-hooks (S8) and the full recovery path (S11) are proven. task-store.tsx consumes projected state via react-engine-hooks exclusively. Retire src/store/persistence.ts's legacy read/write path against notestr:events:${groupId} (module map: 'DEPRECATED -- removed Phase 8').",
+      "acceptance_criteria": [
+        "AC-MIG-3"
+      ],
+      "scope": {
+        "includes": [
+          "src/marmot/device-sync.ts",
+          "src/store/task-store.tsx",
+          "src/store/persistence.ts",
+          "src/store/task-store.listener-removal.test.tsx"
+        ],
+        "excludes": [
+          "deletions only -- no new branches or exported functions in device-sync.ts or task-store.tsx, per Boundary Rule 5 / AC-MIG-2"
+        ]
+      },
+      "complexity": "medium",
+      "status": "pending",
+      "owning_module": "task-store",
+      "creates_seam": false,
+      "consumes_seams": [],
+      "notes": "Shares owning_module with S9 (Phase 4 cutover vs. Phase 8 removal); justified in top-level dependency_notes. Depends on S8, S10, and S11 all being complete so the new paths fully cover what the deleted listeners provided."
+    },
+    {
+      "id": "S13",
+      "name": "boundary-hardening-and-cutover-complete",
+      "title": "Remove Strangler Scaffolding and Finalize Boundary Hardening",
+      "description": "Remove the feature flag introduced in S9 that gated task-store.tsx's read path (both branches have converged on the new engine path; the flag and dead legacy-path code are deleted). Re-run the full boundary-rule structural sweep (AC-BOUND-1..5 grep tests) and confirm the vitest + Playwright suites are green with no test skipped, .only-scoped, or deleted solely to force a pass. Document extraction seams per the Library Character section.",
+      "acceptance_criteria": [
+        "AC-MIG-4"
+      ],
+      "scope": {
+        "includes": [
+          "src/store/task-store.tsx",
+          "src/marmot/device-sync.ts",
+          "src/engine/engine-types.ts"
+        ],
+        "excludes": [
+          "deletions of dead strangler-flag scaffolding only -- no new correctness logic anywhere in this story"
+        ]
+      },
+      "complexity": "low",
+      "status": "pending",
+      "owning_module": "receive-engine",
+      "creates_seam": false,
+      "consumes_seams": [],
+      "notes": "Final phase-boundary gate (Phase 9). AC-MIG-4 is attached only here per the lead's instruction to attach migration-safety ACs to cutover/removal stories rather than every story -- by this point every earlier phase boundary (S4, S9, S12) has already been independently gated by its own CI check, so this story's full-suite-green assertion is the epic-closing confirmation, not the first one."
+    }
+  ]
+}

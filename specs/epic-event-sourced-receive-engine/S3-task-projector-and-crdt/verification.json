@@ -1,0 +1,97 @@
+{
+  "story_id": "S3",
+  "authored_by": "story-planner",
+  "authored_at": "2026-07-12T13:15:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S3-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does task-crdt.ts's taskWinsOver implement the real three-level (updatedAt/updatedBy/updatedByDevice) tie-break comparator extracted from task-reducer.ts, with no branch that always returns a fixed winner regardless of input, and do buildProjection/applyEvent in task-projector.ts avoid reading wall-clock time or mutating shared state (either of which would make AC-INV-1's determinism claim pass only by accident)?"
+    },
+    {
+      "question_id": "VQ-S3-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Is the device-sync.ts bootstrap-merge comparator change limited to deleting the duplicate body at device-sync.ts:1433-1452 and substituting a single call to taskWinsOver, with zero new if/switch/ternary branches or new correctness-bearing exported functions added to device-sync.ts, per Boundary Rule 5?"
+    },
+    {
+      "question_id": "VQ-S3-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `task-projector` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list (nothing -- src/domain/* has zero external imports)? If not, which cross-module dependencies exist -- e.g. does task-crdt.ts's consumption by device-sync.ts's bootstrap gate flow through a declared seam contract, or is it a direct cross-boundary import that violates the domain layer's zero-import rule?"
+    },
+    {
+      "question_id": "VQ-S3-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does src/domain/task-projector.property.test.ts run a fast-check property test with >=100 runs generating arbitrary well-formed AcceptedDomainEvent[] logs in valid replay order, calling buildProjection twice on the identical log and asserting deep-equality, AND separately asserting log.reduce(applyEvent, empty) deep-equals the one-shot buildProjection result -- not just a single hard-coded fixture?"
+    },
+    {
+      "question_id": "VQ-S3-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does task-projector.ts's buildProjection implement replayOrder as bootstrap-sourced events strictly before MLS-sourced events, each internally ordered by seq/append order and never by acceptedAt, matching the replay(X) definition in acceptance-criteria.md's Terminology section?"
+    },
+    {
+      "question_id": "VQ-S3-006",
+      "phase": "pre-impl",
+      "category": "BEST_PRACTICES",
+      "question": "Does src/domain/bound-4.structural.test.ts scan the repository for any second function comparing all three of updatedAt, updatedBy, and updatedByDevice (a reintroduced duplicate comparator), with evidence the test would fail if device-sync.ts's old inline comparator body were restored?"
+    },
+    {
+      "question_id": "VQ-S3-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-INV-1",
+      "question": "does the implementation satisfy AC-INV-1's observable -- does the fast-check property test call buildProjection twice on an identical, unchanged arbitrary acceptedLog across >=100 runs and assert deep-equality, plus assert log.reduce(applyEvent, empty) deep-equals the one-shot buildProjection result, with evidence the projector reads no wall-clock time and mutates no shared state (not a mock-spy proxy that records calls without checking output equality)?"
+    },
+    {
+      "question_id": "VQ-S3-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-INV-2",
+      "question": "does the implementation satisfy AC-INV-2's projector-side observable -- does a projector test replay a log containing a duplicated AcceptedDomainEvent.id and assert the resulting projection is identical (deep-equal) to replaying the deduplicated log, proven against real buildProjection/applyEvent code rather than a stub that always returns the same canned projection?"
+    },
+    {
+      "question_id": "VQ-S3-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-BOUND-4",
+      "question": "does the implementation satisfy AC-BOUND-4's observable -- does a grep/AST-based test assert both task-projector.ts's applyEvent call site and device-sync.ts's bootstrap merge gate import taskWinsOver from src/domain/task-crdt.ts, and does the same test scan the repo for any second function independently comparing all three of updatedAt/updatedBy/updatedByDevice, with evidence the test transitions from pass to fail if the duplicated device-sync.ts:1433-1452 comparator were reintroduced?"
+    },
+    {
+      "question_id": "VQ-S3-010",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "task-reducer.ts (src/store) was NOT edited by this story -- it keeps its own inline three-level comparator, unchanged, and bound-4.structural.test.ts's repo-wide duplicate-comparator scan explicitly allowlists it (ALLOWLISTED_LEGACY_FILES) with an expiry comment pointing at S9/S12. This diverges from architecture.md Implementation Constraint 10's literal text, which names task-reducer.ts:18-32 as one of two required delegation sites. Is the allowlist-with-expiry choice (over delegating task-reducer.ts to taskWinsOver in this story) correctly justified by: (a) stories.json's S3 scope.includes enumerating six exact files, none of which is src/store/task-reducer.ts; (b) the story text's explicit 'do NOT change task-reducer.ts's behavior in this story' instruction; (c) task-reducer.ts's 147/147 per-file Stryker mutation-kill record (stryker.task-reducer.conf.json) which delegation would silently relocate/stale without an in-scope mutation re-run? Is Implementation Constraint 10 satisfied incrementally (device-sync.ts now, task-reducer.ts at its eventual S9/S12 retirement) an acceptable reading, or does the architecture.md wording require both sites in the same story?",
+      "answer": "YES -- this is architecture.json's documented judgment call 'task-reducer-allowlist-not-delegate'. All three cited reasons are independently verifiable in the repo: stories.json S3 scope.includes lists exactly [task-projector.ts, task-projector.property.test.ts, task-crdt.ts, task-crdt.test.ts, bound-4.structural.test.ts, device-sync.ts] (task-reducer.ts absent); the story prompt's own text reads 'do NOT change task-reducer.ts's behavior in this story (it keeps its own inline logic OR delegates -- see judgment call below)', explicitly offering both options and framing the choice as an implementer judgment call, not a mandate; package.json's mutation:task-reducer script + stryker.task-reducer.conf.json confirm a file-scoped mutation config exists whose 147/147 record is keyed to the current file content. Implementation Constraint 10 is read as satisfied incrementally, consistent with this epic's stated strangler-fig pattern elsewhere (architecture.md Module Map: device-sync 'Shrinking: internals migrate story-by-story'; task-store 'Shrinking'). Full delegation is deferred to S9/S12 per the allowlist's own expiry comment.",
+      "confidence": 1.0
+    },
+    {
+      "question_id": "VQ-S3-011",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "src/domain/domain-boundary.structural.test.ts (an S2-authored file, not in S3's stories.json scope.includes) was amended to add 'fast-check' to the *.test.ts import allowlist, plus two new liveness tests. Is this edit necessary and properly scoped -- i.e. does the pre-amendment scanner actually reject a fast-check import in a src/domain/ test file, is the amendment limited to the minimum needed (test-file-only exception, production files still get zero exceptions), and is it documented as a judgment call rather than a silent scope-includes deviation?",
+      "answer": "YES. Verified empirically: before the edit, allowedExceptions() only added 'vitest' for *.test.ts files (grep of the pre-edit function body, and the module's own doc comment 'any *.test.ts file may import vitest' -- no fast-check mention). Since bound-4/task-projector.property.test.ts both live under src/domain/ and this scanner's collectTsFiles(domainDir) walks every .ts file in that directory including test files, task-projector.property.test.ts's mandated `import * as fc from \"fast-check\"` would have been classified 'external-package' and failed the boundary test without the amendment. The edit adds exactly one string ('fast-check') to the existing *.test.ts branch, touches no production-file allowance, and is documented as judgment call 'domain-boundary-fast-check-exception' in architecture.json, citing the S2 precedent (S2's own analogous engine-boundary.structural.test.ts amendment) for the same class of necessary, mandated, out-of-literal-scope test-infra edit. Two new tests (fast-check allowed in *.test.ts; fast-check still rejected in a production .ts fixture) were added proving the exception is real and correctly test-file-scoped, not vacuous. Verified post-hoc by re-running src/domain/domain-boundary.structural.test.ts (53/53 passing) and the full suite (696/696).",
+      "confidence": 1.0
+    },
+    {
+      "question_id": "VQ-S3-012",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "bound-4.structural.test.ts's CANONICAL_FILES allowlist includes both src/domain/task-crdt.ts AND src/domain/task-crdt.test.ts (the latter because its legacyInlineComparator helper intentionally reproduces the exact three-field fingerprint, for parity-proof purposes). Does including a *.test.ts fixture/parity-helper in CANONICAL_FILES weaken AC-BOUND-4's guarantee -- could a real duplicate PRODUCTION comparator be smuggled into a differently-named test file and evade the scanner under this same reasoning?",
+      "answer": "NO weakening of the guarantee for production code. CANONICAL_FILES names exactly two files by exact repo-relative path (not a pattern or directory), so it cannot be satisfied by a differently-named file -- any other file (test or production) that matches the fingerprint still falls through to the violations check. task-crdt.test.ts's inclusion is narrowly justified: legacyInlineComparator is deliberately reproducing the legacy expression as a documented parity oracle (task-crdt.ts's own module doc comment states the extraction is proven exact partly via this test), not an independent second implementation feeding any runtime code path -- it is dead code outside the test file, never imported or called by production logic. The residual risk (a future test file smuggling a real duplicate comparator under an innocuous name) is a general scanner-evasion risk that applies equally to the two-file CANONICAL_FILES set and to the ALLOWLISTED_LEGACY_FILES set -- both are closed, named allowlists rather than patterns, so evasion would require an explicit, reviewable addition to one of these two constants, which is the same protection AC-BOUND-4's Observable already relies on for the legacy allowlist. Verified: grepped repo for any OTHER file matching the fingerprint outside these two allowlists via the actual bound-4 scan (violations = [], see result.json test run) -- no smuggled second implementation exists today.",
+      "confidence": 0.95
+    },
+    {
+      "question_id": "VQ-S3-013",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "ac_id": "AC-INV-2",
+      "question": "task-projector.ts's TaskProjection carries no explicit applied-event-id bookkeeping (no Set<string> of seen ids) -- AC-INV-2's projector-side idempotency instead relies entirely on taskWinsOver's strict inequalities making every TaskEvent variant naturally idempotent under re-application. Is this actually sound for every event variant, including task.created, or is there an edge case where a duplicated event could change the projection?",
+      "answer": "YES, sound for all five variants, verified by direct case analysis plus the >=100-run property test asserting it empirically. task.created: first-write-wins via `if (!next.has(id))` -- re-applying an already-created task's create event is a no-op regardless of position, since the guard only depends on map membership, not on which specific create event set it. task.updated/status_changed/assigned/deleted: each requires `existing && taskWinsOver(payload, existing)`; when a payload wins, the projection is updated to carry EXACTLY that payload's updatedAt/updatedBy/updatedByDevice as the new existing state, so a byte-identical re-delivery of the same payload compares equal on all three tie-break fields against the now-current existing -- taskWinsOver's full-tie case returns false (task-crdt.test.ts's 'full tie... loses' unit test pins this down directly) -- so the duplicate no-ops. The one precondition this relies on is that a duplicated AcceptedDomainEvent.id always carries byte-identical payload content (true by the id-derivation contract in domain-events.ts: MLS path id=rumor.id is content-addressed, bootstrap path id is deterministic per groupId+taskId with one snapshot's payload) -- this story's property test does not vary payload content for a duplicated id (it splices a literal reference-identical copy), which is the correct, spec-faithful modeling of 'the same event delivered twice', not two different events that happen to collide on id.",
+      "confidence": 1.0
+    }
+  ]
+}

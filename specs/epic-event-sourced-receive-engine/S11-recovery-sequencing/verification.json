@@ -1,0 +1,120 @@
+{
+  "story_id": "S11",
+  "authored_by": "story-planner",
+  "authored_at": "2026-07-12T13:15:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S11-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Do checkpoint-store.ts and deferred-store.ts implement real IDB-backed durable round-trip persistence (data survives a fresh store instance re-reading the same IDB namespace), and does receive-engine.ts's R1-R4 sequencing perform the actual rebuild/re-populate/re-ingest steps against real store contents rather than a recovery path that always no-ops because the mock stores were replaced but the sequencing logic itself was never wired to call them?"
+    },
+    {
+      "question_id": "VQ-S11-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Is the R1-R4 recovery sequencing implemented strictly as steps that read store membership plus the seq watermark, never comparing content-hash ids to derive order or disposition, matching the disambiguation rule in architecture.md's Recovery Sequencing section?"
+    },
+    {
+      "question_id": "VQ-S11-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `receive-engine` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list (src/domain/*, src/persistence/* via PersistenceAdapter only)? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md, and does resolving MOCK-05-002 (checkpoint/deferred methods) require any change to receive-engine.ts's FSM logic beyond swapping the injected PersistenceAdapter implementation?"
+    },
+    {
+      "question_id": "VQ-S11-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Do receive-engine.recovery.test.ts and receive-engine.recovery.property.test.ts cover each of R1, R2, R3, R4 with a dedicated scenario rather than one combined happy-path test, and does the AC-REC-5 property test generate RawProtocolFact ids as random hex strings deliberately unordered relative to seq, asserting disposition depends only on seq/store-membership and is invariant to id reshuffling?"
+    },
+    {
+      "question_id": "VQ-S11-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does the malformed/unreadable-checkpoint-at-restart handling treat the checkpoint as absent (lastIngestedSeq=0, full raw-log resubmitted) WITHOUT escalating to reset(), preserving the raw-log and accepted-log exactly as Implementation Constraint 12 requires, distinct from AC-FSM-5's reset() semantics?"
+    },
+    {
+      "question_id": "VQ-S11-006",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does R3's re-submission of crash-gap-tail facts (seq > lastIngestedSeq) use a fault-injection-tested atomic transition for R-INV-3 (removal from deferred-store + append to accepted-log as one persistence operation) such that a crash mid-transition cannot leave a fact lost from both stores or double-counted in both?"
+    },
+    {
+      "question_id": "VQ-S11-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-REC-1",
+      "question": "does the implementation satisfy AC-REC-1's observable -- does a test construct an acceptedLog where a bootstrap-sourced event has a later acceptedAt than an MLS-sourced event (simulated clock skew), run recovery, and assert the bootstrap event is folded before the MLS event, proving acceptedAt is not the sort key?"
+    },
+    {
+      "question_id": "VQ-S11-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-REC-2",
+      "question": "does the implementation satisfy AC-REC-2's observable -- does a test seed deferredIds with N ids, run recovery, and assert the mock adapter's ingest call log contains zero calls referencing those N ids during R2, while the engine's deferred-count output shows exactly N ids afterward?"
+    },
+    {
+      "question_id": "VQ-S11-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-REC-3",
+      "question": "does the implementation satisfy AC-REC-3's observable -- does a test build a rawLog with facts at seq 1-10 and a checkpoint lastIngestedSeq:6, run recovery, and assert the adapter receives exactly facts seq 7-10 for ingest and zero calls for seq 1-6?"
+    },
+    {
+      "question_id": "VQ-S11-010",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-REC-4",
+      "question": "does the implementation satisfy AC-REC-4's observable -- does a test assert the engine_state_changed sequence after start({origin:'restored'}) is recovering then catching_up, and that adapter.openLive/adapter.catchUp fire only after R1-R3's synchronous rebuild steps complete, with call-order evidence rather than just eventual-call evidence?"
+    },
+    {
+      "question_id": "VQ-S11-011",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-REC-5",
+      "question": "does the implementation satisfy AC-REC-5's observable -- does a property test generate RawProtocolFact ids as random hex strings deliberately unordered relative to their seq, and assert each fact's re-ingest/skip/defer disposition depends only on seq vs. lastIngestedSeq and store membership, with reshuffling the id strings (holding seq and store membership fixed) proven NOT to change any fact's disposition?"
+    },
+    {
+      "question_id": "VQ-S11-012",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-REC-6",
+      "question": "does the implementation satisfy AC-REC-6's observable -- does a fault-injection test accept a previously-deferred fact and throw immediately after the first of the two store operations (deferred-store removal, accepted-log append), and assert the fact is recoverable as still-deferred (never lost, never double-counted in both stores) after a subsequent recovery pass?"
+    },
+    {
+      "question_id": "VQ-S11-013",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-REC-7",
+      "question": "does the implementation satisfy AC-REC-7's observable -- does an integration test record the final projection of an uninterrupted fixture run, re-run the same fixture with a simulated crash partway through followed by start({origin:'restored'}) recovery and continued replay of the remainder, and assert the recovered-and-continued projection deep-equals the uninterrupted projection?"
+    },
+    {
+      "question_id": "VQ-S11-014",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-REC-8",
+      "question": "does the implementation satisfy AC-REC-8's observable -- does a test seed all five persisted stores for a group, drive the re-join sequence (stop -> reset -> start({origin:'welcome'})), and assert lifecycle passes through stopped then uninitialized then joining in that order, with all five stores empty immediately after reset() and before the fresh bootstrap snapshot is applied?"
+    },
+    {
+      "question_id": "VQ-S11-015",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-REC-9",
+      "question": "does the implementation satisfy AC-REC-9's observable -- does one test seed a checkpoint and call start({origin:'restored'}), asserting lifecycle==='recovering', and does another test clear all state and call start({origin:'welcome'}), asserting lifecycle==='joining' with no recovery replay (loadFacts/loadAcceptedEvents) invoked?"
+    },
+    {
+      "question_id": "VQ-S11-016",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-PERS-2",
+      "question": "does the implementation satisfy AC-PERS-2's observable -- does a test seed loadCheckpoint to return a value failing shape validation, call start({origin:'restored'}), and assert the raw-log and accepted-log seeded before the call remain intact (no reset() wipe), every raw-log fact is resubmitted to ingest as if lastIngestedSeq===0, the engine enters catching_up with health:'degraded', and health returns to nominal after the next successful saveCheckpoint?"
+    },
+    {
+      "question_id": "VQ-S11-017",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-INV-3",
+      "question": "does the implementation satisfy AC-INV-3's observable -- does an integration test split a fixture log into a pre-crash prefix and post-crash suffix within one epoch, run recovery (R1-R4) on the prefix then replay the suffix, and assert the result deep-equals an uninterrupted single-pass replay of the full log, AND does a second fixture introduce one fact made undecryptable by a simulated epoch advance and assert that fact is excluded from BOTH projections while the rest of the equality still holds, proving the carve-out is scoped to the epoch-crossing fact only?"
+    }
+  ]
+}
