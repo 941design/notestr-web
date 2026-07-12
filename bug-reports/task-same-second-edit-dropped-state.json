@@ -2,7 +2,7 @@
   "bug_name": "task-same-second-edit-dropped",
   "bug_report_file": "bug-reports/task-same-second-edit-dropped-report.md",
   "created_at": "2026-05-24T19:40:48Z",
-  "updated_at": "2026-05-24T20:26:00Z",
+  "updated_at": "2026-07-12T12:50:00Z",
   "phase": "ACCEPTED",
   "complexity": "medium",
   "verification_questions": [
@@ -14,7 +14,7 @@
     {
       "id": "VQ2",
       "category": "QUALITY",
-      "question": "Does the fix address the root cause (ordering key too coarse to sequence a single actor's rapid edits) rather than a symptom \u2014 i.e. it is NOT merely rewriting e2e spec timestamps or special-casing test code to dodge the gate?"
+      "question": "Does the fix address the root cause (ordering key too coarse to sequence a single actor's rapid edits) rather than a symptom — i.e. it is NOT merely rewriting e2e spec timestamps or special-casing test code to dodge the gate?"
     },
     {
       "id": "VQ3",
@@ -29,7 +29,7 @@
     {
       "id": "VQ5",
       "category": "ARCHITECTURE",
-      "question": "Does the fix compose cleanly with the forthcoming `updatedByDevice` (MLS clientId) third tie-break level \u2014 i.e. it targets the sequential-ordering axis (finer/monotonic timestamp) and does not occupy or alter the concurrent inter-author/inter-device tie-break in a way that would block adding the device level later?"
+      "question": "Does the fix compose cleanly with the forthcoming `updatedByDevice` (MLS clientId) third tie-break level — i.e. it targets the sequential-ordering axis (finer/monotonic timestamp) and does not occupy or alter the concurrent inter-author/inter-device tie-break in a way that would block adding the device level later?"
     },
     {
       "id": "VQ6",
@@ -137,5 +137,7 @@
       "timestamp": "2026-05-24T20:26:00Z",
       "trigger": "reviewer_accepted"
     }
-  ]
+  ],
+  "outcome": "FIXED",
+  "closure_note": "Closed 2026-07-12 during multi-device status reconciliation: fix verified present in code (three-level updatedByDevice tie-break in task-reducer.ts / ensureMonotonicTimestamp in task-store-utils.ts) with green unit + property coverage; result.json records the fix."
 }

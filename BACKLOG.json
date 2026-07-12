@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-06-29T06:12:32Z",
+  "updated_at": "2026-07-12T20:57:28Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -14,8 +14,8 @@
     },
     {
       "path": "specs/epic-event-sourced-receive-engine/",
-      "status": "PLANNED",
-      "next_action": "ESCALATE: read-only assessment (loop 2026-06-27) confirms genuine large architectural refactor — 9-phase strangler migration, high behavioral-change risk (UI sync timing, recovery, dedupe semantics). Building blocks exist (ingestLock, ingest-queue, task-reducer) but no ReceiveEngine owner. Needs human arch review (/base:arch-debate) before any autonomous execution."
+      "status": "IN_PROGRESS",
+      "next_action": "PAUSED 2026-07-12 after S6 (user directive). S1-S6 done (types, domain core+CRDT, persistence store, engine FSM, hardening; 471->837 tests, tsc clean, all stories dual-stage-reviewed + examiner-verified). Resume: /base:feature specs/epic-event-sourced-receive-engine/ (RESUME mode; reviewer rehydrates cold from ownership-ledger.json; next S7 marmot-adapter against the frozen 5-method IngestSource contract)."
     },
     {
       "path": "specs/epic-forget-this-device/",
@@ -288,6 +288,19 @@
         "detail": "Reproduction requires the parent notestr workspace (make cross-client-test + notestr-cli daemon + parent e2e/cross-client.spec.ts), which is not checked out here; parent repo owns the B3 umbrella and close-on-green acceptance. Cannot reproduce/fix from notestr-web alone. Re-dispatch once the parent cross-client harness is available locally.",
         "stamped_at": "2026-06-29"
       }
+    },
+    {
+      "slug": "sole-admin-self-forget-leaves-remaining",
+      "scope": "any",
+      "anchor": {
+        "path": "src/marmot/forget-device.ts"
+      },
+      "text": "Sole-admin self-forget leaves remaining members unnotified; low-priority edge case pending product decision",
+      "created_at": "2026-07-12",
+      "motivation": "When the group's only admin forgets their own device, other members' views silently rot — they keep showing the departed device indefinitely. Formalized in bug-reports/self-forget-sole-admin-no-propagation-report.md. Product decision 2026-07-12: edge case, relatively low priority — park as backlog item rather than dispatch now.",
+      "behavior": "Sole-admin self-forget applies locally, but no MLS removal commit reaches the remaining members (no admin remains to produce one). The earlier fix (44a4b9c) retreated the test assertion, not the behavior.",
+      "approach": "Four options enumerated in the report: (1) warn + continue (smallest, UI-only, forecloses nothing), (2) auto-promote a co-member (consent question), (3) dissolve the group (new protocol semantic — parent protocol repo first), (4) admin hand-off UI before leaving (largest). Pick one before dispatching to /base:bug.",
+      "success_signal": "In a sole-admin two-party group, forgetting the admin device either propagates to member B within the SLA or B-side staleness is explicitly surfaced to the departing user beforehand"
     }
   ],
   "archive": [
