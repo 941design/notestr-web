@@ -1,0 +1,62 @@
+{
+  "story_id": "S11",
+  "status": "done",
+  "final_outcome": "accepted",
+  "completed_at": "2026-07-14T10:25:00Z",
+  "modules_touched": ["receive-engine", "checkpoint-store", "deferred-store"],
+  "files_created": [
+    "src/persistence/checkpoint-store.ts",
+    "src/persistence/checkpoint-store.test.ts",
+    "src/persistence/deferred-store.ts",
+    "src/persistence/deferred-store.test.ts",
+    "src/engine/receive-engine.recovery.test.ts",
+    "src/engine/receive-engine.recovery.property.test.ts",
+    "specs/epic-event-sourced-receive-engine/S11-recovery-sequencing/architecture.json",
+    "specs/epic-event-sourced-receive-engine/S11-recovery-sequencing/baseline.json",
+    "specs/epic-event-sourced-receive-engine/S11-recovery-sequencing/result.json"
+  ],
+  "files_modified": [
+    "src/engine/receive-engine.ts",
+    "specs/epic-event-sourced-receive-engine/S11-recovery-sequencing/verification.json",
+    "specs/epic-event-sourced-receive-engine/mocks-registry.json"
+  ],
+  "implementation_summary": "Authored src/persistence/checkpoint-store.ts (saveCheckpoint/loadCheckpoint/clearCheckpoint -- real IDB via createKVStore, whole-object overwrite, no shape validation by design) and src/persistence/deferred-store.ts (saveDeferredIds/loadDeferredIds/clearDeferredIds plus the cross-store compositions acceptDeferredFact, clearGroupState, and createPersistenceAdapter), fully resolving MOCK-05-002 (introduced S5). acceptDeferredFact implements R-INV-3's accepted-first crash-safe ordering by calling raw-event-log-store.ts's appendAcceptedEvent (S4) FIRST, then an atomic updateItem-based removal of factId from the deferred-id list -- never reversed, never interleaved. clearGroupState implements the CHECKPOINT-FIRST clear-ordering invariant (clearCheckpoint awaited alone before Promise.all([clearRawAndAcceptedLogs, clearDeferredIds])), composing S4's exported clearRawAndAcceptedLogs partial verbatim rather than reconstructing store names. createPersistenceAdapter assembles all ten PersistenceAdapter methods into one real, IDB-backed object. Discovered receive-engine.ts's existing R1-R4 sequencing (implemented ahead-of-schedule during S5/S6, per that story's 'recovering-r1-r3-best-effort' judgment call) was already substantially correct -- R1's ordering delegation, R2a prune, R2 rebuild, R3 watermark-gated resubmission, R4 cutover, and the L1/L2 malformed-checkpoint routing (Implementation Constraint 12) all matched architecture.md on inspection. Writing the AC-PERS-2-dedicated test (VQ-S11-016) surfaced one genuine conformance defect: S5/S6 cleared the 'preserve-and-replay-recovery' degradation reason immediately after recovering's OWN checkpoint save (inside enterRecovering) -- but fsm.md forces health:nominal for the non-ACTIVE 'recovering' lifecycle regardless of degradationReasons, so that clear point made the degraded window structurally unobservable: the engine reached catching_up already nominal on the happy path, violating AC-PERS-2's literal text ('MUST enter catching_up with health: degraded until the first successful checkpoint save'). Fixed by relocating the clear call from enterRecovering to enterCatchingUp (right after ITS OWN transitionTo checkpoint save resolves) -- a minimal, targeted two-comment-plus-one-line-move diff, flip-proof verified (reverting the relocation makes the new AC-PERS-2 test fail with 'expected degraded to be nominal'; restored byte-identical via diff against a pre-edit backup). Added dedicated per-AC test coverage in receive-engine.recovery.test.ts (AC-REC-1 clock-skew replay-order proof, AC-REC-2 deferred re-queue without resubmission, AC-REC-3 exact seq-range resubmission, AC-REC-4 call-order evidence via a shared cross-mock ordering tracker, AC-REC-6 fault-injection on acceptDeferredFact with R2a reconciliation across two engine sessions, AC-REC-7/AC-INV-3 uninterrupted-vs-crash-and-recover projection equality, AC-REC-8 re-join lifecycle sequencing with all-stores-empty-after-reset, AC-REC-9 origin routing, AC-PERS-2 malformed-checkpoint handling) and the AC-REC-5 property test in receive-engine.recovery.property.test.ts (id-reshuffling invariance: two independent 100-run fast-check properties -- disposition equals {seq > watermark} for any watermark, and relabeling which hex id occupies which seq position never changes the resubmitted-seq set).",
+  "test_counts": {
+    "baseline": 929,
+    "final": 983
+  },
+  "tests_added": {
+    "unit": 30,
+    "recovery_conformance": 14,
+    "property": 2,
+    "structural_auto_scaled": 8
+  },
+  "mocks": [],
+  "remediation_rounds": 1,
+  "review_outcome": "Two-model review (Opus Stage-1 + Fable Stage-2, Codex exec down). Stage-1 Opus: CLEAN (0 findings) — verified acceptDeferredFact accepted-first, R2a-before-R2, clearGroupState checkpoint-first + reset TOCTOU closure, R-INV-1 property, AC-PERS-2 fix (didn't break S6 degradation). Stage-2 Fable: upheld all crash-safety claims under harder interleavings; 1 finding (sev-3 testing) — the dedicated AC-INV-3 epoch-carve-out test was a tautology (buildProjection([A,B])===buildProjection([A,B]), never drove the engine) -> replaced with an engine-level carve-out test driving real createReceiveEngine across stop/restart with an epoch-crossing deferred fact + decryptable sibling, non-vacuity proven by 3-way fixture mutation. Both models converge-verified clean. Verification: 17/17 questions YES across 4 examiner batches. Protocol guard HELD (local persistence/recovery only).",
+  "empirical_verification": {
+    "ac_pers_2_health_timing_flip_proof": "Temporarily reverted the health-timing fix (moved clearDegradationReason('preserve-and-replay-recovery') back to enterRecovering, immediately after its own checkpoint save, matching the original S5/S6 code). Re-ran receive-engine.recovery.test.ts -t 'AC-PERS-2': the dedicated new test failed exactly as predicted ('expected nominal to be degraded' / on the specific assertion catchingUpEvents[0].health === 'degraded'). Restored via `cp` from a pre-edit backup, confirmed byte-identical restoration via `diff`, re-ran: 14/14 recovery tests green again.",
+    "acceptDeferredFact_fault_injection_against_real_store": "deferred-store.test.ts's fault-injection block wraps the REAL idb-keyval module (via vi.mock + importOriginal) with a one-shot throw-on-key-prefix hook, proving the REAL acceptDeferredFact implementation (not a mock) obeys accepted-first ordering: injecting the fault into the deferred-ids update() call leaves the accepted-log entry durably present and the deferred id still listed (never lost, transient dual-membership); injecting it into the accepted-events update() call instead leaves the deferred-id list completely untouched (no partial accepted-log write). Both variants pass against real fake-indexeddb.",
+    "checkpoint_first_submission_order_race": "Both checkpoint-store.test.ts and deferred-store.test.ts include a dedicated test that DISPATCHES a checkpoint save without awaiting it, then immediately dispatches a clear/clearGroupState, then awaits both concurrently -- proving (against real fake-indexeddb, not a mock) that IndexedDB's same-scope transaction creation-order guarantee makes the earlier-dispatched save lose to the later-dispatched clear, empirically validating the 'reset-during-transition/detached-save must not resurrect a checkpoint' ledger obligation. Recorded as an open post-impl question (VQ-S11-020) about whether this guarantee is something future tooling changes could silently break.",
+    "full_suite_after_all_checks": "npx tsc --noEmit exit 0; npx vitest run: 48 test files passed, 983/983 tests passed (929 baseline + 54, including 8 structural-suite auto-scaled cases from the 4 new discovered files -- known characteristic, not a defect); npm run build (via make build) succeeded end-to-end including Next.js's own tsc typecheck pass."
+  },
+  "judgment_calls": [
+    "acceptDeferredFact, clearGroupState, and createPersistenceAdapter all live in deferred-store.ts rather than a new fourth persistence file, because stories.json's S11 scope.includes is a closed 7-file list -- see architecture.json 'composed-methods-and-full-adapter-factory-live-in-deferred-store-ts'.",
+    "No cross-boundary (src/integration/) real-store integration test was added: AC-BOUND-1 makes it structurally impossible from src/engine/*, and scope.includes has no src/integration/ file to host one from that side either. The 'real store contents' half of VQ-S11-001 is closed by checkpoint-store.test.ts/deferred-store.test.ts's real-IDB round trips instead -- see architecture.json 'no-cross-boundary-integration-test' and post-impl VQ-S11-019.",
+    "Relocated the AC-PERS-2 degradation-reason clear from enterRecovering to enterCatchingUp -- a targeted conformance fix, not a rewrite of S5/S6's FSM -- see architecture.json 'ac-pers-2-health-timing-fix-is-in-scope-not-a-rewrite' and post-impl VQ-S11-018.",
+    "checkpoint-store.ts's loadCheckpoint performs NO runtime shape validation -- that is receive-engine.ts's pre-existing isValidCheckpoint responsibility, kept in one place -- see architecture.json 'checkpoint-store-loadCheckpoint-does-not-validate-shape'."
+  ],
+  "related_but_out_of_scope": [
+    "The recorded S8-Fable-F2 engine watch item (fold==rebuild divergence when a bootstrap-sourced event is accepted after leaving joining, e.g. a late fetchBootstrap completing post-T_join with the mls task.created pruned by relay retention; suggested fix: emit projection_invalidated when a bootstrap-sourced event is accepted after leaving joining) was reviewed against this story's changes. It is NOT touched by R1-R4 recovery sequencing or the checkpoint/deferred stores -- the divergence is in the live-path accept flow's interaction with react-engine-hooks.ts's incremental fold, an unrelated code path from restart recovery. Left as the recorded follow-up per the story brief's explicit instruction; not addressed here."
+  ],
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The story brief's deliverable framing ('checkpoint-store.ts and deferred-store.ts... wire the R1-R4 recovery sequencing into receive-engine.ts') reads as though R1-R4 needed to be built from scratch, but S5/S6 had already implemented essentially the full sequencing ahead of schedule (documented in their own architecture.json as 'recovering-r1-r3-best-effort'). The actual gap was narrower and different in kind: (1) two real persistence stores that didn't exist yet, and (2) dedicated per-AC test coverage that had never been written, which is what surfaced the AC-PERS-2 health-timing defect -- a genuine bug that had shipped through two prior stories' review cycles undetected because no test had ever asserted on health specifically at the moment of entering catching_up via the preserve-and-replay path. Confirming this required reading S5's and S6's full result.json/architecture.json history before writing a single line, to distinguish 'build R1-R4' from 'hex tests that were owed but not yet written, and fix what they reveal.'",
+    "surprised_by": "AC-BOUND-3's structural scanner flagged deferred-store.test.ts for inlining the literal 'notestr:accepted-events:'/'notestr:deferred-ids:' key-prefix strings inside fault-injection test code (matching against the key argument at runtime, not writing an IDB key) -- the scanner is a pure textual substring scan over the whole file, including comments, with no code-vs-comment or read-vs-write distinction. Fixed by importing the existing ACCEPTED_EVENTS_KEY_PREFIX/DEFERRED_IDS_KEY_PREFIX constants from engine-types.ts instead of literal strings, including in comment prose.",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  }
+}

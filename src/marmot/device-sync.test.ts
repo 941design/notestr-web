@@ -1,17 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock persistence so publishTaskStateSync does not hit real IDB.
-vi.mock("../store/persistence", () => ({
-  loadEvents: vi.fn().mockResolvedValue([]),
-  appendEvent: vi.fn().mockResolvedValue(undefined),
-  saveEvents: vi.fn().mockResolvedValue(undefined),
-  clearEvents: vi.fn().mockResolvedValue(undefined),
+// Mock raw-event-log-store so publishTaskStateSync does not hit real IDB
+// (S12 cutover: publishTaskStateSync's local-state read moved off the
+// retired src/store/persistence.ts onto this durable engine store).
+vi.mock("../persistence/raw-event-log-store", () => ({
+  loadAcceptedEvents: vi.fn().mockResolvedValue([]),
+  appendFact: vi.fn(),
+  loadFacts: vi.fn(),
+  appendAcceptedEvent: vi.fn(),
+  clearRawAndAcceptedLogs: vi.fn(),
 }));
 
-// Mock task-reducer so replayEvents can be controlled per test.
-vi.mock("../store/task-reducer", () => ({
-  replayEvents: vi.fn().mockReturnValue(new Map()),
-  applyEvent: vi.fn(),
+// Mock task-projector so buildProjection's Task map output can be
+// controlled per test (mirrors the pre-S12 replayEvents mock).
+vi.mock("../domain/task-projector", () => ({
+  buildProjection: vi.fn().mockReturnValue(new Map()),
+  replayOrder: vi.fn((events: unknown[]) => events),
 }));
 
 vi.mock("@internet-privacy/marmot-ts", () => ({
@@ -67,13 +71,11 @@ import {
   isSlotForgotten,
   joinFromWelcomeInvite,
   keyPackageSlot,
-  MAX_RETRIES_PER_EPOCH,
   publishTaskStateSync,
   removeExpectedPublishByRumorId,
-  selectAndIncrementRetries,
 } from "./device-sync";
-import { replayEvents } from "../store/task-reducer";
-import { loadEvents } from "../store/persistence";
+import { buildProjection } from "../domain/task-projector";
+import { loadAcceptedEvents } from "../persistence/raw-event-log-store";
 import type { Task, TaskStateSyncPayload } from "../store/task-events";
 
 function makeKind445Event(id: string, hTag: string, createdAt = 1000): {
@@ -266,118 +268,6 @@ describe("publish-task bridge (GAP-2 publish-path)", () => {
   });
 });
 
-/**
- * AC-B-6 — drain-on-ingest retry budget (Solution B).
- *
- * Tests for `selectAndIncrementRetries` and `MAX_RETRIES_PER_EPOCH` —
- * the exported helpers called by `ingestGroupEventsRaw`'s drain block.
- * Placed in device-sync.test.ts because `retryAttempts` lives in
- * device-sync.ts, not ingest-queue.ts (see architecture.json note).
- */
-describe("AC-B-6 — drain-on-ingest retry budget (selectAndIncrementRetries)", () => {
-  /**
-   * Case 1: no infinite-loop within an epoch.
-   *
-   * Simulate 3 consecutive ingest calls in epoch N with one parked event
-   * that stays unreadable. Confirm exactly 3 retry attempts are made and
-   * the 4th call does NOT retry.
-   */
-  it("stops retrying after MAX_RETRIES_PER_EPOCH attempts within one epoch", () => {
-    const groupAttempts = new Map<string, number>();
-    const parked = [{ id: "event-alpha" }];
-
-    // Calls 1-3: counter goes 0→1→2→3; event is eligible each time.
-    const r1 = selectAndIncrementRetries(groupAttempts, parked, MAX_RETRIES_PER_EPOCH);
-    expect(r1.map((e) => e.id)).toEqual(["event-alpha"]);
-    expect(groupAttempts.get("event-alpha")).toBe(1);
-
-    const r2 = selectAndIncrementRetries(groupAttempts, parked, MAX_RETRIES_PER_EPOCH);
-    expect(r2.map((e) => e.id)).toEqual(["event-alpha"]);
-    expect(groupAttempts.get("event-alpha")).toBe(2);
-
-    const r3 = selectAndIncrementRetries(groupAttempts, parked, MAX_RETRIES_PER_EPOCH);
-    expect(r3.map((e) => e.id)).toEqual(["event-alpha"]);
-    expect(groupAttempts.get("event-alpha")).toBe(MAX_RETRIES_PER_EPOCH);
-
-    // Call 4: counter === MAX_RETRIES_PER_EPOCH → NOT eligible. No retry.
-    const r4 = selectAndIncrementRetries(groupAttempts, parked, MAX_RETRIES_PER_EPOCH);
-    expect(r4).toHaveLength(0);
-    // Counter must not increment beyond the cap.
-    expect(groupAttempts.get("event-alpha")).toBe(MAX_RETRIES_PER_EPOCH);
-  });
-
-  /**
-   * Case 2: epoch-reset semantics.
-   *
-   * After exhausting the budget in epoch N, simulate an epoch advance via
-   * `groupAttempts.clear()` (exactly as `attachRetryOnEpochAdvance` does
-   * in `retryAttempts.get(group.idStr)?.clear()`). Confirm the counter
-   * resets and the next ingest call in epoch N+1 retries the event.
-   */
-  it("retries again in epoch N+1 after groupAttempts.clear() on epoch advance", () => {
-    const groupAttempts = new Map<string, number>();
-    const parked = [{ id: "event-beta" }];
-
-    // Exhaust budget in epoch N.
-    for (let i = 0; i < MAX_RETRIES_PER_EPOCH; i++) {
-      selectAndIncrementRetries(groupAttempts, parked, MAX_RETRIES_PER_EPOCH);
-    }
-    expect(groupAttempts.get("event-beta")).toBe(MAX_RETRIES_PER_EPOCH);
-    // Confirm exhausted.
-    const exhausted = selectAndIncrementRetries(groupAttempts, parked, MAX_RETRIES_PER_EPOCH);
-    expect(exhausted).toHaveLength(0);
-
-    // Epoch advance: attachRetryOnEpochAdvance calls clear().
-    groupAttempts.clear();
-    expect(groupAttempts.get("event-beta")).toBeUndefined();
-
-    // First drain in epoch N+1: counter reset, so event IS eligible.
-    const r = selectAndIncrementRetries(groupAttempts, parked, MAX_RETRIES_PER_EPOCH);
-    expect(r.map((e) => e.id)).toEqual(["event-beta"]);
-    expect(groupAttempts.get("event-beta")).toBe(1);
-  });
-
-  /**
-   * Case 3: per-group keying.
-   *
-   * Two groups with parked events of the same eventId have independent
-   * `groupAttempts` maps. Simulating `retryAttempts.delete(groupA)` (by
-   * removing the entry from the outer map) must NOT affect groupB's counters.
-   */
-  it("per-group keying: deleting groupA entry does not affect groupB counters", () => {
-    const retryAttempts = new Map<string, Map<string, number>>();
-    const groupA = "group-aaa";
-    const groupB = "group-bbb";
-    const eventId = "shared-event-id";
-
-    const attemptsA = new Map<string, number>();
-    const attemptsB = new Map<string, number>();
-    retryAttempts.set(groupA, attemptsA);
-    retryAttempts.set(groupB, attemptsB);
-
-    const parked = [{ id: eventId }];
-
-    // Increment groupA twice, groupB once.
-    selectAndIncrementRetries(attemptsA, parked, MAX_RETRIES_PER_EPOCH);
-    selectAndIncrementRetries(attemptsA, parked, MAX_RETRIES_PER_EPOCH);
-    expect(attemptsA.get(eventId)).toBe(2);
-
-    selectAndIncrementRetries(attemptsB, parked, MAX_RETRIES_PER_EPOCH);
-    expect(attemptsB.get(eventId)).toBe(1);
-
-    // Delete groupA (as refreshGroupSync does: retryAttempts.delete(groupId)).
-    retryAttempts.delete(groupA);
-    expect(retryAttempts.has(groupA)).toBe(false);
-
-    // groupB's counters are unchanged.
-    expect(retryAttempts.get(groupB)?.get(eventId)).toBe(1);
-
-    // groupB can still drain independently up to MAX_RETRIES_PER_EPOCH.
-    const bAttempts = retryAttempts.get(groupB)!;
-    selectAndIncrementRetries(bAttempts, parked, MAX_RETRIES_PER_EPOCH);
-    expect(bAttempts.get(eventId)).toBe(2);
-  });
-});
 
 /**
  * AC-INVITE-2 / AC-INVITE-3 — isSlotForgotten predicate
@@ -454,13 +344,13 @@ describe("AC-INVITE-* — isSlotForgotten (forgotten-slot skip predicate)", () =
  *   are included in the published payload.
  */
 describe("publishTaskStateSync (AC-13)", () => {
-  const mockReplayEvents = replayEvents as ReturnType<typeof vi.fn>;
-  const mockLoadEvents = loadEvents as ReturnType<typeof vi.fn>;
+  const mockBuildProjection = buildProjection as ReturnType<typeof vi.fn>;
+  const mockLoadAcceptedEvents = loadAcceptedEvents as ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoadEvents.mockResolvedValue([]);
-    mockReplayEvents.mockReturnValue(new Map());
+    mockLoadAcceptedEvents.mockResolvedValue([]);
+    mockBuildProjection.mockReturnValue(new Map());
   });
 
   it("catches and logs errors without rethrowing (relay publish throws)", async () => {
@@ -536,9 +426,9 @@ describe("publishTaskStateSync (AC-13)", () => {
     consoleSpy.mockRestore();
   });
 
-  it("includes only non-deleted tasks (deleted tasks are absent from TaskState map)", async () => {
-    // The reducer removes deleted tasks from the map entirely.
-    // Simulate a state with one live task and one that was deleted (absent from map).
+  it("includes only non-deleted tasks (deleted tasks are absent from the projection map)", async () => {
+    // The projector removes deleted tasks from the map entirely.
+    // Simulate a projection with one live task and one that was deleted (absent from map).
     const liveTask = {
       id: "task-live",
       title: "Live task",
@@ -550,7 +440,7 @@ describe("publishTaskStateSync (AC-13)", () => {
       updatedAt: 1000,
       updatedBy: "aabbccdd",
     };
-    mockReplayEvents.mockReturnValue(new Map([["task-live", liveTask]]));
+    mockBuildProjection.mockReturnValue(new Map([["task-live", liveTask]]));
 
     const capturedPayloads: string[] = [];
     const signer = {
@@ -615,13 +505,13 @@ describe("publishTaskStateSync (AC-13)", () => {
  * invite publishes nothing.
  */
 describe("inviteAndPublishSnapshot", () => {
-  const mockReplayEvents = replayEvents as ReturnType<typeof vi.fn>;
-  const mockLoadEvents = loadEvents as ReturnType<typeof vi.fn>;
+  const mockBuildProjection = buildProjection as ReturnType<typeof vi.fn>;
+  const mockLoadAcceptedEvents = loadAcceptedEvents as ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoadEvents.mockResolvedValue([]);
-    mockReplayEvents.mockReturnValue(new Map());
+    mockLoadAcceptedEvents.mockResolvedValue([]);
+    mockBuildProjection.mockReturnValue(new Map());
   });
 
   function makeSigner() {

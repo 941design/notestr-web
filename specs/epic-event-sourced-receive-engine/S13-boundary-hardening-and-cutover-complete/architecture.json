@@ -1,0 +1,46 @@
+{
+  "module_name": "receive-engine",
+  "purpose": "Phase 9 boundary-hardening and cutover-completion story. Deletes the now-vestigial S9 strangler feature flag (NEXT_PUBLIC_ENGINE_TASK_READS) and its unreferenced isEngineReadPathEnabled() scaffolding from task-store.tsx; retires src/marmot/ingest-queue.ts (fully superseded by S5's ingest-policy.ts, zero production importers); extends the AC-BOUND-3 structural scanner to guard the S10 outbox IDB key (notestr:outbox:) alongside the original four; re-confirms the AC-BOUND-1..5 structural sweep passes cumulatively; and documents the epic's extraction seams per spec.md's Library Character section. Zero new correctness logic — deletions and documentation only (scope.excludes).",
+  "public_api": [],
+  "private_files": [
+    "src/store/task-store.tsx",
+    "src/marmot/ingest-queue.ts",
+    "src/marmot/ingest-queue.test.ts",
+    "src/domain/bound-4.structural.test.ts",
+    "src/engine/engine-boundary.structural.test.ts",
+    "src/engine/engine-types.ts",
+    "src/integration/publish-outbox.ts",
+    "src/integration/publish-outbox.test.ts",
+    "src/integration/marmot-adapter.ts",
+    "specs/epic-event-sourced-receive-engine/architecture.md",
+    "specs/epic-event-sourced-receive-engine/acceptance-criteria.md"
+  ],
+  "owned_data": [],
+  "dependencies_allowed": [],
+  "dependencies_forbidden": [],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "src/domain/bound-4.structural.test.ts",
+    "src/engine/engine-boundary.structural.test.ts",
+    "src/integration/publish-outbox.test.ts",
+    "src/store/task-store.cutover.test.tsx",
+    "src/store/task-store.optimistic-echo.test.tsx",
+    "src/store/task-store.listener-removal.test.tsx"
+  ],
+  "judgment_calls": [
+    {
+      "id": "s13-isEngineReadPathEnabled-confirmed-dead-not-load-bearing",
+      "note": "Pre-impl STOP-condition check (per task brief): read task-store.tsx before any edit. shouldMountEngine (line 429) already does NOT reference isEngineReadPathEnabled() -- it gates purely on readyForEngine && startOptionsForEngine !== null. The function's own JSDoc (added by S12) already documents it as vestigial, unreferenced, left only for S13 to physically delete. Confirmed via `grep -rn isEngineReadPathEnabled` across src/ that its only call sites are its own definition and stale prose mentions in comments (publish-outbox.ts, publish-outbox.test.ts, marmot-adapter.ts) -- no runtime call site anywhere. Deleting it changes zero runtime behavior. STOP condition (flag load-bearing) does NOT apply; proceeding with deletion satisfies VQ-S13-001."
+    },
+    {
+      "id": "s13-task-reducer-kept-not-deleted",
+      "note": "Deliverable 3 conditional check: is task-reducer.ts's applyEvent/comparator still imported by any production path? grep confirms device-sync.ts imports ONLY `TaskState` (a type alias, `Map<string, Task>`) from task-reducer.ts -- no call site anywhere imports applyEvent/replayEvents for production tie-break decisions. Production tie-break is exclusively task-crdt.ts's taskWinsOver (enforced by AC-BOUND-4 Part 1's import-and-call assertions on task-projector.ts and device-sync.ts). However: (a) device-sync.ts still holds a live type-only reference to task-reducer.ts, so the module is not fully orphaned; (b) task-reducer.test.ts is a substantial (~40 test cases) mutation-pinned regression suite exercising task-reducer.ts's own applyEvent directly, including several cases explicitly documented as closing real Stryker mutation survivors (e.g. the '?? \"\"' normalization tests, ASCII-boundary device-id cases) -- deleting it would require proving task-crdt.test.ts's adversarial matrix covers the SAME field-copy-per-event-type behavior (task-crdt.ts only tests the 3-level tie-break comparator in isolation, not applyEvent's per-variant field-copy semantics), which this deletions-only story does not have license to newly derive/verify under VQ-S13-006's zero-new-logic constraint. DECISION: keep task-reducer.ts + task-reducer.test.ts + the ALLOWLISTED_LEGACY_FILES entry in bound-4.structural.test.ts, but rewrite the allowlist comment (previously 'time-boxed, remove when S9/S12 lands' -- inaccurate since neither removed it) to state the terminal rationale precisely, since S13 is the epic's last story and no future site exists to close a dangling TODO. This is the deliverable's own explicit fallback branch ('if still used, keep it and note why')."
+    },
+    {
+      "id": "s13-ac-bound-3-outbox-extension-required-adjacent-comment-fixes",
+      "note": "Adding 'notestr:outbox:' to engine-boundary.structural.test.ts's IDB_KEY_MARKERS (deliverable 5) immediately produces false-positive violations: the scanner does raw text matching (no comment/string stripping, unlike bound-4's scanner), and publish-outbox.ts (x2), marmot-adapter.ts (x2), and publish-outbox.test.ts (x2) each contain the contiguous literal `notestr:outbox:` in doc comments or an inlined test assertion literal. None of these three files are in stories.json's literal scope.includes for S13, but fixing them is a mechanical, zero-behavior-change prerequisite for landing deliverable 5 as specified in the task brief (which explicitly names this exact gap). Doc comments were reworded to reference engine-types.ts's outboxKey()/OUTBOX_KEY_PREFIX by name instead of spelling out the literal; publish-outbox.test.ts's two inlined template-literal keys were swapped for the already-exported outboxKey() helper (identical string value, zero behavior change). While in these same files, also fixed stale isEngineReadPathEnabled() comment references (boy-scout, directly caused by deliverable 1's flag removal) in marmot-adapter.ts and publish-outbox.ts/publish-outbox.test.ts."
+    }
+  ]
+}

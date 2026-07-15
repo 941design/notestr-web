@@ -1,0 +1,18 @@
+{
+  "captured_at": "2026-07-14T08:05:57Z",
+  "unit_tests": {
+    "command": "npx vitest run",
+    "status": "PASS",
+    "test_files": 44,
+    "tests": 929
+  },
+  "typecheck": {
+    "command": "npx tsc --noEmit",
+    "status": "clean",
+    "exit_code": 0
+  },
+  "lint": {
+    "status": "NO_LINT",
+    "note": "No lint script in package.json; no eslint config file present in the repo root (consistent with S3/S4/S5/S6's baseline.json)."
+  }
+}

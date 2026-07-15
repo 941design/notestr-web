@@ -1,0 +1,52 @@
+{
+  "story_id": "S8",
+  "status": "done",
+  "final_outcome": "accepted",
+  "completed_at": "2026-07-14T00:22:00Z",
+  "files_created": [
+    "src/integration/react-engine-hooks.ts",
+    "src/integration/react-engine-hooks.test.tsx",
+    "src/integration/adapter-lifecycle.structural.test.ts",
+    "specs/epic-event-sourced-receive-engine/S8-react-engine-hooks/architecture.json",
+    "specs/epic-event-sourced-receive-engine/S8-react-engine-hooks/baseline.json",
+    "specs/epic-event-sourced-receive-engine/S8-react-engine-hooks/result.json"
+  ],
+  "files_modified": [
+    "specs/epic-event-sourced-receive-engine/S8-react-engine-hooks/verification.json",
+    "package.json",
+    "package-lock.json",
+    "vitest.config.ts"
+  ],
+  "modules_touched": [
+    "react-engine-hooks"
+  ],
+  "tests_added": {
+    "unit_integration": 18,
+    "structural": 8
+  },
+  "test_counts": {
+    "baseline": 866,
+    "final": 901
+  },
+  "mocks": [],
+  "remediation_rounds": 2,
+  "remediation_detail": "Two-model review (Codex exec down mid-session -> Fable cross-model Stage-2 per user directive). Round-1 Stage-1 Opus: F1(sev-6) projection_invalidated rebuild-race -> generation-token + queued-replay; F2 effect-deps->[groupId]+refs; F3 comment-rot; F4 StrictMode test; F5 pkg newline. Round-2 Stage-2 Fable: F1-read(sev-5 blocker) loadAcceptedEvents try/catch + owner-guarded cleanup + boot double-try; F3 replay dedupe-by-id; F4 effect-entry consistent snapshot (torn-pair); F5 mixed create/update/delete AC-INV-4 case; F6/F8 docs. Both stages converge-verified clean; 8/8 verification questions YES. Deferred to engine/S11: F2-late-bootstrap fold/rebuild divergence (engine emits projection_invalidated on late bootstrap). F7 react-test-renderer deprecation = recorded note.",
+  "escalation_history": [],
+  "judgment_calls": [
+    "UseReceiveEngineParams.createEngine is a FACTORY (() => ReceiveEngine), not a pre-built engine instance -- the effect calls createEngine() fresh on every mount, sidestepping receive-engine.ts's 'start() only from lifecycle uninitialized' guard under a React 18 Strict-Mode dev double-invoke. See architecture.json judgment_calls.fresh-engine-per-mount-via-factory and post-impl VQ-S8-009.",
+    "Full buildProjection is run once at every hook mount (seeded from persistence.loadAcceptedEvents + replayOrder), treating every mount as Implementation Constraint 7's 'restart' case, not only origin:'restored' starts -- see architecture.json judgment_calls.mount-time-persistence-seed-is-the-restart-case and post-impl VQ-S8-011.",
+    "engineState is copied verbatim from engine_state_changed{state, health} with no added/renamed fields (groupId is available separately via the caller's own params.groupId) -- see architecture.json judgment_calls.engineState-shape-is-verbatim.",
+    "classifyRejectionReason is an S8-owned, additive UI helper over domain_event_rejected's free-form reason string (not a seam-narrowing change) -- see architecture.json judgment_calls.rejection-reason-vocabulary-classifier.",
+    "Two small shared test-infrastructure additions were required outside scope.includes' three files, both necessary prerequisites for the mandated .test.tsx file to run at all in this repo (its first .tsx test file): vitest.config.ts gained `oxc: { jsx: { runtime: 'automatic' } }` (Vite 8's oxc transform otherwise inherits tsconfig.json's Next.js-recommended 'jsx: preserve' and refuses to parse JSX), and package.json/package-lock.json gained react-test-renderer pinned to the EXACT installed react/react-dom version (19.2.4, not a caret range) plus @types/react-test-renderer as devDependencies -- react-test-renderer enforces an exact internal-version match with react at runtime, not just a semver-compatible peer range. See post-impl VQ-S8-010."
+  ],
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "This repo had zero prior .tsx test infrastructure, so two test-runner gaps had to be diagnosed from scratch before the hook's own logic could be exercised: (1) Vite 8's default oxc transform silently inherits tsconfig.json's 'jsx: preserve' and fails to parse any JSX with an opaque error, requiring a scoped `oxc: { jsx: { runtime: 'automatic' } }` override in vitest.config.ts; (2) react-test-renderer requires an EXACT react-version match at runtime (a caret-range peerDependency is not sufficient to avoid a runtime crash), requiring `npm view` reconnaissance to find and pin the one published version (19.2.4) matching the installed react/react-dom exactly. Neither is discoverable from the story spec or architecture.md.",
+    "surprised_by": "react-test-renderer's initial render of a hook-bearing component is silently deferred past the synchronous portion of even an `act(async () => {...})` callback -- a straightforward `await act(async () => { create(<Harness/>); await vi.waitFor(() => expect(state).toBe(...)) })` throws on an undefined hook-state read because the component hasn't actually rendered yet when the first `vi.waitFor` poll runs. A manual real-timer flush-and-retry loop (`waitUntil`), re-entering `act()` on every attempt, was the only pattern found to reliably observe post-mount asynchronous engine state without spurious 'not wrapped in act(...)' warnings.",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  }
+}

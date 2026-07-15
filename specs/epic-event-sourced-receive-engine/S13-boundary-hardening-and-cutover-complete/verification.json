@@ -45,6 +45,24 @@
       "category": "SPEC",
       "ac_id": "AC-MIG-4",
       "question": "does the implementation satisfy AC-MIG-4's observable -- does CI run make test and the e2e suite at this phase-boundary tag and assert exit code 0 for both, and does a diff of the test-file list between phase boundaries assert no pre-existing test file was deleted or had assertions weakened without a replacement covering the same behavior?"
+    },
+    {
+      "question_id": "VQ-S13-008",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "task-reducer.ts was kept (not deleted) despite its applyEvent/comparator having zero production call sites, because device-sync.ts still imports its TaskState type alias and task-reducer.test.ts's ~40 mutation-pinned cases have no proven equivalent-behavior replacement (task-crdt.test.ts covers only the 3-level tie-break comparator in isolation, not applyEvent's per-event-type field-copy semantics). Is this the correct final disposition, or should a follow-up (outside this deletions-only story's license) swap device-sync.ts's TaskState import to task-projector.ts's TaskProjection and retire task-reducer.ts + its test suite entirely, once/if task-crdt.test.ts's coverage is independently verified equivalent?"
+    },
+    {
+      "question_id": "VQ-S13-009",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "question": "Extending the AC-BOUND-3 scanner to guard notestr:outbox: (deliverable 5) required editing three files outside stories.json's literal scope.includes (publish-outbox.ts, marmot-adapter.ts, publish-outbox.test.ts) to remove false-positive literal/comment matches the widened scanner would otherwise flag. Each edit was either a doc-comment reword (zero behavior change) or a literal-to-helper-call substitution (publish-outbox.test.ts's two `notestr:outbox:${GROUP_ID}` template literals -> outboxKey(GROUP_ID), identical string value). Does the full green test run (1017/1017, same assertions, same outcomes) sufficiently prove these substitutions are behavior-preserving, or does AC-MIG-4's audit trail expect an explicit before/after string-equality proof beyond passing tests?"
+    },
+    {
+      "question_id": "VQ-S13-010",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "src/marmot/ingest-queue.test.ts (12 test cases) was deleted alongside its sole subject, src/marmot/ingest-queue.ts, on the grounds that the module has zero production importers (only comments in device-sync.ts/ingest-policy.ts/receive-engine.cutover.property.test.ts mention it by name) and S5's ingest-policy.ts + ingest-policy.test.ts (22 cases, landed before S13) is its documented parallel/replacement per stories.json's mock_resolution_plan. Does ingest-policy.test.ts's coverage genuinely subsume every behavior ingest-queue.test.ts pinned (dedupe-by-id, cap-with-evict-eldest, TTL-prune), satisfying AC-MIG-4's 'same-behavior replacement' bar, or does the differing in-memory-vs-durable-queue shape between the two modules mean some ingest-queue-specific case (e.g. exact eviction-order tie-break) has no true replacement and was net-lost?"
     }
   ]
 }

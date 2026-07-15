@@ -1,0 +1,23 @@
+{
+  "story_id": "S8",
+  "captured_at": "2026-07-14T00:03:29Z",
+  "tests": {
+    "command": "npx vitest run",
+    "status": "PASS",
+    "test_files": 39,
+    "tests": 866
+  },
+  "lint": {
+    "status": "NO_LINT",
+    "note": "No eslint config or lint script present in package.json; not introduced by this story."
+  },
+  "typecheck": {
+    "command": "npx tsc --noEmit",
+    "status": "clean",
+    "exit_code": 0
+  },
+  "notes": [
+    "package.json had a pre-existing uncommitted trailing-newline-only diff at baseline capture time (from a prior make node_modules marmot-ts tarball dependency rewrite) -- preserved, not reverted, per file-safety policy.",
+    "S1-S7 are 'done' per stories.json; src/integration/marmot-adapter.ts + marmot-adapter.test.ts exist untracked (S7, not yet committed) at baseline."
+  ]
+}

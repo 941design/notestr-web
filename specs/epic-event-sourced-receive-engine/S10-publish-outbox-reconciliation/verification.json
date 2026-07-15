@@ -45,6 +45,30 @@
       "category": "SPEC",
       "ac_id": "AC-PUB-1",
       "question": "does the implementation satisfy AC-PUB-1's observable -- once OutboxEntry lands, does a test publish a task mutation and restart the engine (a) after own-echo was observed and (b) before own-echo was observed, and assert both branches converge to the same final projected state and the same outbox reconciliation status, with createdAt/rumorId unchanged across retries?"
+    },
+    {
+      "question_id": "VQ-S10-008",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "The implementation does NOT literally relocate device-sync.ts's GAP-2 tracker into marmot-adapter.ts (architecture.md's literal 'moved from device-sync.ts:93-141' wording) -- it builds a fresh, independent own-publish correlation mechanism in marmot-adapter.ts (ensureOutboxNetworkWrapped, an idempotent monkey-patch of client.network.publish) that composes alongside device-sync.ts's unmoved original, injected into publish-outbox.ts via the optional legacyPublishTrace deps rather than a direct import (avoiding device-sync.ts's transitive module graph in tests). Does this fresh mechanism correctly compose with the pre-existing device-sync.ts/network.ts interceptor -- does the wrap fire, then correctly call through to the original network.publish (which itself still invokes consumeExpectedPublishForKind445), so BOTH the new OutboxEntry correlation and the legacy mlsTrace 'publish-task' diagnostic keep working, with neither mechanism's FIFO state corrupting the other's?"
+    },
+    {
+      "question_id": "VQ-S10-009",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "question": "attemptSend's ordering was deliberately built so a same-attempt send failure is authoritative even when network.publish DID fire before sendApplicationRumor ultimately threw (e.g. no relay confirmed via hasAck()): markOutboxAttemptStarted bumps `attempts` exactly once at the START of every attempt (including retries, resetting a stale 'failed' status back to 'pending' first), and markOutboxSent/markOutboxSentFallback/markOutboxFailed themselves never touch `attempts` -- avoiding a double-increment / stuck-on-stale-failed-status bug an earlier draft of this implementation actually hit during TDD (endOutboxPublishWindow's attribution ran against a still-'failed'-from-prior-attempt entry and was silently no-op'd by an over-eager status guard). Does this ordering hold under every interleaving (attribution racing failure within one attempt; a retry reusing an entry whose prior status was 'failed'), not just the two example-based tests in publish-outbox.test.ts that happen to cover it?"
+    },
+    {
+      "question_id": "VQ-S10-010",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "publishOutbox is constructed asynchronously in task-store.tsx (a useEffect keyed on [group, groupId, client, pubkey], populated only after loadPersisted() resolves) rather than synchronously available the instant `group` resolves. dispatch()'s send guard is now `if (publishOutbox)` instead of the old `if (group)`. Is the resulting readiness window (a dispatch that fires before loadPersisted() resolves silently skips the send, same as the OLD `if (group)` gate could already silently skip before `group` resolved) a no-worse-than-before race, or does it introduce a NEW production gap the old code did not have (loadPersisted() is an extra IndexedDB round trip on top of group/client/pubkey becoming available)?"
+    },
+    {
+      "question_id": "VQ-S10-011",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "PublishOutbox.dispose() only unregisters this group's persist hook (unregisterOutboxPersistHook) -- it does NOT unwrap client.network.publish (ensureOutboxNetworkWrapped's monkey-patch is permanent once applied, by design, since client.network is a shared singleton across all of a signed-in identity's groups). Is leaving the wrap in place after every group's publish-outbox instance has been disposed (e.g. all groups unmounted, or between identity switches) safe -- does a re-wrap attempt on the SAME network object after a fresh createPublishOutbox() call correctly no-op (WeakSet marker), and does the wrapped function's closure over module-level outbox-bridge state ever become a correctness or memory-leak concern across a sign-out/sign-in identity switch?"
     }
   ]
 }

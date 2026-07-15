@@ -1,0 +1,73 @@
+{
+  "module_name": "marmot-adapter",
+  "purpose": "The sole file (besides receive-engine.ts's type-only consumption of IngestSource/IngestSignal) permitted to import marmot-ts types. Implements the engine-defined IngestSource control interface (catchUp/openLive/ingestPersisted/fetchBootstrap/close) against the real MarmotGroup/MarmotClient API, translating every real marmot-ts ingest outcome (group.ingest() IngestResult kinds, stateChanged epoch deltas, NIP-44 kind-30078 bootstrap snapshots) into the marmot-free IngestSignal contract frozen in S1's engine-types.ts. Resolves MOCK-05-001.",
+  "public_api": [
+    {
+      "name": "MarmotAdapterDeps",
+      "signature": "interface { group: MarmotGroup; client: MarmotClient; groupId: string; relays: string[]; signer: Nip44Capable; ownPubkey: string; getNostrGroupIdHex?: (state) => string; getGroupMembers?: (state) => string[]; now?: () => number }",
+      "description": "Construction dependencies. `group`/`client` are the real marmot-ts handles for this Nostr group (integration layer, e.g. a future S8 react-engine-hooks, constructs these and hands them to the adapter — the adapter never constructs its own MarmotGroup/MarmotClient). `signer` (with optional `.nip44`) + `ownPubkey` are required only by `fetchBootstrap()`'s NIP-44 kind-30078 decrypt + d-tag construction. `getNostrGroupIdHex`/`getGroupMembers` default to the real marmot-ts functions of the same name and exist as an explicit override seam (added after the first test run against a bare-minimum stub ClientState failed both real helpers, which require a decoded MarmotGroupData extension / populated ratchet tree unrelated to group.ingest() outcome translation) — production callers pass nothing and get real behavior; tests override with trivial stand-ins. `now` defaults to `Date.now` and exists solely for deterministic tests (RawProtocolFactInput.receivedAt)."
+    },
+    {
+      "name": "createMarmotIngestAdapter",
+      "signature": "(deps: MarmotAdapterDeps) => IngestSource",
+      "description": "Factory returning an IngestSource-conformant object backed by real marmot-ts. Preferred construction path (over `new MarmotIngestAdapter(...)`) so callers depend only on the engine-owned IngestSource interface, never on this module's concrete class shape."
+    },
+    {
+      "name": "MarmotIngestAdapter",
+      "signature": "class implements IngestSource { constructor(deps: MarmotAdapterDeps); catchUp(); openLive(onSignal); ingestPersisted(facts); fetchBootstrap(); close(); }",
+      "description": "Concrete IngestSource implementation. Exported (in addition to the factory) so tests can construct it directly against a contract-faithful stub MarmotGroup/MarmotClient without going through a second indirection layer."
+    }
+  ],
+  "private_files": [],
+  "owned_data": [
+    "Per-instance in-memory-only bookkeeping, never persisted (persistence is the engine's job via PersistenceAdapter, never this adapter's): a promise-chained mutex serializing every group.ingest() invocation across catchUp()/openLive()/ingestPersisted() (marmot-ts's `this.state` mutation is not safe under concurrent ingest() calls on the same MarmotGroup — verified against src/marmot/device-sync.ts's pre-existing `ingestLock` pattern and node_modules/@internet-privacy/marmot-ts's ingest() implementation, which mutates `this.state` synchronously between yields); the live-subscription Unsubscribable handle returned by openLive(), released by close()."
+  ],
+  "dependencies_allowed": [
+    "src/engine/engine-types.ts (IngestSource, IngestSignal, RawProtocolFact, RawProtocolFactInput, ReceiptSource, DeferredReason, NostrEvent types — implements the engine-owned interface, never redefines it)",
+    "src/domain/task-events.ts (TaskEvent, TASK_EVENT_KIND — the wire type IngestSignal.message.payload carries, and the rumor-kind gate)",
+    "src/domain/task-crdt.ts (taskWinsOver — Boundary Rule 10 mandates ALL task tie-break logic go through this single authority; fetchBootstrap's multi-relay-copy snapshot merge reuses it rather than reimplementing comparison logic, matching the existing src/marmot/device-sync.ts:1433-1452 call site Rule 10 names as one of the two authorities to converge on)",
+    "@internet-privacy/marmot-ts (MarmotGroup, MarmotClient, deserializeApplicationData, getNostrGroupIdHex, getGroupMembers — this file is the ONLY permitted importer outside the engine receive path, architecture.md Boundary Rule)"
+  ],
+  "dependencies_forbidden": [
+    "src/marmot/* (device-sync.ts and siblings are frozen/scheduled-for-replacement per Boundary Rule 5; this adapter independently re-implements the equivalent real marmot-ts calls rather than reusing that module, so it can be deleted later without touching this file)",
+    "src/store/* (legacy listener path, out of scope)",
+    "react, next, next/navigation, useState/useEffect/useRef (Boundary Rule 10: the adapter registers ZERO independent React lifecycle; the engine owns it and calls close() during stop())"
+  ],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "src/integration/marmot-adapter.test.ts"
+  ],
+  "seam": {
+    "cross_story": true,
+    "consumed_by": ["S8", "S9", "S10", "S11", "S12", "S13"]
+  },
+  "judgment_calls": [
+    {
+      "id": "s7-application-message-correlation-via-processed-result-not-listener",
+      "decision": "The real marmot-ts group.ingest() async generator yields `{kind:\"processed\", result, event, message}` where, for an application message, `result` IS ts-mls's ProcessMessageResult and `result.message` (when `result.kind === \"applicationMessage\"`) already carries the decrypted Uint8Array payload — verified by reading node_modules/@internet-privacy/marmot-ts/dist/client/group/marmot-group.js directly (lines ~1195-1216, ~1006-1034). This means the adapter can decode `deserializeApplicationData(result.result.message)` straight from the per-event IngestResult, with NO need to correlate a separate `group.on(\"applicationMessage\", handler)` event listener to a specific input event (which is what src/marmot/device-sync.ts does, because it never needed per-event correlation — it persists every applicationMessage regardless of which input event triggered it). A listener-based approach would additionally require reasoning about generator-resume timing (the `applicationMessage` emit fires synchronously on the *next* `.next()` call after the yield, i.e. after the consumer has already moved on to processing the following iteration) — the direct `result.result.message` read avoids that entirely and is simpler and more obviously correct.",
+      "escalation_needed": false
+    },
+    {
+      "id": "s7-non-task-rumor-kind-and-marmot-rejected-mapping",
+      "decision": "Two IngestResult sub-cases have no literal home in IngestSignal's 5-variant closed union, so both were mapped to the nearest documented variant: (1) an application-message rumor whose `rumor.kind !== TASK_EVENT_KIND` (e.g. a kind-9 chat message coexisting in the same MLS group) maps to `skipped` — the fact is still carried (raw log + seq watermark advance) but NO rejection is emitted, matching pre-existing production behavior (device-sync.ts:880-881 silently ignores non-task rumors). CORRECTED 2026-07-13 (S7 Stage-1 review, sev-5): the original mapping to `malformed` was wrong — `malformed` is terminal (engine emits domain_event_rejected{reason:parse_error}), so a coexisting foreign rumor would produce a permanent UI-surfaced false-positive rejection, re-triggered on every relay re-sync. The prior 'durable append' justification for malformed was false: `skipped` also carries the fact. `malformed` is now reserved strictly for a genuine task-kind rumor whose content fails to decode into a TaskEvent. (2) An admin-rejected commit (IngestResult.kind === \"rejected\") produces no group.state mutation and needs no retry, so it is bucketed with `skipped` (fact carried, no further action) rather than inventing a 6th variant.",
+      "escalation_needed": false
+    },
+    {
+      "id": "s7-processed-commit-proposal-no-fact-signal",
+      "decision": "A processed non-application-message result (a proposal accepted into unappliedProposals, or a commit that already advanced the epoch) produces NO fact-carrying IngestSignal of its own -- only, when the epoch actually changed, the fact-less `epoch_advanced` signal (matching engine-types.ts's literal shape `{type, newEpoch, prevEpoch}`, no `fact` field). Its underlying Nostr event therefore is not immediately appended to the raw-fact log; on a LATER catchUp/restart redelivery of the same (already-applied) commit, marmot-ts's ingest() itself recognizes the replay and yields `skipped` instead of `processed` (verified in marmot-group.js's isReplayOfApplied / self-echo-commit paths), which DOES carry a fact and gets durably persisted at that point. This is spec-conformant (engine-types.ts's epoch_advanced variant is deliberately fact-less) rather than a gap; documented here since it means a freshly-processed commit's own delivery event durably enters the raw log one redelivery cycle later than a message/skipped/malformed/deferred event's does.",
+      "escalation_needed": false
+    },
+    {
+      "id": "s7-fetchbootstrap-shared-fact-and-crdt-merge",
+      "decision": "fetchBootstrap() queries all kind-30078 snapshot events for `notestr:task-sync:${groupId}:${ownPubkey}`, filters to events authored by a current group member (author-authenticity gate, mirroring src/marmot/device-sync.ts's fetchAndApplyTaskBootstrap), and merges same-id tasks across multiple relay-returned snapshot copies via the shared `taskWinsOver` authority (Boundary Rule 10) so the final per-task winner is relay-order-independent -- reusing, not reimplementing, the existing tie-break logic. Architecture.md's wording ('one IngestSignal per synthesized bootstrap event ... all sharing the snapshot's fact') is read as: every winning task's synthetic `task.created` message shares ONE fact object representing the resolved bootstrap fetch as a whole (not one fact per underlying relay event) -- since a merged bootstrap snapshot has no single natural backing Nostr event id when N relay copies could each carry a subset of tasks, this shared fact's `nostrEvent`/`id` is deterministically the most-recently-created (`created_at`-max) qualifying relay event. If zero qualifying events are found (no signer.nip44, network failure, or no matching relay events), fetchBootstrap yields nothing (empty AsyncIterable), matching the existing non-fatal graceful-degradation behavior in fetchAndApplyTaskBootstrap.",
+      "escalation_needed": false
+    },
+    {
+      "id": "s7-ingest-mutex-buffers-a-batch-before-yielding",
+      "decision": "catchUp()/ingestPersisted() run each event batch's full group.ingest() drain to completion INSIDE the promise-chained mutex, buffering the translated IngestSignal[] before yielding any of them to the external caller. This trades strict per-event streaming (the caller could in principle start reacting to signal 1 before signal 2 is computed) for a hard guarantee that the mutex is never held open across an arbitrary external await (the engine may do persistence I/O between consuming successive signals) -- which is what would otherwise let a concurrent openLive() live-event ingest or a concurrent ingestPersisted() (L8 deferred retry can run while live) race on `group.ingest()`'s internal `this.state` mutation mid-drain. The observable per-event granularity (one IngestSignal per event) is unchanged; only the internal scheduling changed.",
+      "escalation_needed": false
+    }
+  ]
+}

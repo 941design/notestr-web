@@ -1,0 +1,61 @@
+{
+  "story_id": "S10",
+  "status": "done",
+  "final_outcome": "accepted",
+  "completed_at": "2026-07-14T09:05:00Z",
+  "files_created": [
+    "src/integration/publish-outbox.ts",
+    "src/integration/publish-outbox.test.ts",
+    "specs/epic-event-sourced-receive-engine/S10-publish-outbox-reconciliation/architecture.json",
+    "specs/epic-event-sourced-receive-engine/S10-publish-outbox-reconciliation/baseline.json",
+    "specs/epic-event-sourced-receive-engine/S10-publish-outbox-reconciliation/result.json"
+  ],
+  "files_modified": [
+    "src/engine/engine-types.ts",
+    "src/integration/marmot-adapter.ts",
+    "src/store/task-store.tsx",
+    "src/marmot/client.tsx",
+    "specs/epic-event-sourced-receive-engine/S10-publish-outbox-reconciliation/verification.json"
+  ],
+  "files_created_post_review": [
+    "src/store/task-store.dispatch.test.tsx"
+  ],
+  "tests_added": {
+    "unit": 18
+  },
+  "test_counts": {
+    "baseline": 908,
+    "final": 929
+  },
+  "mocks": [],
+  "remediation_rounds": 2,
+  "remediation_detail": "Two-model review (Fable Stage-2, Codex exec down). Stage-1 Opus: S10-1(sev-5) unbounded outbox growth on-by-default -> MAX_OUTBOX_ENTRIES_PER_GROUP=256 evict-eldest at both layers + prune-on-reconcile (in-memory; durable kept for AC-PUB-1 restart-readback, bounded via in-place upsert) + S10-2(sev-3) resetOutboxEntriesForIdentityChange wired into MarmotProvider cleanup (client.tsx). Stage-2 Fable: S10-Fable-1(sev-6 BLOCKER, missed by Stage-1) silent publish-drop in task-store dispatch wiring (outbox committed only in loadPersisted().then() with no .catch() -> a rejecting IDB read stranded publishOutbox null all session, every dispatch silently skipped its MLS send) -> .catch(log).finally(commit) + non-vacuous wiring test (task-store.dispatch.test.tsx). Both models converge-verified clean. Protocol guard HELD (no wire/convergence change). Verification: 7/7 questions YES. NOTE: S10 touched src/store/task-store.tsx (dispatch SEND delegation — VQ-S10-002-mandated though not in scope.includes) and src/marmot/client.tsx (identity-reset wiring, composition-root); both documented judgment calls.",
+  "architect_skipped": false,
+  "modules_touched": ["marmot-adapter", "engine-types", "task-store", "publish-outbox"],
+  "escalation_history": [],
+  "judgment_calls": [
+    {
+      "id": "s10-outbox-idb-key-in-scope",
+      "summary": "Added exactly one new IDB key constant/builder (OUTBOX_KEY_PREFIX/outboxKey) to engine-types.ts, beyond the OutboxEntry field contract literally named in stories.json's scope.excludes note. AC-PUB-1 requires real restart durability, which an in-memory-only outbox cannot satisfy in production; the new key follows Rule 9 (all new IDB keys defined in engine-types.ts) and mirrors the existing four. See architecture.json for full rationale."
+    },
+    {
+      "id": "s10-independent-outbox-wrap-not-network-ts-hook",
+      "summary": "Did not relocate device-sync.ts's GAP-2 tracker into marmot-adapter.ts as architecture.md's Module Map literally describes ('moved from device-sync.ts:93-141'). stories.json's scope.includes for this story does not list device-sync.ts or network.ts. Instead, marmot-adapter.ts's outbox bridge is a FRESH, independent own-publish correlation mechanism (ensureOutboxNetworkWrapped: an idempotent wrap of client.network.publish, same per-hTag-FIFO + in-window-kind-445-count algorithm as device-sync.ts's tracker). device-sync.ts is untouched. publish-outbox.ts injects the legacy GAP-2 functions (enqueueExpectedPublish/begin/end/removeExpectedPublishByRumorId) as an OPTIONAL PublishOutboxDeps.legacyPublishTrace bundle rather than importing device-sync.ts directly, both to avoid device-sync.ts's heavy transitive module graph in tests (marmot-ts/ts-mls/legacy persistence -- confirmed via a real test failure during TDD: importing device-sync.ts unmocked hit an unresolvable '@/marmot/storage' path alias that vitest.config.ts has no alias resolution for) and to preserve the mlsTrace 'publish-task' diagnostic the COMPLETE mls-live-delivery-race epic's e2e trace classifier depends on (task-store.tsx was the GAP-2 FIFO's only production caller; rewriting dispatch to call ONLY the new bridge would have silently gone permanently silent for that diagnostic). The literal relocation architecture.md describes is deferred to S12 (legacy-listener-removal), whose explicit job is retiring device-sync.ts's remaining live paths. See architecture.json for full rationale and the vitest.config.ts path-alias gap discovered along the way."
+    },
+    {
+      "id": "s10-task-store-dispatch-delegation-out-of-listed-scope-includes",
+      "summary": "stories.json's scope.includes for S10 lists only {marmot-adapter.ts, publish-outbox.ts, publish-outbox.test.ts, engine-types.ts} -- it omits src/store/task-store.tsx. The story's own description ('replacing task-store.tsx:dispatch's mixed optimistic-apply/persist/send path') and the immutable pre-impl commitment VQ-S10-002 both require editing it, and the dispatching lead's own task brief explicitly pre-authorized exactly this edit ('task-store.tsx is a Boundary-Rule-5 shrink-only file -- reducing its dispatch to delegation is allowed'). Treated the task brief as the controlling, more current authority for this specific, delegation-only edit. The diff is a net deletion in task-store.tsx: the GAP-2 mutex/rumor-build/window-tracking/CustomEvent block and the module-level dispatchPublishLock Map are removed, replaced by a `createPublishOutbox(...)` construction (useState+useEffect, keyed on [group, groupId, client, pubkey]) and a single `await publishOutbox.publish(taskEvent)` delegation call. No new task-state decision logic was added."
+    }
+  ],
+  "protocol_guard_confirmation": "No wire format or convergence rule was changed. OutboxEntry.createdAt is set exactly once before the first send and never reassigned by retry() (see publish-outbox.ts's markOutboxAttemptStarted / attemptSend); rumorId is a pure deterministic function of (createdAt, taskEvent, pubkey), so the published rumor's bytes (kind, content, tags, created_at, pubkey, and therefore its content-addressed id) are byte-identical across retries -- verified by publish-outbox.test.ts's 'createdAt/rumorId immutability across retries' suite. Own-echo reconciliation (reconcileOwnEcho) is purely local, receiver-and-sender-side bookkeeping over an OutboxEntry.status field that never crosses the wire; it matches an already-received relay event id against a value this device itself learned from its own prior publish, and never mutates, re-derives, or re-publishes anything. No change to TaskEvent's wire shape, to how rumors are serialized/signed, or to the projector/CRDT convergence rules (task-crdt.ts's taskWinsOver was not touched). The parent repo's ../protocol/task-protocol.md required no amendment.",
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The scope.includes list in stories.json (exactly {marmot-adapter.ts, publish-outbox.ts, publish-outbox.test.ts, engine-types.ts}) contradicted the story's own description and its immutable VQ-S10-002 pre-impl commitment, both of which require editing task-store.tsx's dispatch path -- this is a spec-internal inconsistency (scope.includes vs. description/verification-commitment) that had to be resolved by judgment rather than being flagged by tooling. Separately, architecture.md's Module Map text ('outbox bridge Maps moved from device-sync.ts:93-141') described a literal relocation that scope.includes explicitly did not authorize (device-sync.ts/network.ts are absent from scope.includes) -- reconciling the architecture doc's stated intent against the narrower machine-readable scope required building an independent, non-relocating mechanism and documenting why. A real implementation bug surfaced during TDD (not a spec issue): markOutboxSent's original 'never overwrite a failed status' guard, meant to protect same-attempt ordering, silently broke retry() because a retried entry's stale 'failed' status from the prior attempt blocked the new attempt's success from ever being recorded -- required restructuring attempt bookkeeping into a single markOutboxAttemptStarted call so `attempts` increments exactly once per attempt regardless of which downstream status-transition function ultimately wins.",
+    "surprised_by": "Importing src/marmot/device-sync.ts unmocked (even indirectly) breaks in vitest with 'Cannot find package @/marmot/storage' -- vitest.config.ts has no alias resolution for tsconfig.json's \"@/*\" path mapping, so every existing test that touches device-sync.ts pre-emptively mocks src/store/persistence.ts away to avoid the transitive import. This is a latent, pre-existing gap in vitest.config.ts (out of this story's scope to fix) that shaped the final design: it's part of why the legacy GAP-2 bridge is injected into publish-outbox.ts as optional deps rather than imported directly.",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "story_id": "S13",
+  "status": "done",
+  "final_outcome": "accepted",
+  "completed_at": "2026-07-14T16:00:00Z",
+  "files_created": [
+    "specs/epic-event-sourced-receive-engine/S13-boundary-hardening-and-cutover-complete/architecture.json",
+    "specs/epic-event-sourced-receive-engine/S13-boundary-hardening-and-cutover-complete/result.json"
+  ],
+  "files_modified": [
+    "src/store/task-store.tsx",
+    "src/domain/bound-4.structural.test.ts",
+    "src/engine/engine-boundary.structural.test.ts",
+    "src/engine/engine-types.ts",
+    "src/integration/publish-outbox.ts",
+    "src/integration/publish-outbox.test.ts",
+    "src/integration/marmot-adapter.ts",
+    "src/marmot/ingest-queue.ts (deleted)",
+    "src/marmot/ingest-queue.test.ts (deleted)",
+    "specs/epic-event-sourced-receive-engine/architecture.md",
+    "specs/epic-event-sourced-receive-engine/acceptance-criteria.md",
+    "specs/epic-event-sourced-receive-engine/S13-boundary-hardening-and-cutover-complete/verification.json"
+  ],
+  "tests_added": {
+    "unit": 0
+  },
+  "test_counts": {
+    "baseline": 1030,
+    "final": 1017,
+    "note": "final < baseline by 13: the vestigial ingest-queue.test.ts (13 dead-code tests) deleted with ingest-queue.ts; behavior covered by ingest-policy.test.ts (22 tests). AC-MIG-4-compliant (dead-code removal, same-behavior replacement)."
+  },
+  "mocks": [],
+  "remediation_rounds": 1,
+  "review_outcome": "FINAL story. Two-model review (Opus + Fable) — BOTH CLEAN, 0 findings each. Verified: flag physically removed (not dead-code); full AC-BOUND-1..5 sweep passes cumulatively over the final tree; AC-BOUND-3 scanner widened to guard the S10 notestr:outbox key (liveness-proven); receive-engine DELETABILITY ACHIEVED (imports only domain/engine-types/ingest-policy — S9 Decider deletability-debt fully discharged); ingest-queue deletion is dead-code removal covered by ingest-policy; task-reducer keep honest (type-only TaskState import + AC-MIG-4-protected mutation tests, runtime production-dead); extraction-seam docs adequate. LEAD gate-remediation: fixed 2 TS2348 vitest-Mock whole-program typecheck errors (in S12 readiness + S14 optimistic-echo test files) that make build missed (next build doesn't typecheck .test.tsx) -> proper typed vi.fn<sig>(), no weakened assertion; npx tsc --noEmit now exit 0. Verification: VQ-S13-001..005/007 YES, VQ-S13-006 PARTIAL (scope-list nit — 5 files edited beyond scope.includes as REQUIRED by the AC-BOUND-3-widening deliverable; authorized, documented, behavior-preserving, zero new logic; lead-accepted).",
+  "modules_touched": [
+    "receive-engine",
+    "task-store",
+    "engine-types",
+    "task-crdt",
+    "marmot-adapter",
+    "device-sync"
+  ],
+  "escalation_history": [],
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "This story's own charter (deletions + docs only, zero new correctness logic) collided with a real dependency it didn't anticipate: extending the AC-BOUND-3 scanner to guard the outbox IDB key (deliverable 5) immediately tripped false positives in three files outside stories.json's literal scope.includes (publish-outbox.ts, marmot-adapter.ts, publish-outbox.test.ts), because that scanner does raw text matching with no comment/string stripping (unlike bound-4's scanner). Landing the deliverable as specified required rewording doc comments and swapping two inlined template-literal keys for the already-exported outboxKey() helper in files never named in scope.includes -- a real, unavoidable scope-boundary tension between the task brief's explicit ask and stories.json's coarser-grained scope declaration, resolved by treating the detailed task brief as authoritative (per its own explicit instruction) and keeping every such edit behavior-preserving (proven by an unchanged, fully-green 1017-test run). The bound-4.structural.test.ts ALLOWLISTED_LEGACY_FILES judgment call (keep vs. delete task-reducer.ts) also took real analysis: the deliverable's own check ('is applyEvent/comparator imported by any production path?') answers NO, which reads like license to delete, but task-reducer.test.ts's ~40 mutation-pinned test cases have no proven equivalent-behavior replacement (task-crdt.test.ts covers only the tie-break comparator, not applyEvent's per-event-type field-copy semantics) -- deleting it would have risked violating AC-MIG-4's 'no test file deleted without a same-behavior replacement' bar under a deletions-only story's limited license to independently verify that equivalence. Kept the file and documented the rationale in the allowlist comment instead.",
+    "surprised_by": "The S9-authored isEngineReadPathEnabled() JSDoc already fully anticipated this exact story and documented itself as vestigial, unreferenced, and left specifically for S13 to delete -- confirming the flag was not load-bearing (the task brief's STOP condition) required almost no investigation, since S12 had already made shouldMountEngine flag-independent and left an explicit paper trail saying so.",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  }
+}

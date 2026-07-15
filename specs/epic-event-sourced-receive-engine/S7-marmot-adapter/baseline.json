@@ -1,0 +1,28 @@
+{
+  "story_id": "S7",
+  "captured_at": "2026-07-13T20:55:00Z",
+  "commands": {
+    "test": "npx vitest run (make-aware: `make ensure-platform` run first; only warned about a missing Playwright chromium binary, unrelated to unit tests, no reinstall triggered)",
+    "typecheck": "npx tsc --noEmit",
+    "lint": "NO_LINT — package.json has no \"lint\" script and no eslint config file exists in the repo (unchanged since S1 baseline)"
+  },
+  "results": {
+    "test": {
+      "status": "PASS",
+      "test_files": 38,
+      "tests": 837
+    },
+    "typecheck": {
+      "status": "clean",
+      "errors": 0
+    },
+    "lint": {
+      "status": "NO_LINT"
+    }
+  },
+  "notes": [
+    "src/integration/ does not exist yet at S7 baseline — this story creates it (first story to populate the directory).",
+    "src/engine/engine-boundary.structural.test.ts (AC-BOUND-1) already forbids marmot-ts imports under src/engine/*; src/domain/domain-boundary.structural.test.ts already forbids them under src/domain/* (S1/S2). This story does not need to add a new boundary-scanner file — regression coverage for VQ-S7-002's 'zero marmot-ts under src/engine or src/domain' half already exists; S7 adds the runtime-value structural proof (JSON-serializability of emitted signals) inside marmot-adapter.test.ts instead, since scope.includes only lists marmot-adapter.ts/.test.ts.",
+    "src/marmot/device-sync.ts (the pre-existing real marmot-ts integration, Boundary Rule 5 frozen/scheduled-for-replacement) was read for its verified real-world usage of group.ingest()/client.network.subscription()/deserializeApplicationData/epoch reads, and node_modules/@internet-privacy/marmot-ts/dist/client/group/marmot-group.{d.ts,js} was read directly for the exact IngestResult union and yield/emit ordering — this is the authoritative source for marmot-adapter.ts's translation logic, not device-sync.ts's code (which this story does not import, per Boundary Rule 5 and the src/integration/* dependency table)."
+  ]
+}

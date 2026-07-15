@@ -8,7 +8,14 @@
  *    next/navigation, any src/integration/* file, or marmot-ts
  *    (architecture.md Boundary Rule 1).
  *  - AC-BOUND-3: no file other than engine-types.ts inlines one of the
- *    epic's four new IDB key literals (architecture.md Boundary Rule 8/9).
+ *    epic's five new IDB key literals (architecture.md Boundary Rule 8/9).
+ *    Widened by S13 ("boundary-hardening-and-cutover-complete") to also
+ *    guard the S10 outbox key (see engine-types.ts's OUTBOX_KEY_PREFIX /
+ *    outboxKey) alongside the original four -- it is Rule-9-defined in
+ *    engine-types.ts but was not structurally scanned for inlining
+ *    elsewhere until this story. (Deliberately not spelled out as a
+ *    contiguous literal here -- see the self-referential-scan discipline
+ *    below.)
  *
  * Self-referential-scan discipline (prior learning): this file must not
  * contain, as CONTIGUOUS on-disk text, the literal import syntax or IDB key
@@ -305,6 +312,10 @@ const IDB_KEY_MARKERS: ReadonlyArray<{ name: string; marker: string }> = [
   { name: "accepted-events", marker: "notestr:" + "accepted-events:" },
   { name: "engine-checkpoints", marker: "notestr:" + "engine-checkpoints:" },
   { name: "deferred-ids", marker: "notestr:" + "deferred-ids:" },
+  // Added S13: the S10 publish-outbox IDB key. Rule-9-defined in
+  // engine-types.ts (OUTBOX_KEY_PREFIX/outboxKey) since S10 but never
+  // previously added to this scanner's protected set.
+  { name: "outbox", marker: "notestr:" + "outbox:" },
 ];
 
 function findInlinedIdbKeyMarkers(source: string): string[] {

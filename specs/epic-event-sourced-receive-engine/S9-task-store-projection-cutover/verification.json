@@ -45,6 +45,25 @@
       "category": "SPEC",
       "ac_id": "AC-MIG-2",
       "question": "does the implementation satisfy AC-MIG-2's observable -- does a scripted diff check (git diff <phase-1-baseline>..<current> -- src/marmot/device-sync.ts src/store/task-store.tsx) assert zero added control-flow-branch lines in task-store.tsx that lack a matching removed line, proving the cutover is straight branch relocation/delegation rather than net-new branching, and is this check run at this phase-boundary commit rather than deferred?"
+    },
+    {
+      "question_id": "VQ-S9-008",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "ac_id": "AC-MIG-2",
+      "question": "The AC-MIG-2 diff check (git diff da36c2b -- src/marmot/device-sync.ts src/store/task-store.tsx, run before this story task-store.tsx was diff-identical to the da36c2b baseline) shows exactly ONE added control-flow-branch -- a single ConditionalExpression (`isEngineReadPathEnabled() ? {...} : {...}` selecting {projection, loading}) -- zero removed, net +1, NOT <= 0. Verified via `grep -E '\\bif\\s*\\(|\\bswitch\\s*\\('` (zero if/switch hits, added or removed, in either file) plus manual inspection of every `?`/`:` occurrence in the diff (5 of 6 apparent hits are `??` nullish-coalescing or a TS optional-property `?:` marker, not ternaries; the 1 genuine ternary is this flag's data-source selector, and it is the ONLY conditional in the whole diff -- no duplicated branch tree). Is a documented, isolated net +1 -- the single unavoidable selector for a genuine runtime toggle, with no removable/relocatable branch available inside task-store.tsx to offset it (the file had zero prior drift from baseline) -- an acceptable resolution of AC-MIG-2 for this phase-boundary commit, or does Boundary Rule 5's language require a stricter reading (e.g. a compile-time/build-config selection mechanism instead of a JS conditional) that this implementation does not satisfy?"
+    },
+    {
+      "question_id": "VQ-S9-009",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "This story wires a genuinely-functioning ReceiveEngine into task-store.tsx (EngineTaskBridge) using an INTERIM PersistenceAdapter: the 4 methods S4's raw-event-log-store.ts implements (appendFact/loadFacts/appendAcceptedEvent/loadAcceptedEvents) are real and durable; the 6 S11-owned methods (saveCheckpoint/loadCheckpoint/saveDeferredIds/loadDeferredIds/acceptDeferredFact/clearGroupState) are session-scoped, non-durable in-memory stand-ins, because src/persistence/checkpoint-store.ts and deferred-store.ts do not exist yet (S11 is sequenced after S9). EngineTaskBridge also hardcodes engine.start({origin:'welcome'}) universally (never 'restored') to avoid receive-engine.ts's not-yet-hardened absent/malformed-checkpoint recovering path. Both are documented judgment calls (architecture.json 'interim-persistence-adapter-for-checkpoint-deferred' / 'engine-origin-hardcoded-to-welcome'), resolved as implementation-detail defaults rather than escalated to AWAITING_SPECIFICATION on the reasoning that the flag defaults OFF and neither choice changes observable product behavior until a developer/test explicitly opts the engine path on. Was this the correct call, or does wiring a real engine this far ahead of S11's durable persistence landing constitute a product-behavior-relevant decision (e.g. a developer flipping the flag ON before S11 lands could silently lose deferred/checkpoint state across a browser restart) that should have been surfaced for a human decision instead? Should S11's story brief be told explicitly (mirroring how S8 flagged VQ-S8-009 forward to S9) that this interim adapter and origin hardcode exist and are meant to be replaced, not merely supplemented, once checkpoint-store.ts/deferred-store.ts land?"
+    },
+    {
+      "question_id": "VQ-S9-010",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "question": "While building EngineTaskBridge, an infinite render loop (heap-exhausting OOM under vitest) was discovered and fixed: react-engine-hooks.ts's useReceiveEngine returns a freshly-constructed `{projection, engineState, lastRejection}` object literal on EVERY render (not memoized), so a naive `useEffect(() => onState(hookState), [hookState, onState])` in a consuming component fires on every render regardless of whether the underlying values changed -- and since firing calls a parent setState, this created an unbounded render loop. The fix (task-store.tsx's EngineTaskBridge) destructures and depends on the three individual fields instead of the container object. Is this footgun -- an unmemoized hook return value inviting an infinite loop in any consumer that naively depends on the whole object in an effect -- significant enough that react-engine-hooks.ts's own module doc comment or ReceiveEngineHookState's JSDoc should carry an explicit caller warning, or wrap projection/engineState/lastRejection in a memoized container itself, so a future consumer (S10, S12, or any other future integration point) does not have to rediscover this the same way?"
     }
   ]
 }

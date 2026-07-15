@@ -202,6 +202,29 @@ export interface ReceiveEngine {
   reset(): Promise<void>;
   subscribe(listener: (event: EngineOutputEvent) => void): Unsubscribe;
   getState(): EngineState;
+  /**
+   * OPTIMISTIC LOCAL ECHO (S11B — engine-boundary realization of spec.md
+   * Layer 4's "optimistic local publish intent" the S10 outbox explicitly
+   * deferred). Accepts a locally-authored `TaskEvent` into this engine's
+   * projection and durable accepted-log IMMEDIATELY — before any relay
+   * round-trip — using the SAME deterministic id the publish path already
+   * computes for the rumor it is about to send (`rumorId`, via
+   * `deriveMlsAcceptedEventId`, an identity function today). Idempotent: a
+   * second call with an already-processed `rumorId` (duplicate dispatch, or
+   * the id was already accepted via a real `message` signal) is a no-op.
+   * Emits the SAME `domain_event_accepted` a remote accept would, so
+   * `react-engine-hooks.ts` folds it via the identical `applyEvent` path a
+   * remote edit uses (AC-OPT-3 convergence). Durable via the same
+   * bounded-backoff `appendAcceptedEventWithRetry` path remote accepts use
+   * (AC-OPT-2: survives restart via `buildProjection(replayOrder(acceptedLog))`).
+   * Deliberately does NOT append a `RawProtocolFact` or advance
+   * `lastIngestedSeq` — see architecture.json judgment call
+   * "s11b-no-raw-fact-for-local-accept". Callable at any lifecycle,
+   * including before `start()` has resolved (see judgment call
+   * "s11b-generation-captured-at-execution-not-call-time") — a dispatch
+   * racing engine startup is never silently dropped.
+   */
+  acceptLocal(rumorId: string, payload: TaskEvent): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1219,6 +1242,22 @@ export function createReceiveEngine(deps: ReceiveEngineDeps): ReceiveEngine {
     if (gen !== generation) return;
     await transitionTo(gen, "catching_up");
     if (gen !== generation) return;
+    // AC-PERS-2 (Implementation Constraint 12), S11: the
+    // "preserve-and-replay-recovery" degradation reason (set by
+    // enterRecovering's viaPreserveAndReplay arm, see that function's
+    // comment) is cleared HERE, not in enterRecovering. transitionTo's own
+    // emitStateChanged() fires SYNCHRONOUSLY, before its awaited checkpoint
+    // save -- so with the reason still present at that moment, the FIRST
+    // catching_up engine_state_changed event correctly reports
+    // health:"degraded" (catching_up IS an ACTIVE lifecycle, unlike
+    // recovering). The transitionTo call immediately above has, by the time
+    // we reach this line, already awaited its own checkpoint save to
+    // completion -- so clearing now satisfies "until the first successful
+    // checkpoint save" and emits a second engine_state_changed reporting
+    // health:"nominal" once that save has landed. No-op (nothing to clear)
+    // for the ordinary joining->catching_up paths (L4/L5), which never add
+    // this reason.
+    clearDegradationReason("preserve-and-replay-recovery");
     liveBuffer = [];
     liveUnsubscribe = adapter.openLive((signal) => {
       if (gen !== generation) return;
@@ -1417,18 +1456,20 @@ export function createReceiveEngine(deps: ReceiveEngineDeps): ReceiveEngine {
     }
     await transitionTo(gen, "recovering");
     if (gen !== generation) return;
-    if (viaPreserveAndReplay) {
-      // Health choreography aligned to Constraint 12's letter (sev-7): clear
-      // the degradation reason via the proper accessor (never a raw
-      // `Set.delete`, which would bypass `emitStateChanged()`'s gating) upon
-      // the FIRST SUCCESSFUL checkpoint save after recovery starts -- the
-      // `transitionTo` call immediately above -- NOT deferred to reaching
-      // `live`. Once that save has landed with `bootstrapCompleted: true`,
-      // the checkpoint is durably trustworthy and there is no remaining
-      // reason to keep reporting `degraded` through catching_up/
-      // buffering_live/live.
-      clearDegradationReason("preserve-and-replay-recovery");
-    }
+    // AC-PERS-2 conformance (S11, architecture.json judgment call
+    // "ac-pers-2-health-timing-fix-is-in-scope-not-a-rewrite"): the
+    // "preserve-and-replay-recovery" degradation reason is deliberately
+    // NOT cleared here. fsm.md forces health:nominal for the non-ACTIVE
+    // "recovering" lifecycle regardless of degradationReasons ("uninitialized,
+    // joining, recovering, and stopped are always nominal"), so clearing the
+    // reason immediately after THIS checkpoint save (as S5/S6 originally
+    // shipped it) makes the degraded window structurally unobservable --
+    // the engine would already read nominal by the time catching_up is
+    // entered, violating AC-PERS-2's literal text ("MUST enter catching_up
+    // with health: degraded until the first successful checkpoint save").
+    // The clear is instead performed in `enterCatchingUp`, right after ITS
+    // OWN transitionTo(gen, "catching_up") checkpoint save resolves -- see
+    // that function's own comment.
 
     // R1 (partial -- see architecture.json "recovering-r1-r3-best-effort"):
     // load the three stores needed to rebuild the deferred queue and mark
@@ -1632,5 +1673,41 @@ export function createReceiveEngine(deps: ReceiveEngineDeps): ReceiveEngine {
     return { lifecycle, health: health() };
   }
 
-  return { start, stop, reset, subscribe, getState };
+  // ---- acceptLocal (S11B — optimistic local echo) ----
+  // Routed through the SAME serial FIFO (`enqueue`) as ingest signals, so a
+  // local accept is ordered consistently relative to concurrent live/catchUp
+  // processing for this group. Deliberately `enqueue()`, not `enqueueGen()`:
+  // see architecture.json judgment call
+  // "s11b-generation-captured-at-execution-not-call-time" for why `gen` is
+  // read fresh at execution time rather than pinned at call time.
+  function acceptLocal(rumorId: string, payload: TaskEvent): Promise<void> {
+    return enqueue(async () => {
+      const gen = generation;
+      const eventId = deriveMlsAcceptedEventId(rumorId);
+      if (ingestPolicy.hasProcessed(eventId)) return; // AC-OPT-3 dedupe: already accepted (duplicate local accept, or a real message already landed this id)
+
+      const event: AcceptedDomainEvent = {
+        id: eventId,
+        // See architecture.json judgment call "s11b-factid-deterministic-placeholder":
+        // the real kind-445 id is unknown until send completes and cannot be
+        // backfilled (appendAcceptedEvent is idempotent-on-id, first write wins).
+        factId: `local:${rumorId}`,
+        sourceKind: "mls-rumor",
+        groupId,
+        acceptedAt: scheduler.now(),
+        epoch: lastEpoch ?? "unknown",
+        payload,
+      };
+
+      const appended = await appendAcceptedEventWithRetry(gen, event);
+      if (!appended) return; // gen-stale abandon or AC-PERS-1 exhaustion give-up (reportIfExhausted already emitted)
+      if (gen !== generation) return;
+
+      ingestPolicy.markProcessed(eventId);
+      lastAcceptedDomainEventId = eventId;
+      emit({ type: "domain_event_accepted", event });
+    });
+  }
+
+  return { start, stop, reset, subscribe, getState, acceptLocal };
 }

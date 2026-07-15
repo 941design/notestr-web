@@ -1,0 +1,83 @@
+{
+  "module_name": "task-store",
+  "purpose": "Full legacy->engine cutover (Phase 8, user-authorized). Retires device-sync.ts's group-ingest driver (kind-445 subscription + group.ingest call) and its persistence-side applicationMessage listener; retires task-store.tsx's own applicationMessage listener, legacy `state` machinery, and the S9 activeRead selector ternary; retires src/store/persistence.ts's legacy read/write path against notestr:events:${groupId}. The engine (src/engine/receive-engine.ts via src/integration/react-engine-hooks.ts) becomes the SOLE receive path and SOLE group.ingest() driver, mounted unconditionally once ready (no longer flag-gated). Wires S11's real durable PersistenceAdapter (src/persistence/deferred-store.ts's createPersistenceAdapter) into the composition root for the first time (previously only the S9 interim, session-scoped, non-durable adapter was wired), and adds the minimal restored-vs-welcome origin-routing boolean this durability makes meaningful (architecture.md 'Re-join and Reset').",
+  "public_api": [
+    { "name": "TaskStoreProvider", "signature": "React.FC<TaskStoreProviderProps>", "description": "Unchanged public surface. Internally: reads exclusively from the engine's TaskProjection; mounts EngineTaskBridge unconditionally once readyForEngine and this mount's engine-start origin are resolved." },
+    { "name": "useTaskStore", "signature": "() => TaskStoreContextValue", "description": "Unchanged." },
+    { "name": "useDeviceSync", "signature": "(client, pubkey, relays, signer) => void", "description": "Unchanged signature. Internally: Welcome-receiving and auto-invite flows unchanged; the group-ingest driver (historical fetch, live subscription, retry-drain, persistence-side applicationMessage listener) is deleted." },
+    { "name": "fetchAndApplyTaskBootstrap", "signature": "(groupId, ownPubkey, signer, client, relays, currentState) => Promise<TaskEvent[]>", "description": "KEPT verbatim per surgical constraint (still test-covered); no production caller remains in this repo after this story (the engine's own marmot-adapter.ts:fetchBootstrap() covers the join-time bootstrap fetch that task-store.tsx's removed mount effect used to invoke this function for)." },
+    { "name": "publishTaskStateSync", "signature": "(groupId, inviteePubkeyHex, signer, client, relays) => Promise<void>", "description": "KEPT; internal data source swapped from the retired persistence.ts/task-reducer.ts (loadEvents+replayEvents) to the durable engine store (raw-event-log-store.ts's loadAcceptedEvents + task-projector.ts's buildProjection/replayOrder) -- delegation substitution, same read-local-task-state contract, required because item 6 retires persistence.ts's read path this function depended on." },
+    { "name": "clearEvents", "signature": "(groupId) => Promise<void>", "description": "KEPT in src/store/persistence.ts -- GroupManager.tsx's leave-group flow still calls this to purge the legacy notestr:events:${groupId} IDB namespace on explicit leave (VQ-S12-006 answer: actively cleaned up on leave, accepted-abandoned-in-place otherwise -- see judgment_calls)." }
+  ],
+  "private_files": [
+    "src/marmot/device-sync.ts",
+    "src/store/task-store.tsx",
+    "src/store/persistence.ts"
+  ],
+  "owned_data": [
+    "React context state (TaskStoreContextValue) -- unchanged, not persisted",
+    "device-sync.ts: publish-trace bookkeeping Maps (expectedPublishByHTag, dispatchPublishInFlightByHTag, windowKind445State) -- unchanged",
+    "persistence.ts: notestr:events:${groupId} (IDB) -- write path retired; clearEvents (deletion only) retained for group-leave cleanup"
+  ],
+  "dependencies_allowed": [
+    "src/integration/react-engine-hooks.ts (useReceiveEngine, ReceiveEngineHookState)",
+    "src/integration/marmot-adapter.ts (createMarmotIngestAdapter, outbox bridge exports)",
+    "src/integration/publish-outbox.ts (createPublishOutbox)",
+    "src/engine/receive-engine.ts (createReceiveEngine, createRealEngineScheduler, EngineOrigin, StartOptions, ReceiveEngine types)",
+    "src/engine/engine-types.ts (types only)",
+    "src/persistence/deferred-store.ts (createPersistenceAdapter -- NEW production consumption of the real S11 adapter)",
+    "src/persistence/checkpoint-store.ts (loadCheckpoint -- NEW, for origin-routing detection)",
+    "src/persistence/raw-event-log-store.ts (loadAcceptedEvents -- NEW production consumer in device-sync.ts:publishTaskStateSync and task-store.tsx's test-hook)",
+    "src/domain/task-projector.ts (buildProjection, replayOrder -- NEW production consumer in device-sync.ts:publishTaskStateSync)",
+    "src/domain/task-events.ts / ./task-events shim (Task, TaskEvent types)",
+    "src/marmot/device-store.ts (bootstrap-state/invited-key helpers -- unchanged, device-sync.ts only)",
+    "src/marmot/storage.ts (createKVStore -- persistence.ts, unchanged)",
+    "@internet-privacy/marmot-ts, ts-mls (device-sync.ts only, per Boundary Rule allowed edge)"
+  ],
+  "dependencies_forbidden": [
+    "src/marmot/ingest-queue.ts (retired from device-sync.ts's own import graph this story -- device-sync.ts no longer drives ingest; the module itself is left in place per item 8's importer check, see judgment_calls)",
+    "src/store/task-reducer.ts (device-sync.ts keeps a TYPE-ONLY import of TaskState for fetchAndApplyTaskBootstrap's unchanged signature; task-store.tsx drops its runtime import entirely -- applyEvent/replayEvents/TaskState all removed from task-store.tsx)"
+  ],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "src/store/task-store.listener-removal.test.tsx (new -- AC-MIG-3 grep gate + behavioral proof)",
+    "src/marmot/device-sync.test.ts (updated -- retry-drain describe block removed; publishTaskStateSync/inviteAndPublishSnapshot mocks re-pointed at raw-event-log-store.ts/task-projector.ts)",
+    "src/store/task-store.cutover.test.tsx (updated -- S9 dual-path premise retired; legacy-path and flag-gating tests removed, engine-only convergence/loading-semantics tests retained)"
+  ],
+  "judgment_calls": [
+    {
+      "id": "s12-origin-routing-boolean-authorized-by-lead-brief",
+      "note": "TaskStoreProvider gains one new piece of state (engineOrigin) and one new effect (loadCheckpoint(groupId) -> 'restored'|'welcome') to satisfy architecture.md's 'Re-join and Reset' origin discriminator. This is a NEW branch in task-store.tsx, which Boundary Rule 5 / scope.excludes would otherwise forbid -- but the S12 task brief explicitly pre-authorizes exactly this: 'the origin-routing detection is delegation to loadCheckpoint + a single restored/welcome selection; keep it minimal -- one boolean, not a branch tree.' Mirrors the precedent set by AC-MIG-2's S9 role-based carve-out for the read-path selector ternary. Without this, ENGINE_START_OPTIONS would stay hardcoded to {origin:'welcome'}, which -- now that the interim in-memory PersistenceAdapter is replaced by the real durable one -- would silently re-bootstrap every group on every reload instead of recovering from the durable accepted-log, defeating S11/S14 durability. This was flagged explicitly as 'do NOT skip' in the task brief."
+    },
+    {
+      "id": "s12-real-persistence-adapter-wiring-required-not-optional",
+      "note": "S9 wired an interim, session-scoped in-memory PersistenceAdapter into EngineTaskBridge (checkpoint/deferred halves) because checkpoint-store.ts/deferred-store.ts did not exist yet. S11 built the real, durable ten-method adapter (deferred-store.ts's createPersistenceAdapter) but explicitly left it unconsumed by any composition root ('not yet wired into any composition root -- app-level wiring is out of this story's file scope', per S11's own doc comment). S12 is the correct place to close that gap: origin-routing (this story's own mandate) is meaningless against an adapter whose loadCheckpoint never survives a reload. Swapped createInterimEnginePersistenceAdapter() for createPersistenceAdapter() inside EngineTaskBridge; deleted the interim adapter function and its now-unused raw-event-log-store re-export aliases."
+    },
+    {
+      "id": "s12-legacy-mount-effect-bootstrap-superseded-by-engine-fetchBootstrap",
+      "note": "task-store.tsx's mount-time 'Load persisted events' effect did double duty: (a) seed legacy state from persistence.ts, (b) for a Welcome-joined group not yet bootstrapped, call fetchAndApplyTaskBootstrap and persist synthetic task.created events into the legacy log. (a) is retired outright (legacy state is gone). (b) is NOT rebuilt -- src/integration/marmot-adapter.ts's fetchBootstrap() (IngestSource control interface, architecture.md Seam Contracts) already reimplements the identical kind-30078 fetch/decrypt/CRDT-merge behavior and is unconditionally drained by receive-engine.ts's enterJoining() on every 'joining' entry, idempotent by construction via the deterministic bootstrap AcceptedDomainEvent.id + appendAcceptedEvent's id-idempotency (no explicit isBootstrapCompleted gate needed at that layer, unlike the retired task-store.tsx path). Verified: enterJoining calls adapter.fetchBootstrap() unconditionally (receive-engine.ts:1388), with no external completion flag. fetchAndApplyTaskBootstrap itself is left intact in device-sync.ts (surgical KEEP) since it has no other production caller but remains test-covered; device-store.ts's isBootstrapCompleted/markBootstrapCompleted are left untouched (not in scope.includes) and become task-store.tsx-unreferenced but still device-sync.ts-independent (unused by anything after this story, not deleted since device-store.ts is out of scope.includes)."
+    },
+    {
+      "id": "s12-persistence-ts-clearEvents-kept-not-retired",
+      "note": "VQ-S12-006 (orphaned IDB namespace). 'Retire persistence.ts's legacy read/write path' is read as: loadEvents/saveEvents/appendEvent (the receive-pipeline read/write round-trip this story retires) are deleted. clearEvents is KEPT because GroupManager.tsx (out of scope.includes; a real, unavoidable cross-boundary importer) still calls it on explicit group-leave to purge the legacy notestr:events:${groupId} IDB entries for that group -- real, active cleanup, not abandonment, for the leave path. For a group a user never leaves, any legacy notestr:events:${groupId} entries written before this story shipped are accepted-abandoned-in-place (never read again, only removed via explicit leave) -- documented here per VQ-S12-006's explicit accept-as-risk-or-clean-up choice; no migration/backfill job is added (would be new logic beyond this story's deletions-only mandate)."
+    },
+    {
+      "id": "s12-rejoin-detection-gap-flagged-not-built",
+      "note": "Per the task brief's explicit allowance ('flag it if so; don't necessarily build full re-join detection here if it's out of reach'): a re-join (a NEW Welcome for a group that already has local engine state, e.g. forget-device -> re-invite) is specified in architecture.md's 'Re-join and Reset' as stop()->reset()->start('welcome'), integration-layer-detected. Nothing in task-store.tsx (before or after this story) detects a re-join arriving while the group is already mounted -- EngineTaskBridge's key={groupId} only forces a remount on a groupId CHANGE, not a same-groupId re-join. This is a genuine, pre-existing gap this story does not close (closing it would require new decision logic -- Welcome-vs-restart discrimination mid-mount -- well beyond the 'one boolean' mandate). Flagged for a follow-up story / S13 consideration."
+    },
+    {
+      "id": "s12-ingest-queue-not-retired-real-importer-check",
+      "note": "Item 8's conditional ('retire ingest-queue.ts ONLY if genuinely vestigial -- check importers') was checked precisely: a substring grep for 'ingest-queue' initially over-matched doc-comment prose in src/engine/ingest-policy.ts ('WHY THIS DOES NOT IMPORT src/marmot/ingest-queue.ts') as a false-positive importer. A precise import-statement grep confirms ingest-policy.ts does NOT import ingest-queue.ts (by design -- it deliberately reimplements a marmot-free retry queue to keep src/engine/ free of src/marmot/ imports). The ONLY real importers were device-sync.ts (removed this story) and ingest-queue.test.ts (its own unit test). Genuinely vestigial post-cutover by this check -- BUT left in place, not deleted, because ingest-queue.ts and ingest-queue.test.ts are not in scope.includes and deleting a whole pre-existing module+test pair is a bigger deletion than this story's 'deletions only in device-sync.ts + task-store.tsx' scope license covers; flagged for S13/a follow-up cleanup story rather than actioned here."
+    },
+    {
+      "id": "s12-task-reducer-ts-not-retired-real-importers-remain",
+      "note": "Item 8's second conditional (task-reducer.ts ALLOWLISTED_LEGACY_FILES removal) does NOT apply -- task-reducer.ts remains genuinely used: device-sync.ts keeps a type-only TaskState import (fetchAndApplyTaskBootstrap's unchanged signature), and task-reducer.test.ts / task-reducer.property.test.ts / multi-client.property.test.ts / task-store.cutover.test.tsx all import it directly and independently of task-store.tsx's own (now-removed) runtime usage. No change made to task-reducer.ts or bound-4.structural.test.ts's ALLOWLISTED_LEGACY_FILES."
+    },
+    {
+      "id": "s12-out-of-scope-test-files-updated-as-direct-consequence",
+      "note": "src/marmot/device-sync.test.ts and src/store/task-store.cutover.test.tsx are NOT in this story's scope.includes, but both directly test functionality this story's MANDATED production deletions remove or change the data source of (device-sync.test.ts's AC-B-6 retry-drain describe block tests selectAndIncrementRetries/MAX_RETRIES_PER_EPOCH, both deleted; its publishTaskStateSync/inviteAndPublishSnapshot describe blocks mock the now-retired persistence.ts/task-reducer.ts seam publishTaskStateSync no longer uses. task-store.cutover.test.tsx's entire premise is an S9 dual-path [legacy vs engine] comparison; the legacy path it exercises via a FakeGroup + group.on('applicationMessage',...) no longer exists in production code after this story). Left unedited, these tests would fail to compile or assert against removed behavior, breaking the Regression Prevention gate (whole suite green) this story is held to. Treated as a necessary, minimal, directly-caused consequence of the sanctioned production deletions (updating a test file for the exact function/behavior it tests, not unrelated scope creep) rather than a scope violation requiring escalation -- consistent with 'implementation details' the architect resolves autonomously per this story's own dispatch instructions (escalate only for protocol-guard violations or a stranded receive responsibility, neither of which this is)."
+    }
+  ]
+}

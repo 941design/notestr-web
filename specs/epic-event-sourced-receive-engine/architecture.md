@@ -2,7 +2,7 @@
 
 **ADR**: docs/adr/ADR-002-event-sourced-receive-engine.md
 **Status**: current
-**Last updated**: 2026-07-12 (Stage-2 cold review amendments — see inline "(amended 2026-07-12, Stage-2 cold review)" markers)
+**Last updated**: 2026-07-14 (S13 "boundary-hardening-and-cutover-complete" — added "Extraction Seams" section; prior Stage-2 cold review amendments from 2026-07-12 are marked inline "(amended 2026-07-12, Stage-2 cold review)")
 
 ---
 
@@ -220,7 +220,7 @@ The ET-1 contradiction is resolved by **direction of control vs. direction of co
 **Invariants:**
 - `IngestSignal` carries **no marmot-ts types**. `payload` is the app's own `TaskEvent` wire type; `RawProtocolFact`/`RawProtocolFactInput` are already marmot-free (a `NostrEvent` envelope). Decoding and epoch reads happen inside the adapter.
 - The engine never calls `group.ingest()` or the subscription directly. The adapter never makes accept/defer/dedupe/normalize decisions — those are engine-owned.
-- `catchUp()` must be drained to completion before `openLive()` is invoked for the same group (the engine's `catching_up → buffering_live` transition); live signals arriving during catch-up are buffered by the engine, not the adapter.
+- On entry to `catching_up` the engine opens live FIRST — `openLive()` is invoked (its signals buffered) BEFORE `catchUp()` is drained — then drains `catchUp()` to completion, then flushes the live buffer (`catching_up → buffering_live → live`). Live signals arriving during catch-up are buffered by the engine, not the adapter. **(amended 2026-07-13, S7 Stage-1 review — the prior wording said "catchUp drained before openLive," which contradicts AC-FSM-2, fsm.md §"Cutover protocol" step 1, and I-FSM-2; opening live only after catch-up drains would reopen the live-cutover gap the FSM exists to close.)**
 - `epoch_advanced` maps to the engine's `group_epoch_advanced` output and the deferred-retry flush; a bare ratchet advance (no epoch change) produces no signal.
 
 **Produced by:** `src/integration/marmot-adapter.ts`
@@ -251,6 +251,62 @@ The ET-1 contradiction is resolved by **direction of control vs. direction of co
 8. Any IDB key not defined in `src/engine/engine-types.ts` being introduced by an implementation agent.
 9. `src/engine/receive-engine.ts` importing marmot-ts types directly. RESOLVED: the engine consumes only `IngestSignal` (marmot-free) and drives ingest via the `IngestSource` control interface; all marmot calls live in `marmot-adapter.ts`. See the IngestSource / IngestSignal seam contract.
 10. `src/integration/marmot-adapter.ts` having any independent React lifecycle. ENFORCED STRUCTURALLY (resolves Open Question §8): the engine **owns** the adapter — the adapter is constructed and handed to the engine, the engine holds the only reference, and `engine.stop()` (FSM L10) calls `adapter.close()` as its final action. The React integration manages exactly **one** object (the engine) with one `useEffect` cleanup (`engine.stop()`); the adapter MUST NOT register its own effect/cleanup. Teardown order is therefore a function of call sequence inside `stop()`, not React effect registration order — the `group.off()`-before-`engine.stop()` starvation is structurally impossible.
+
+---
+
+## Extraction Seams  *(S13 — Library Character, spec.md §"Library Character")*
+
+spec.md's Library Character section names the goal: `src/domain/` and `src/engine/`
+should remain extractable as a standalone package without forcing abstractions that
+slow delivery for hypothetical consumers that don't yet exist. This epic never built
+a separate package; this section is the closing inventory a future extraction would
+need, consolidating pointers into the contracts already frozen above rather than
+re-deriving them.
+
+**What the reusable core owns (per Library Character):** the receive engine, its
+state machine, raw event log contracts, event normalization contracts, projection
+interfaces, and persistence adapter interfaces — i.e. everything under
+`src/domain/` and `src/engine/`. The app-specific shell (`src/integration/`,
+`src/store/`, `src/marmot/`) owns the task domain schema, UI selectors, React
+integration, and visual degraded/recovery states, and stays behind.
+
+**The seven frozen seam contracts** (full field tables, invariants, producer/consumer
+pairs, and IDB keys are in "Seam Contracts" above — not re-stated here):
+
+| Seam | Crosses | Section |
+|---|---|---|
+| `RawProtocolFact` / `RawProtocolFactInput` | adapter → engine → persistence | Seam Contracts § RawProtocolFact |
+| `AcceptedDomainEvent` | engine → domain projector, persistence | Seam Contracts § AcceptedDomainEvent |
+| `EngineCheckpoint` | engine ↔ persistence | Seam Contracts § EngineCheckpoint |
+| `EngineOutputEvent` | engine → integration | Seam Contracts § EngineOutputEvent |
+| `OutboxEntry` | integration → integration (adapter outbox bridge) | Seam Contracts § OutboxEntry |
+| `PersistenceAdapter` | engine → persistence (interface-only call boundary) | Seam Contracts § PersistenceAdapter |
+| `IngestSource` / `IngestSignal` | engine ↔ adapter (control + data interface) | Seam Contracts § IngestSource / IngestSignal |
+
+All seven are defined in `src/engine/engine-types.ts` (the cross-module type and
+IDB-key authority — Rule 8/9) or `src/domain/domain-events.ts`/`task-events.ts`
+(the wire/domain types `AcceptedDomainEvent`/`EngineOutputEvent` carry). A consumer
+extracting `src/domain/` + `src/engine/` needs no other source file to recover these
+contracts — `type_name`, `fields`, and `invariants` are complete as documented above.
+
+**What keeps `src/domain/` and `src/engine/` extraction-clean** (full text in
+"Boundary Rules" above): Boundary Rules 1–3 forbid `src/domain/*` importing
+anything (pure, zero external imports) and forbid `src/engine/*` importing React,
+Next.js, or `src/integration/*` — the two structural tests that enforce this
+cumulatively (`domain-boundary.structural.test.ts` for `src/domain/*`,
+`engine-boundary.structural.test.ts`'s AC-BOUND-1 for `src/engine/*`) are
+themselves part of what a fork would need to carry forward to keep the extraction
+honest over time. `src/engine/*` reaches `src/persistence/*` only through the
+`PersistenceAdapter` interface (never an implementation import), so a consumer can
+swap in any storage backend that satisfies the ten-method contract without touching
+engine code. `src/domain/*` → `src/engine/*` is the one permitted inward edge (types
+and pure helpers only), which is why a package boundary would most naturally sit
+around `src/domain/` + `src/engine/` together, not split between them. AC-BOUND-3
+(IDB key literal ownership — five keys as of S13: raw-facts, accepted-events,
+engine-checkpoints, deferred-ids, outbox) and AC-BOUND-4 (single tie-break
+authority, `task-crdt.ts`'s `taskWinsOver`) are the two narrower structural guards
+that stop drift from silently reintroducing a second source of truth for either
+concern.
 
 ---
 

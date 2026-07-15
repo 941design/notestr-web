@@ -1,0 +1,77 @@
+{
+  "module_name": "receive-engine (optimistic-local-echo slice)",
+  "purpose": "Closes the cutover-blocking gap found during S12 Phase-1 validation: the engine's projection was fed exclusively by group.ingest(), and MLS never decrypts a device's own outgoing message back to it, so a locally-dispatched task never reached the projection on the dispatching device. This story adds a genuine engine-boundary accept path -- ReceiveEngine.acceptLocal(rumorId, payload) -- that folds a locally-authored TaskEvent into the SAME durable accepted-log and the SAME domain_event_accepted stream remote messages use, wires it end to end (publish-outbox -> react-engine-hooks -> task-store), and exposes a pending/confirmed signal derived from OutboxEntry status so the UI can distinguish an unconfirmed local edit from a durably-delivered one. No wire-format or convergence-rule change (AC-OPT-5): the id is the exact rumorId publish-outbox already computes (deriveMlsAcceptedEventId is an identity function), so the local accept and the eventual own-echo/remote delivery share one id and dedupe via the existing appendAcceptedEvent idempotency contract.",
+  "public_api": [
+    {
+      "name": "ReceiveEngine.acceptLocal",
+      "signature": "acceptLocal(rumorId: string, payload: TaskEvent): Promise<void>",
+      "description": "New method on the ReceiveEngine interface (receive-engine.ts). Routed through the engine's existing serial FIFO (enqueue(), NOT enqueueGen -- generation is read fresh at execution time so a call issued just before start() is not silently dropped by a stale pre-start generation capture). Computes eventId = deriveMlsAcceptedEventId(rumorId) (identity function today, see domain-events.ts); if ingestPolicy.hasProcessed(eventId) it is a no-op (idempotent -- covers duplicate dispatch and the case where a real message with this id was already processed). Otherwise builds an AcceptedDomainEvent{ id: eventId, factId: `local:${rumorId}`, sourceKind: 'mls-rumor', groupId, acceptedAt: scheduler.now(), epoch: lastEpoch ?? 'unknown', payload }, appends it via the existing appendAcceptedEventWithRetry bounded-backoff path (same durability/degradation semantics as a remote accept), marks it processed, updates lastAcceptedDomainEventId, and emits the SAME domain_event_accepted EngineOutputEvent a remote accept would emit. Deliberately does NOT append a RawProtocolFact (no relay envelope exists yet for a not-yet-sent local edit) and does NOT advance lastIngestedSeq -- both R2a (deferred-id pruning) and R3 (crash-gap resubmission) key off real raw-fact seq/id and are structurally unaffected by an entry that only ever exists in the accepted-log."
+    },
+    {
+      "name": "PublishOutboxDeps.onLocalAccept",
+      "signature": "onLocalAccept?: (rumorId: string, taskEvent: TaskEvent) => Promise<void> | void",
+      "description": "New optional dep on publish-outbox.ts. Invoked (awaited, wrapped in try/catch so it can never make publish()/retry() throw) with the SAME computeRumorId(createdAt, taskEvent, pubkey) output publish() already computes internally, BEFORE attemptSend runs -- guarantees the local-accept id is byte-identical to the id the SEND uses (no second, independently-computed id -- AC-OPT-5) and that the accept happens before any relay round-trip (AC-OPT-1). Called from both publish() (first attempt) and retry() (idempotent no-op via acceptLocal's own dedupe if publish() already covered it)."
+    },
+    {
+      "name": "PublishOutboxDeps.onReconciled",
+      "signature": "onReconciled?: (rumorId: string) => void",
+      "description": "New optional dep on publish-outbox.ts, called from the SAME per-group persist hook (registerOutboxPersistHook) publish-outbox.ts already registers -- that hook already fires on every OutboxEntry status mutation including the terminal 'reconciled' transition (marmot-adapter.ts's reconcileOwnEcho -> notifyOutboxPersist), so no new subscription or marmot-adapter.ts change is needed. Fires exactly once, when status transitions to 'reconciled' (own-echo observed)."
+    },
+    {
+      "name": "ReceiveEngineHookState.pendingTaskIds / dispatchLocal / confirmLocal",
+      "signature": "pendingTaskIds: ReadonlySet<string>; dispatchLocal?: (rumorId: string, payload: TaskEvent) => Promise<void>; confirmLocal?: (rumorId: string) => void",
+      "description": "Extends react-engine-hooks.ts's existing ReceiveEngineHookState (additive fields only -- projection/engineState/lastRejection unchanged). dispatchLocal calls engine.acceptLocal via a ref set inside useReceiveEngine's existing single useEffect (engineRef.current = engine, cleared on cleanup) and tracks rumorId->taskId membership in a per-mount Map (via a useRef, reset naturally on remount because EngineTaskBridge already keys on groupId -- FRESH-ENGINE-PER-MOUNT). confirmLocal removes a rumorId from that tracking. pendingTaskIds is the derived Set of taskIds with at least one still-pending rumorId; both callbacks are useCallback([]) so they stay referentially stable across renders (no change to EngineTaskBridge's existing render-loop-avoidance dependency array reasoning)."
+    }
+  ],
+  "private_files": [
+    "src/engine/receive-engine.optimistic-local-echo.test.ts (new)",
+    "src/integration/publish-outbox.local-echo.test.ts (new)",
+    "src/integration/react-engine-hooks.optimistic-local-echo.test.tsx (new)",
+    "src/store/task-store.optimistic-echo.test.tsx (new)"
+  ],
+  "owned_data": [
+    "No new IDB key. Local-accept AcceptedDomainEvent entries live in the SAME notestr:accepted-events:${groupId} store S4 already owns (raw-event-log-store.ts) -- this story adds a new PRODUCER of that store's existing shape, not a new store."
+  ],
+  "dependencies_allowed": [
+    "src/engine/receive-engine.ts: no new external dependency -- acceptLocal reuses this file's own existing internal helpers (enqueue, appendAcceptedEventWithRetry, ingestPolicy, scheduler) and the already-imported deriveMlsAcceptedEventId (domain-events.ts).",
+    "src/integration/publish-outbox.ts -> (unchanged) src/integration/marmot-adapter.ts, src/engine/engine-types.ts, src/domain/task-events.ts -- only new callback-shaped fields on the already-existing PublishOutboxDeps, no new imports.",
+    "src/integration/react-engine-hooks.ts: no new import -- ReceiveEngine (already imported as a type) is now also read as a value-shaped ref target; TaskEvent (already imported) is reused for the new callbacks' signatures.",
+    "src/store/task-store.tsx -> (unchanged) src/integration/publish-outbox.ts, src/integration/react-engine-hooks.ts -- only two new object-literal fields threaded into the existing createPublishOutbox(...) call inside the existing publishOutbox-construction useEffect."
+  ],
+  "dependencies_forbidden": [
+    "engine-types.ts: NOT edited by this story (not in scope.includes) -- ReceiveEngine and PublishOutboxDeps/ReceiveEngineHookState are interfaces declared in their OWN files (receive-engine.ts, publish-outbox.ts, react-engine-hooks.ts respectively), so extending them needs no engine-types.ts change. AcceptedDomainEvent/EngineOutputEvent (engine-types.ts's actual seam types) are consumed as-is, unmodified -- no new EngineOutputEvent variant, no new AcceptedDomainEvent field.",
+    "marmot-adapter.ts: NOT edited -- the existing per-group persist hook (registerOutboxPersistHook) already fires on the 'reconciled' transition, so no new marmot-adapter.ts subscription point is needed.",
+    "task-store.tsx dispatch(): NOT edited -- the local-accept wiring lives entirely inside the publishOutbox-construction effect's object literal (two new deps fields); dispatch()'s own body, including its pre-existing legacy applyEvent/setState/appendEvent optimistic-apply block, is UNTOUCHED (that legacy machinery still backs the flag-OFF/default production path today and is S12's, not this story's, removal target)."
+  ],
+  "external_ports": [],
+  "events_emitted": [
+    "domain_event_accepted (EngineOutputEvent, existing variant, unchanged shape) -- now also emitted by acceptLocal, not only by handleMessage."
+  ],
+  "events_consumed": [
+    "OutboxEntry status mutations via the existing registerOutboxPersistHook callback (publish-outbox.ts) -- reads entry.status === 'reconciled' to fire onReconciled; no new event source."
+  ],
+  "test_targets": [
+    "src/engine/receive-engine.optimistic-local-echo.test.ts (new) -- AC-OPT-1/2/3/5",
+    "src/integration/publish-outbox.local-echo.test.ts (new) -- AC-OPT-5 id-consistency, onLocalAccept/onReconciled wiring",
+    "src/integration/react-engine-hooks.optimistic-local-echo.test.tsx (new) -- AC-OPT-1/4 via dispatchLocal/confirmLocal/pendingTaskIds",
+    "src/store/task-store.optimistic-echo.test.tsx (new) -- VQ-S11B-008 end-to-end wiring through TaskStoreProvider"
+  ],
+  "judgment_calls": [
+    {
+      "id": "s11b-factid-deterministic-placeholder",
+      "text": "AcceptedDomainEvent.factId is documented (domain-events.ts) as 'the backing RawProtocolFact.id' and 'ALWAYS a non-null string' but does not require the fact to actually exist in the raw-facts log -- appendAcceptedEvent performs no FK check. Since a local accept has no relay envelope yet (the kind-445 id is only learned once send completes, and per RETRY IMMUTABILITY the same rumorId/taskEvent must never be re-derived from a later-learned id), factId is set to the deterministic placeholder `local:${rumorId}` rather than backfilled later. Backfilling was rejected: appendAcceptedEvent's idempotency-on-id means a second append with the same id is a documented no-op (first write wins), so there is no mechanical update path for factId once written, and building one is out of this story's scope. The placeholder is inert everywhere factId is read structurally (R2a's acceptedFactIds Set only ever needs to match REAL deferred/raw fact ids, which a `local:` prefixed string can never collide with) and only surfaces on the rare domain_event_rejected persistence-exhaustion diagnostic, where it is still informative (identifies the rejected write as a local-origin accept)."
+    },
+    {
+      "id": "s11b-no-raw-fact-for-local-accept",
+      "text": "handleMessage's shape always appends a RawProtocolFact before accepting. acceptLocal deliberately does NOT: RawProtocolFact's own architecture.md invariant is 'a persisted received envelope' -- a local accept has no relay delivery (yet). Faking one would (a) misrepresent the fact log's content-addressed-relay-delivery invariant and (b) get replayed through R3's crash-gap adapter.ingestPersisted(gapFacts) on the next restart, which expects genuine MLS ciphertext it could hand to group.ingest() -- a synthetic entry there would either throw or behave unpredictably. Skipping the raw-fact append and lastIngestedSeq advance entirely sidesteps both risks: the local accept exists ONLY in the accepted-log, which is exactly what AC-OPT-2 requires for restart durability (buildProjection(replayOrder(acceptedLog)) already includes it) and is exactly what R1/R2a/R3 already tolerate by construction (R1 marks it processed via the accepted-log scan; R2a's factId Set membership check is a no-op for it; R3 never sees it because it never entered rawLog)."
+    },
+    {
+      "id": "s11b-generation-captured-at-execution-not-call-time",
+      "text": "receive-engine.ts's existing enqueueGen(gen, fn) pattern captures gen at the CALLER's call site and re-checks it when the job's FIFO turn arrives -- correct for adapter-sourced signals tied to a specific historical session (openLive/catchUp callbacks), where a stale continuation from an already-superseded session must silently abandon. acceptLocal is different: it is a live, user-initiated call that should apply to whatever the CURRENT session is by the time it runs, not be pinned to whatever generation happened to be current at the (possibly pre-start()) moment dispatch() fired. acceptLocal therefore uses the engine's plain enqueue() (same FIFO, same ordering guarantee relative to concurrent ingest signals) and reads `const gen = generation` INSIDE the enqueued closure, at execution time, so a dispatch that races start()'s synchronous generation bump is never silently dropped."
+    },
+    {
+      "id": "s11b-legacy-optimistic-apply-untouched-until-s12",
+      "text": "S11B's brief says dispatch's optimistic path should 'route through the engine boundary so S12 can delete the legacy machinery' -- read as 'the new path must exist and be correct', not 'the old path must be removed now'. The strangler flag (isEngineReadPathEnabled()) still defaults OFF in production; while it is off, TaskStoreProvider's activeRead reads the LEGACY `state`, which is fed only by task-store.tsx's own optimistic applyEvent/setState (dispatch) and its (still-live, not-yet-removed) applicationMessage receive listener. Removing dispatch's legacy optimistic-apply block in THIS story, before S12 flips the flag-gated mount to unconditional, would regress the CURRENT default (flag-off) production behavior immediately. This story therefore ADDS the new engine-boundary path (wired through publishOutbox's onLocalAccept/onReconciled deps, reachable only when EngineTaskBridge is mounted, i.e. only when the flag is already on) without touching dispatch()'s existing legacy block at all -- zero lines changed inside dispatch()'s body; the only task-store.tsx diff is two new fields in the publishOutbox-construction effect's createPublishOutbox({...}) call. S12 is the story that removes the legacy block once the flag-gate itself is removed."
+    }
+  ]
+}

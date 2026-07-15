@@ -1,0 +1,26 @@
+{
+  "spec_sha": "543be1cb7453",
+  "git_sha": "0c27d7e1d9acb8d42e718cf4270147d29c82851f",
+  "computed_at": "2026-07-13T00:00:00Z",
+  "method": "completed-story ACs verified via green typecheck (make build) + full unit suite (38 files, 837 tests passed); pending-story ACs (S7-S13) are unimplemented and marked unverifiable, which is the expected resume state, not drift",
+  "verdicts": [
+    {"ac_id": "AC-BOUND-1", "verdict": "holds", "evidence": "S1 done; src/engine/engine-boundary.structural.test.ts green"},
+    {"ac_id": "AC-BOUND-2", "verdict": "holds", "evidence": "S2 done; src/domain/domain-boundary.structural.test.ts green"},
+    {"ac_id": "AC-BOUND-3", "verdict": "holds", "evidence": "S1 done; IDB-key authority structural test green"},
+    {"ac_id": "AC-BOUND-4", "verdict": "holds", "evidence": "S3 done; src/domain/bound-4.structural.test.ts green"},
+    {"ac_id": "AC-INV-1", "verdict": "holds", "evidence": "S3 done; task-projector.property.test.ts green"},
+    {"ac_id": "AC-INV-2", "verdict": "holds", "evidence": "S3+S4 done; projector + appendAcceptedEvent idempotency tests green"},
+    {"ac_id": "AC-INV-5", "verdict": "holds", "evidence": "S5 done; receive-engine deferred-retry FSM tests green"},
+    {"ac_id": "AC-MIG-1", "verdict": "holds", "evidence": "S4 done; legacy-key-guard.structural.test.ts green"},
+    {"ac_id": "AC-FSM-1", "verdict": "holds", "evidence": "S5 done; receive-engine.fsm.test.ts green"},
+    {"ac_id": "AC-FSM-2", "verdict": "holds", "evidence": "S5 done; primary observable (engine-side mock openLive-before-catchUp) green. Adapter-side secondary conformance check is part of S7's own verification (pending story), not spec-vs-code drift"},
+    {"ac_id": "AC-FSM-3", "verdict": "holds", "evidence": "S5 done; buffering/cutover FSM tests green"},
+    {"ac_id": "AC-FSM-4", "verdict": "holds", "evidence": "S5 done; saveCheckpoint call-count tests green"},
+    {"ac_id": "AC-FSM-5", "verdict": "holds", "evidence": "S5 done; reset() clears-state tests green"},
+    {"ac_id": "AC-FSM-6", "verdict": "holds", "evidence": "S5 done; ratchet-vs-epoch retry tests green"},
+    {"ac_id": "AC-FSM-7", "verdict": "holds", "evidence": "S5 done; T_join fake-timer tests green"},
+    {"ac_id": "AC-FSM-8", "verdict": "holds", "evidence": "S5 done; receive-engine.cutover.property.test.ts green"},
+    {"ac_id": "AC-PERS-1", "verdict": "holds", "evidence": "S6 done; receive-engine.persistence-failure.test.ts green"},
+    {"ac_id": "AC-PERS-3", "verdict": "holds", "evidence": "S6 done; receive-engine.malformed-signal.test.ts green"}
+  ]
+}

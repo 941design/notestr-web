@@ -1,0 +1,63 @@
+{
+  "module_name": "task-store",
+  "purpose": "MODIFIED (shrinking, per architecture.md's module map). Introduces the strangler feature flag (NEXT_PUBLIC_ENGINE_TASK_READS) gating task-store.tsx's exposed read path between the legacy applicationMessage-listener-fed TaskState and react-engine-hooks.ts's (S8) incrementally-folded TaskProjection (Phase 4: 'route UI reads through projected state'). The legacy listener, dispatch/publish path, and bootstrap-fetch flow are UNCHANGED and keep running regardless of the flag's value -- this story is read-path delegation only, per Boundary Rule 5 / AC-MIG-2.",
+  "seam": {
+    "cross_story": true,
+    "consumed_by": ["S12"],
+    "note": "S12 (legacy-listener-removal, Phase 8) deletes the flag and the legacy branch this story introduces, converging task-store.tsx onto the engine path unconditionally. S12's scope note ('deletions of dead strangler-flag scaffolding only') presupposes exactly the flag/EngineTaskBridge/activeRead shape this story lands."
+  },
+  "public_api": [
+    {
+      "name": "TaskStoreProvider",
+      "signature": "React.FC<TaskStoreProviderProps>",
+      "description": "Unchanged public contract for existing callers (groupId, children). Gains one new OPTIONAL prop, engineIngestSourceOverride?: IngestSource -- test-only DI seam (see judgment_calls) for task-store.cutover.test.tsx; production callers must leave it undefined."
+    },
+    {
+      "name": "useTaskStore",
+      "signature": "function useTaskStore(): TaskStoreContextValue",
+      "description": "Unchanged. TaskStoreContextValue's tasks/loading now source from either the legacy TaskState or the engine TaskProjection depending on isEngineReadPathEnabled() at render time -- callers observe no shape change, only a possible source-of-truth change behind the flag."
+    }
+  ],
+  "private_files": [],
+  "owned_data": [
+    "Legacy: in-memory TaskState (React state) -- unchanged, still the sole write target of dispatch()/optimistic-apply and the legacy applicationMessage listener.",
+    "New (S9): a session-scoped, non-durable interim PersistenceAdapter's checkpoint/deferred-id in-memory Maps, constructed per EngineTaskBridge mount (see judgment_calls 'interim-persistence-adapter-for-checkpoint-deferred') -- explicitly NOT a durable store; owned data of record for checkpoint/deferred persistence remains S11's future src/persistence/checkpoint-store.ts / deferred-store.ts."
+  ],
+  "dependencies_allowed": [
+    "src/integration/react-engine-hooks.ts (useReceiveEngine, ReceiveEngineHookState) -- the S8 seam this story was always scheduled to consume",
+    "src/integration/marmot-adapter.ts (createMarmotIngestAdapter) -- composition-root wiring per this story's explicit brief ('If S9 needs to construct the engine/adapter, wire the real marmot-adapter via a factory')",
+    "src/engine/receive-engine.ts (createReceiveEngine, createRealEngineScheduler, types) -- same composition-root rationale",
+    "src/engine/engine-types.ts (PersistenceAdapter, IngestSource, EngineCheckpoint types)",
+    "src/persistence/raw-event-log-store.ts (appendFact, loadFacts, appendAcceptedEvent, loadAcceptedEvents, clearRawAndAcceptedLogs) -- the REAL, durable S4 fact/accepted-event half of the interim PersistenceAdapter",
+    "@internet-privacy/marmot-ts (MarmotClient, MarmotGroup types only) -- task-store.tsx already imported this package pre-S9 (deserializeApplicationData, getNostrGroupIdHex); S9 adds only type-only imports for the new adapter-construction call",
+    "applesauce-core (EventSigner type) -- matches useMarmot()'s existing signer type"
+  ],
+  "dependencies_forbidden": [
+    "src/persistence/checkpoint-store.ts / deferred-store.ts -- do not exist yet (S11); this story does not create them (see judgment_calls)",
+    "Any new correctness logic beyond the single documented flag-selection branch (Boundary Rule 5 / AC-MIG-2)"
+  ],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": ["EngineOutputEvent (indirectly, via useReceiveEngine's already-folded ReceiveEngineHookState)"],
+  "test_targets": [
+    "src/store/task-store.cutover.test.tsx"
+  ],
+  "judgment_calls": [
+    {
+      "id": "single-flag-selection-branch-net-plus-one",
+      "text": "AC-MIG-2's diff check (git diff da36c2b..HEAD -- src/marmot/device-sync.ts src/store/task-store.tsx) shows exactly ONE added control-flow-branch (a single ConditionalExpression: `isEngineReadPathEnabled() ? {projection: engineHookState.projection, loading: ...} : {projection: state, loading}`), zero removed, net +1 -- NOT <= 0. This is deliberate and, per this story's brief, the surfaced design tension: a genuine runtime toggle (VQ-S9-001/006 require BOTH branches functionally reachable, not a dead-code-eliminated constant) requires SOME conditional construct to select between two data sources; there is no removable/relocatable branch available inside task-store.tsx to offset it (the file was diff-identical to the da36c2b baseline before this story -- confirmed via `git diff da36c2b -- src/store/task-store.tsx` returning empty prior to this story's edits). The design satisfies the brief's second escape valve instead ('structured so it is not net-new branching... the flag selects a data source that is then consumed by the SAME downstream code, not a duplicated branch tree'): exactly one ConditionalExpression in the whole file, selecting a {projection, loading} pair that flows into the SAME single Array.from(...values()) call and the SAME single <TaskStoreContext.Provider> JSX -- never two parallel render/branch trees. Everything else that could look like a second branch (readyForEngine's `Boolean(x) || Boolean(y && z)`, the JSX `{readyForEngine && <EngineTaskBridge/>}` conditional-render, six `??` nullish-coalescing uses in the interim persistence adapter, and one TS optional-property `?:` marker on engineIngestSourceOverride) is NOT an if/switch/ternary token and was verified NOT to match the AC's own literal vocabulary via `grep -E '\\bif\\s*\\(|\\bswitch\\s*\\(' ` (zero hits, added or removed) -- only genuinely counting `?`/`:` ternary tokens catches the one real conditional. Flagged to the lead in this story's return rather than silently building around it."
+    },
+    {
+      "id": "interim-persistence-adapter-for-checkpoint-deferred",
+      "text": "receive-engine.ts's PersistenceAdapter has 10 methods; S4's raw-event-log-store.ts implements exactly 4 (appendFact/loadFacts/appendAcceptedEvent/loadAcceptedEvents). The remaining 6 (saveCheckpoint/loadCheckpoint/saveDeferredIds/loadDeferredIds/acceptDeferredFact/clearGroupState) are explicitly S11's deliverable (checkpoint-store.ts/deferred-store.ts do not exist in this repo as of S9), and S11 is sequenced AFTER S9 in both stories.json's dependency_notes and spec.md's own Phase-4-before-Phase-7 migration order. Wiring a genuinely-functioning engine into task-store.tsx (per this story's explicit brief) therefore required a decision the docs do not settle. Resolved as an implementation-detail default (not escalated -- no product-behavior change: the flag defaults OFF, and this only affects behavior when a developer/test opts the flag ON before S11 lands) rather than an AWAITING_SPECIFICATION halt: createInterimEnginePersistenceAdapter() delegates the 4 real methods to the real S4 store and supplies session-scoped, non-durable in-memory Maps for the other 6, mirroring the exact shape already reviewed and landed in react-engine-hooks.test.tsx's createInMemoryPersistenceAdapter. Safety argument: ENGINE_START_OPTIONS is hardcoded to {origin:'welcome'} (see next judgment call), and receive-engine.ts's start() only calls persistence.loadCheckpoint for origin:'restored' -- so this interim adapter's non-durability never gates S9's read-path-equivalence claim (VQ-S9-004, same-session, no-crash-recovery scope). Zero if/switch/ternary in the adapter itself (verified in the AC-MIG-2 diff)."
+    },
+    {
+      "id": "engine-origin-hardcoded-to-welcome",
+      "text": "EngineTaskBridge always calls engine.start({origin:'welcome'}), never 'restored'. Rationale: 'restored' origin's checkpoint-driven recovering path (receive-engine.ts's loadCheckpoint + isValidCheckpoint gate) is explicitly S11 territory per stories.json ('handles the malformed/unreadable-checkpoint-at-restart failure mode... never escalate to reset()') -- meaning its absent/malformed-checkpoint handling is not yet a hardened, tested contract. 'welcome' origin's FSM path (L2 -> joining -> catching_up -> live) is already fully covered by S5/S6/S8's test suites and never touches loadCheckpoint at all. Using 'welcome' universally is a documented interim simplification for S9's read-path wiring; correct origin detection (mirroring task-store.tsx's own isGroupJoinedFromWelcome() check, already used for the legacy bootstrap gate) is left for a future story once S11's recovering path is hardened. Does not affect AC-MIG-2 branch count (module-level constant, not a conditional)."
+    },
+    {
+      "id": "engine-ingest-source-test-di-seam",
+      "text": "TaskStoreProviderProps gains an optional engineIngestSourceOverride?: IngestSource, documented production-callers-must-leave-undefined. Chosen over a window.__notestrTest*-style global hook (this file's established e2e-test-hook idiom) because that idiom's hooks are registered inside a useEffect that only runs AFTER mount -- too late for a unit test that needs to inject a fixture IngestSource BEFORE TaskStoreProvider's own effect calls createEngine(). A component prop is the correct DI seam for mount-time substitution; a window hook is correct for post-mount e2e interaction (different problem). readyForEngine (`Boolean(engineIngestSourceOverride) || Boolean(group && client && signer && pubkey)`) lets the test mount EngineTaskBridge without waiting for real marmot deps, matching the exact 'mock IngestSource + origin:welcome' recipe already proven in react-engine-hooks.test.tsx's AC-INV-4 suite."
+    }
+  ]
+}

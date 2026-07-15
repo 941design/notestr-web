@@ -115,6 +115,24 @@
       "category": "SPEC",
       "ac_id": "AC-INV-3",
       "question": "does the implementation satisfy AC-INV-3's observable -- does an integration test split a fixture log into a pre-crash prefix and post-crash suffix within one epoch, run recovery (R1-R4) on the prefix then replay the suffix, and assert the result deep-equals an uninterrupted single-pass replay of the full log, AND does a second fixture introduce one fact made undecryptable by a simulated epoch advance and assert that fact is excluded from BOTH projections while the rest of the equality still holds, proving the carve-out is scoped to the epoch-crossing fact only?"
+    },
+    {
+      "question_id": "VQ-S11-018",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "S5/S6 shipped enterRecovering clearing the 'preserve-and-replay-recovery' degradation reason immediately after recovering's OWN checkpoint save (before catching_up is ever entered), which -- since fsm.md forces health:nominal for the non-ACTIVE 'recovering' lifecycle -- made the degraded window unobservable and violated AC-PERS-2's literal text. This story moved the clear into enterCatchingUp, right after ITS OWN checkpoint save resolves. Was this the minimal, correct relocation (verified via a flip-proof: reverting the relocation makes the new AC-PERS-2 test in receive-engine.recovery.test.ts fail with 'expected degraded to be nominal'), and does it have any unintended effect on the L4/L5 (joining->catching_up) paths, which never set this reason and so should observe a pure no-op from the added clearDegradationReason call?"
+    },
+    {
+      "question_id": "VQ-S11-019",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "Given AC-BOUND-1 makes it structurally impossible for receive-engine.recovery.test.ts to import the real checkpoint-store.ts/deferred-store.ts (established S5/S6 precedent, mocks-registry.json), and stories.json's S11 scope.includes is a closed 7-file list with no src/integration/ file to host a cross-boundary proof, is the 'real store contents' half of VQ-S11-001 adequately closed by checkpoint-store.test.ts/deferred-store.test.ts's real-fake-indexeddb round trips (including the fault-injection and submission-order-race tests) PLUS TypeScript structural conformance (both the recovery-test mock and the real stores satisfy the identical PersistenceAdapter interface), or does the epic still need a dedicated src/integration/ engine+real-store integration test (the open ledger watch item attributed to S8/S9) before MOCK-05-002 can be considered FULLY closed rather than closed-by-construction?"
+    },
+    {
+      "question_id": "VQ-S11-020",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "deferred-store.ts's clearGroupState and checkpoint-store.test.ts's/deferred-store.test.ts's 'submission-order clear discipline' tests rely on IndexedDB's same-scope transaction creation-order guarantee (a save's transaction, created before a clear's, must execute and commit first) to prove a detached checkpoint-save retry racing reset() cannot resurrect a checkpoint, verified here against fake-indexeddb. Does fake-indexeddb's transaction scheduler actually implement this ordering guarantee faithfully to the IndexedDB spec (or does it happen to pass for a more permissive reason, e.g. synchronous-enough microtask scheduling in this specific test shape), and is this guarantee something a future browser-engine change or idb-keyval version bump could silently invalidate without any of this epic's tests catching it?"
     }
   ]
 }

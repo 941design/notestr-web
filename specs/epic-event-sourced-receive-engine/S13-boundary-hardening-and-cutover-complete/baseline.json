@@ -1,0 +1,19 @@
+{
+  "captured_at": "2026-07-14T15:27:00Z",
+  "note": "Captured via a fresh `npx vitest run`/`npx tsc --noEmit` invocation BEFORE any S13 edits began, per Step 0. The working tree already carried substantial uncommitted S7-S14 WIP at story start (last commit 0c27d7e is 'S1-S6 WIP: paused pre-S7'); this baseline is the pre-S13-edit state of that working tree, not a clean-HEAD baseline.",
+  "unit_tests": {
+    "command": "npx vitest run",
+    "status": "PASS",
+    "test_files": 54,
+    "tests": 1030
+  },
+  "typecheck": {
+    "command": "npx tsc --noEmit",
+    "status": "2 pre-existing issues",
+    "note": "src/store/task-store.local-echo-readiness.test.tsx(463,15) and src/store/task-store.optimistic-echo.test.tsx(536,15) -- both TS2348 'Value of type Mock<Procedure | Constructable> is not callable', a vitest generic-inference quirk on a class-field `vi.fn()` reassignment in untracked S14 WIP test files this story does not own or touch. Confirmed unchanged (same 2 errors, same message) after S13's implementation landed."
+  },
+  "lint": {
+    "status": "NO_LINT",
+    "note": "No standalone lint script in package.json; no eslint config file present in the repo root."
+  }
+}

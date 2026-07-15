@@ -1,0 +1,48 @@
+{
+  "story_id": "S7",
+  "status": "done",
+  "final_outcome": "accepted",
+  "completed_at": "2026-07-13T23:15:00Z",
+  "files_created": [
+    "src/integration/marmot-adapter.ts",
+    "src/integration/marmot-adapter.test.ts",
+    "specs/epic-event-sourced-receive-engine/S7-marmot-adapter/architecture.json",
+    "specs/epic-event-sourced-receive-engine/S7-marmot-adapter/baseline.json",
+    "specs/epic-event-sourced-receive-engine/S7-marmot-adapter/result.json"
+  ],
+  "files_modified": [
+    "specs/epic-event-sourced-receive-engine/S7-marmot-adapter/verification.json"
+  ],
+  "modules_touched": ["marmot-adapter"],
+  "tests_added": {
+    "unit_integration": 19
+  },
+  "test_counts": {
+    "baseline": 837,
+    "final": 858
+  },
+  "mocks": [
+    "marmot-adapter.test.ts's stub MarmotGroup/MarmotClient are the story's mandated 'contract-faithful stub' (AC-ADPT-1 explicitly allows 'a real or contract-faithful stub of MarmotGroup') -- not a production mock. Two REAL, un-stubbed marmot-ts functions (serializeApplicationRumor/deserializeApplicationData) are used to produce the wire-encoded application-message bytes the adapter decodes, so the message/malformed scenarios exercise the actual byte format rather than a hand-rolled one. The stub group's `state` is deliberately NOT a fully valid MLS ClientState (see MarmotAdapterDeps.getNostrGroupIdHex/getGroupMembers override seam below); production callers pass neither override and get the real marmot-ts getNostrGroupIdHex/getGroupMembers behavior."
+  ],
+  "remediation_rounds": 3,
+  "remediation_detail": "Lead review + examiner loop: Stage-1 Opus round (F1 wrong-kind->skipped, F2 architecture.md openLive-before-catchUp doc-fix, F3 fetchBootstrap ratchet-isolation-under-concurrency test); Stage-2 Codex round (P1 per-variant structural payload validation isTaskEvent/isValidTask -> malformed on missing required field, closes VQ-S7-006 security; P2 fetchBootstrap per-entry isValidTask skip); examiner-retry round (VQ-S7-009 JSDoc hardening on test-only override seams, S8 production-wiring assertion test deferred as watch-item). Both review stages converged clean; 12/12 verification questions YES.",
+  "escalation_history": [],
+  "judgment_calls": [
+    "Application-message content is read directly off group.ingest()'s yielded IngestResult (result.result.message when result.result.kind === 'applicationMessage') rather than correlating a separate group.on('applicationMessage', ...) event listener to the triggering input event -- verified against node_modules/@internet-privacy/marmot-ts/dist/client/group/marmot-group.js that the per-event IngestResult already carries the decrypted payload, and that the listener-based approach (src/marmot/device-sync.ts's pattern) would additionally require reasoning about async-generator resume timing that the direct read avoids entirely.",
+    "Two IngestResult sub-cases with no literal home in IngestSignal's 5-variant closed union were mapped conservatively: a wrong-rumor-kind application message (e.g. a coexisting kind-9 chat message) -> malformed (not a TaskEvent, and malformed is terminal so the fact durably enters the raw log); an admin-rejected commit (IngestResult.kind === 'rejected') -> skipped (no state mutation occurred, no retry needed, no better-fitting variant).",
+    "A processed proposal/commit that does not carry application content produces no fact-carrying signal of its own -- only the fact-less epoch_advanced signal when the epoch actually changed. Its own delivery event enters the raw-fact log lazily, on a LATER redelivery where marmot-ts recognizes the replay and yields 'skipped' (which does carry a fact). Documented as spec-conformant (engine-types.ts's epoch_advanced variant is deliberately fact-less) and flagged for engine-level attention via post-impl VQ-S7-011.",
+    "fetchBootstrap() reuses the shared taskWinsOver tie-break authority (Boundary Rule 10) to merge same-id tasks across multiple relay-returned kind-30078 snapshot copies before emitting signals, matching the pre-existing production fetchAndApplyTaskBootstrap behavior this adapter effectively supersedes. All winning tasks' synthetic message signals share ONE fact object (architecture.md's 'all sharing the snapshot's fact' wording), deterministically the most-recently-created qualifying relay event.",
+    "Added MarmotAdapterDeps.getNostrGroupIdHex/getGroupMembers as an explicit override seam (defaulting to the real marmot-ts functions) after the first test run against a bare-minimum stub ClientState failed both real helpers with 'MarmotGroupData not found in ClientState' / 'state.ratchetTree is not iterable' -- both real functions need MLS internals (a decoded MarmotGroupData extension, a populated ratchet tree) that are orthogonal to this story's actual subject (group.ingest() outcome translation). Production callers pass neither override.",
+    "catchUp()/ingestPersisted() buffer a full group.ingest() batch's translated IngestSignal[] inside the promise-chained mutex before yielding any of them to the external caller, rather than streaming yields while the mutex is held open across an arbitrary external await -- guarantees the mutex is never left open across engine-side persistence I/O between successive signal consumption, which is what would otherwise let a concurrent openLive() live-event ingest race on group.ingest()'s internal state mutation."
+  ],
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The story's five real marmot-ts outcomes had to be reverse-engineered from the installed package's compiled .js (node_modules/@internet-privacy/marmot-ts/dist/client/group/marmot-group.js), not just its .d.ts -- the .d.ts alone does not reveal that an application message's decrypted payload already rides along on the per-event IngestResult (result.result.message), nor the yield-then-emit ordering of the separate applicationMessage event, nor that group.ingest() concurrency is genuinely unsafe (this last fact is only in a comment inside src/marmot/device-sync.ts, a file this story is explicitly forbidden from importing). None of this is written down in architecture.md or fsm.md at the level of detail needed to implement correctly; the story text's pointer to device-sync.ts:700-892 as prior art was necessary but not sufficient without also reading the installed package's actual generator/emit implementation.",
+    "surprised_by": "The real getNostrGroupIdHex/getGroupMembers marmot-ts helpers cannot be exercised at all against a minimal stub ClientState (they throw / crash on a bare-bones fake rather than degrading gracefully) -- MarmotGroupData decoding and ratchet-tree iteration are full MLS-internal operations with no lightweight fake path, forcing an override-seam addition to MarmotAdapterDeps mid-implementation rather than being anticipatable from the architecture doc alone.",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  }
+}

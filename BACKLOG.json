@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updated_at": "2026-07-12T20:57:28Z",
+  "updated_at": "2026-07-15T06:29:29Z",
   "epics": [
     {
       "path": "specs/epic-delete-tasks-and-groups/",
@@ -14,8 +14,8 @@
     },
     {
       "path": "specs/epic-event-sourced-receive-engine/",
-      "status": "IN_PROGRESS",
-      "next_action": "PAUSED 2026-07-12 after S6 (user directive). S1-S6 done (types, domain core+CRDT, persistence store, engine FSM, hardening; 471->837 tests, tsc clean, all stories dual-stage-reviewed + examiner-verified). Resume: /base:feature specs/epic-event-sourced-receive-engine/ (RESUME mode; reviewer rehydrates cold from ownership-ledger.json; next S7 marmot-adapter against the frozen 5-method IngestSource contract)."
+      "status": "DONE",
+      "next_action": "completed 2026-07-15 — engine is sole receive path; e2e 245-pass; S12-1 re-join gap tracked follow-up"
     },
     {
       "path": "specs/epic-forget-this-device/",

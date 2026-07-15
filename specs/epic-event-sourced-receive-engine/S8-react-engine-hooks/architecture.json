@@ -1,0 +1,83 @@
+{
+  "module_name": "react-engine-hooks",
+  "purpose": "React integration shell for the event-sourced receive engine: subscribes to a per-group ReceiveEngine's EngineOutputEvent stream, folds domain_event_accepted incrementally via task-projector.applyEvent (never buildProjection except at mount-time restart seed / explicit projection_invalidated), and exposes engine lifecycle/health and rejection diagnostics to UI components. Manages exactly one React object (a freshly-constructed ReceiveEngine per mount) inside exactly one useEffect whose cleanup calls engine.stop() (which itself closes the owned adapter last, per Boundary Rule 10 -- already guaranteed inside receive-engine.ts's stop()).",
+  "seam": {
+    "cross_story": true,
+    "consumed_by": ["S9"],
+    "note": "S9 (task-store-projection-cutover, pending)'s description explicitly names react-engine-hooks.ts as the module task-store.tsx delegates its feature-flagged read path to ('task-store.tsx delegates reads to the new engine hook'). This story's own creates_seam:false in stories.json describes the EngineOutputEvent seam (produced by S5, consumed by S8, not re-emitted); this annotation separately flags useReceiveEngine/ReceiveEngineHookState as a NEW public-API seam this story creates that a later story (S9) is already committed to consuming."
+  },
+  "public_api": [
+    {
+      "name": "useReceiveEngine",
+      "signature": "function useReceiveEngine(params: UseReceiveEngineParams): ReceiveEngineHookState",
+      "description": "The hook. Exactly one useEffect (keyed on [groupId, persistence, createEngine, startOptions]). On mount: constructs a fresh engine via params.createEngine(), subscribes to it, seeds the projection from persistence.loadAcceptedEvents + buildProjection(replayOrder(...)) (the 'restart' full-rebuild case), then calls engine.start(startOptions). Every subsequent domain_event_accepted folds incrementally via applyEvent. A projection_invalidated event triggers the same persistence-backed full rebuild. Cleanup unsubscribes and calls engine.stop() unconditionally (idempotent by construction, see judgment_calls)."
+    },
+    {
+      "name": "classifyRejectionReason",
+      "signature": "function classifyRejectionReason(reason: string): RejectionReasonKind",
+      "description": "Pure classifier mapping domain_event_rejected's free-form reason string to one of the four engine-emitted reasons (parse_error, retry-exhausted, deferred-ttl-expired, persistence-exhausted) or 'unknown' as a graceful default -- never throws on an unrecognized reason."
+    },
+    {
+      "name": "UseReceiveEngineParams",
+      "signature": "interface { groupId: string; persistence: PersistenceAdapter; createEngine: () => ReceiveEngine; startOptions: StartOptions }",
+      "description": "Hook input. createEngine is a factory (not a pre-built engine instance) -- see judgment_calls/fresh-engine-per-mount. Callers must supply referentially-stable createEngine/persistence/startOptions (standard React hook-dependency discipline) or the effect will re-run on every render."
+    },
+    {
+      "name": "ReceiveEngineHookState",
+      "signature": "interface { projection: TaskProjection; engineState: EngineState; lastRejection: RejectionInfo | null }",
+      "description": "Hook output. engineState is the EngineState shape ({lifecycle, health}) copied verbatim from the engine's engine_state_changed events -- no UI-layer reinterpretation (VQ-S8-005)."
+    },
+    {
+      "name": "RejectionInfo",
+      "signature": "interface { factId: string; groupId: string; reason: string; reasonKind: RejectionReasonKind }",
+      "description": "Latest domain_event_rejected surfaced to the UI, with reason passed through verbatim plus a classified reasonKind for graceful display branching."
+    },
+    {
+      "name": "RejectionReasonKind",
+      "signature": "type = \"parse_error\" | \"retry-exhausted\" | \"deferred-ttl-expired\" | \"persistence-exhausted\" | \"unknown\"",
+      "description": "Closed classification vocabulary for the ledger's four engine-emitted rejection reasons plus a mandatory graceful fallback."
+    }
+  ],
+  "private_files": [],
+  "owned_data": ["React component state only (useState) -- no persistent storage owned by this module"],
+  "dependencies_allowed": [
+    "src/engine/receive-engine.ts (types only: ReceiveEngine, StartOptions)",
+    "src/engine/engine-types.ts (types: EngineOutputEvent, EngineState, PersistenceAdapter)",
+    "src/domain/task-projector.ts (applyEvent, buildProjection, replayOrder, EMPTY_PROJECTION, TaskProjection)",
+    "react (useEffect, useState)"
+  ],
+  "dependencies_forbidden": [
+    "marmot-ts (any package) -- architecture.md Boundary Rule: marmot-adapter.ts is the sole permitted importer outside the engine receive path",
+    "src/integration/marmot-adapter.ts -- the hook never constructs or references the adapter directly; the caller's createEngine factory owns that wiring",
+    "src/persistence/* implementation files (raw-event-log-store.ts etc.) -- only the PersistenceAdapter interface from engine-types.ts"
+  ],
+  "external_ports": [],
+  "events_emitted": [],
+  "events_consumed": ["EngineOutputEvent (all ten variants, exhaustively switched)"],
+  "test_targets": [
+    "src/integration/react-engine-hooks.test.tsx",
+    "src/integration/adapter-lifecycle.structural.test.ts"
+  ],
+  "judgment_calls": [
+    {
+      "id": "fresh-engine-per-mount-via-factory",
+      "text": "UseReceiveEngineParams takes createEngine: () => ReceiveEngine (a factory) rather than a pre-built ReceiveEngine instance. Rationale: receive-engine.ts's start() throws unless lifecycle === 'uninitialized', and stop() transitions to 'stopped' (not back to 'uninitialized'). If the hook accepted a long-lived pre-built engine, a React 18 Strict-Mode dev double-invoke (mount -> cleanup -> mount) would call start() a second time on an already-'stopped' engine and throw. Constructing a brand-new engine inside the effect body on every mount sidesteps this by construction: every mount's engine starts from 'uninitialized'. This also keeps react-engine-hooks.ts free of any marmot-ts/adapter-construction concern (Boundary Rule: only marmot-adapter.ts imports marmot-ts) -- the factory closure, built by the caller (e.g. a future S9 task-store.tsx wiring), is the one place that imports createMarmotIngestAdapter + createReceiveEngine together. Answers VQ-S8-006 by construction rather than by convention."
+    },
+    {
+      "id": "mount-time-persistence-seed-is-the-restart-case",
+      "text": "Implementation Constraint 7 reserves full buildProjection for 'restart and explicit projection_invalidated'. S11 (recovery-sequencing, not yet landed) owns the engine-internal R1-R4 replay; independent of that, a literal browser/page reload IS a restart from the UI's perspective, and this hook -- the sole owner of the in-memory TaskProjection (receive-engine.ts is deliberately projection-free) -- is the layer responsible for it. So the hook seeds its projection via persistence.loadAcceptedEvents + buildProjection(replayOrder(...)) once at the start of every mount's effect, BEFORE calling engine.start(), then folds every subsequent domain_event_accepted incrementally. This composes cleanly with S11 landing later: S11 changes engine-internal recovery sequencing (what gets re-ingested), not what this hook does with the persisted accepted-log at mount."
+    },
+    {
+      "id": "engineState-shape-is-verbatim",
+      "text": "ReceiveEngineHookState.engineState is exactly EngineState ({lifecycle, health}), set only from engine_state_changed's state/health fields with no added/renamed properties -- answers VQ-S8-005. groupId is available to the caller via its own params.groupId already, so it is deliberately NOT folded into engineState (that would extend the shape beyond the seam contract)."
+    },
+    {
+      "id": "no-per-groupId-internal-reset-effect",
+      "text": "If a caller renders the hook against a new groupId without unmounting first, projection/engineState/lastRejection briefly retain the PREVIOUS group's stale values until the new effect's persistence seed resolves. This hook does not add extra reset-on-prop-change logic to avoid it (that would require a second effect or defeat the 'exactly one useEffect' structural constraint via synchronous reset-in-render tricks). The documented caller contract is: key the consuming component by groupId (React's standard remount-on-key-change idiom) so a group switch is a full unmount+mount, not a same-instance prop change."
+    },
+    {
+      "id": "rejection-reason-vocabulary-classifier",
+      "text": "domain_event_rejected.reason is architecture.md's free-form string field (not a closed union) by design -- receive-engine.ts documents exactly four values it emits today (parse_error, retry-exhausted, deferred-ttl-expired, persistence-exhausted). classifyRejectionReason() is an S8-owned, additive UI helper (not a seam change) that maps those four plus a graceful 'unknown' default, satisfying the ledger's 'S8 UI must handle all four + unknown gracefully' handoff note without narrowing the seam's own type."
+    }
+  ]
+}

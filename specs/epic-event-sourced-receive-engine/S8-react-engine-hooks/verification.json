@@ -52,6 +52,24 @@
       "category": "SPEC",
       "ac_id": "AC-INV-4",
       "question": "does the implementation satisfy AC-INV-4's observable -- does a test drive the engine through a sequence of domain_event_accepted outputs (folding an in-memory projection incrementally via the hook), independently load the same events via PersistenceAdapter.loadAcceptedEvents, call buildProjection, and assert deep-equality between the incrementally-folded and freshly-rebuilt projections, with evidence the incremental path actually executed applyEvent per event rather than a hidden full-rebuild masquerading as incremental?"
+    },
+    {
+      "question_id": "VQ-S8-009",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "react-engine-hooks.ts's UseReceiveEngineParams.createEngine is a FACTORY (() => ReceiveEngine), not a pre-built engine instance -- the effect calls createEngine() fresh on every mount and only ever start()s/stop()s that one instance once each. This is a judgment call (architecture.json 'fresh-engine-per-mount-via-factory') to sidestep receive-engine.ts's 'start() only from lifecycle uninitialized' guard under a React 18 Strict-Mode dev double-invoke (mount->cleanup->mount), which would otherwise throw on the second start() against an already-'stopped' shared engine. Is this the correct place to resolve that tension -- pushing 'always hand the hook a fresh engine' onto the caller's factory -- versus e.g. loosening receive-engine.ts's start() guard (S5-owned) to tolerate a start-after-stop by internally resetting? Does this choice constrain S9's task-store.tsx wiring (the recorded cross-story consumer) in a way that story should be told about explicitly rather than discovering independently?"
+    },
+    {
+      "question_id": "VQ-S8-010",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "react-engine-hooks.test.tsx is this repo's first .tsx test file, which required two small shared-infrastructure additions outside the story's own scope.includes: (1) vitest.config.ts gained an `oxc: { jsx: { runtime: 'automatic' } }` override (tsconfig.json's Next.js-recommended 'jsx: preserve' otherwise breaks Vite 8's oxc-based test transform), and (2) package.json/package-lock.json gained react-test-renderer@19.2.4 (version-pinned exactly to the installed react/react-dom version, since react-test-renderer historically enforces an exact internal-version match at runtime, not just a semver-compatible range) + @types/react-test-renderer as devDependencies. Do these two additions hold up as the right place to fix a repo-wide test-infra gap (versus, say, scoping the jsx override to a separate vitest project/config, or choosing @testing-library/react + jsdom instead of react-test-renderer)? Is the exact-pin on react-test-renderer's version something a later dependency-bump story needs to know to keep in lockstep with react/react-dom's own version bumps?"
+    },
+    {
+      "question_id": "VQ-S8-011",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "The mount-time persistence seed (judgment_calls 'mount-time-persistence-seed-is-the-restart-case') runs buildProjection(replayOrder(await persistence.loadAcceptedEvents(groupId))) on EVERY hook mount, unconditionally, before calling engine.start() -- not just on an engine-level 'restart' (origin: 'restored'). Is treating every hook mount as Implementation Constraint 7's 'restart' case (rather than only mounts where startOptions.origin === 'restored') a faithful reading of that constraint, or does it risk redundant work / a subtly wrong signal once S11's real recovery sequencing (R1-R4) lands and the engine itself starts asserting stronger assumptions about what 'restart' means at the origin level?"
     }
   ]
 }

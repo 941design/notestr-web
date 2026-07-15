@@ -45,6 +45,30 @@
       "category": "SPEC",
       "ac_id": "AC-MIG-3",
       "question": "does the implementation satisfy AC-MIG-3's observable -- does a grep-based test assert zero matches for applicationMessage in src/store/task-store.tsx, run as the Phase-8 exit gate, with evidence that the pre-Phase-8 tree had exactly one such match (task-store.tsx:181-255) so the check is state-discriminating across the phase boundary rather than trivially true before this story ran too?"
+    },
+    {
+      "question_id": "VQ-S12-008",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "task-store.tsx's EngineTaskBridge now consumes deferred-store.ts's createPersistenceAdapter() (the real, durable ten-method S11 adapter) in place of S9's session-scoped interim in-memory one -- was this swap actually required by this story's scope, or is it an undeclared scope expansion? (Answer basis: origin-routing correctness -- the story's own explicit mandate -- is meaningless against an adapter whose loadCheckpoint never survives a reload; the swap is a load-bearing precondition for the origin-routing requirement, not an independent improvement. Verify no other file outside scope.includes needed to change to support this, and that deferred-store.ts's own test suite -- unchanged -- still passes.)"
+    },
+    {
+      "question_id": "VQ-S12-009",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "question": "TaskStoreProvider's origin-routing effect falls back to origin:'welcome' if loadCheckpoint(groupId) rejects (IDB quota/eviction/private-mode). For a group that DOES have a real prior checkpoint, a transient read failure therefore routes to a fresh 'welcome' bootstrap instead of 'restored' recovery on that one attempt -- is this the correct degrade-not-crash choice (matching the pre-existing synchronous-gate precedent elsewhere in this file), and does it converge safely (no duplicate/lost tasks) given the engine's own idempotent accepted-log dedup, rather than needing a retry-the-loadCheckpoint-call design?"
+    },
+    {
+      "question_id": "VQ-S12-010",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "Is the new restored-origin/recovery durability path (TaskStoreProvider -> loadCheckpoint -> engine.start({origin:'restored'}) -> AC-REC-9 routing -> R1 projection rebuild) actually exercised by a real, non-mocked-persistence integration test post-S12 (not just unit-level receive-engine.recovery tests against a hand-built PersistenceAdapter), given this story is the FIRST production composition root to wire the real deferred-store.ts adapter in at all?"
+    },
+    {
+      "question_id": "VQ-S12-011",
+      "phase": "post-impl",
+      "category": "BEST_PRACTICES",
+      "question": "device-sync.ts's publishTaskStateSync (the new-member task-state snapshot sent on invite) now reads from the durable engine accepted-log instead of the legacy per-group event log -- for a group CREATOR (never routes through the engine's fetchBootstrap join-time path, since no kind-30078 snapshot targets them) whose own tasks arrive solely via ReceiveEngine.acceptLocal (S14) on their own dispatches, does the accepted-log reliably contain the creator's own task history by the time they invite a new member, with no dependency on the creator's browser having been reloaded/recovered first?"
     }
   ]
 }

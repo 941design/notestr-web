@@ -316,9 +316,35 @@ const CANONICAL_FILES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Allowlisted with expiry: task-reducer.ts is retired (replaced by
- * task-projector.ts) at S9 (task-store-projection-cutover) or S12
- * (legacy-listener-removal). Remove this entry when that lands.
+ * S13 ("boundary-hardening-and-cutover-complete", the epic's final story)
+ * checked whether this entry could finally be dropped: neither S9 nor S12
+ * retired task-reducer.ts as this comment previously anticipated. The
+ * concrete check (per S13's task brief) is whether task-reducer.ts's
+ * `applyEvent`/comparator is still imported by any PRODUCTION path --
+ * it is not. `task-projector.ts` (applyEvent) and `device-sync.ts`
+ * (bootstrap merge gate) both delegate to `task-crdt.ts`'s `taskWinsOver`
+ * exclusively (enforced by Part 1 of this suite, above); no production call
+ * site invokes `task-reducer.ts`'s own `applyEvent`/`replayEvents`.
+ *
+ * The file is nonetheless kept, for two reasons:
+ *  1. `device-sync.ts` still imports `TaskState` (a `Map<string, Task>`
+ *     type alias) from task-reducer.ts -- a type-only dependency, not a
+ *     tie-break one, but it means the module is not fully orphaned.
+ *  2. `task-reducer.test.ts` is a substantial (~40 case) mutation-pinned
+ *     regression suite exercising task-reducer.ts's `applyEvent` directly,
+ *     including several cases added specifically to close real Stryker
+ *     mutation survivors (the `?? ""` normalization / ASCII-boundary
+ *     device-id cases). No equivalent-behavior replacement for that
+ *     per-event-type field-copy coverage exists elsewhere (task-crdt.test.ts
+ *     covers ONLY the three-level tie-break comparator in isolation, not
+ *     applyEvent's field-copy semantics per event variant) -- deleting it
+ *     would violate this epic's AC-MIG-4 "no test file deleted without a
+ *     same-behavior replacement" bar.
+ *
+ * This is a terminal decision, not a time-boxed one: S13 is the epic's last
+ * story, so there is no future story left to "land" and close this out.
+ * Revisit only as an independent, non-epic cleanup if device-sync.ts's
+ * `TaskState` import is ever retired too.
  */
 const ALLOWLISTED_LEGACY_FILES: ReadonlySet<string> = new Set([
   "src/store/task-reducer.ts",

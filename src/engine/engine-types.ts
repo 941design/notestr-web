@@ -263,7 +263,7 @@ export type DeferredReason = "unreadable" | "epoch_mismatch";
  *    `stateChanged` (that would force a full projection rebuild on every
  *    own-dispatch).
  *  - On `domain_event_accepted`, the integration layer MUST call
- *    `applyEvent(currentProjection, event.payload)`, never
+ *    `applyEvent(currentProjection, event.event)`, never
  *    `buildProjection(fullLog)` (full rebuild is restart/`projection_invalidated`
  *    only).
  *  - PARSE-ERROR-TERMINAL (added 2026-07-12): a payload that decrypted but
@@ -497,6 +497,68 @@ export interface PersistenceAdapter {
 }
 
 // ---------------------------------------------------------------------------
+// OutboxEntry (S10 — Phase 6 publish/outbox ownership)
+// ---------------------------------------------------------------------------
+
+/**
+ * Real state-machine values for `OutboxEntry.status`. Driven by ACTUAL
+ * send-attempt and own-echo-observation events — never a status set once at
+ * creation and left alone (a set-once field would make AC-PUB-1's "reconcile
+ * to the same durable state" claim untestable/vacuous).
+ *
+ *  - "pending"    — registered, send attempt not yet resolved.
+ *  - "sent"       — the send attempt resolved without throwing (the relay
+ *                   accepted the kind-445 publish). Awaiting own-echo.
+ *  - "reconciled" — own-echo observed: the SAME kind-445 event id this
+ *                   entry's send produced was later seen returning through
+ *                   `group.ingest()`'s self-echo skip path. Durable
+ *                   confirmation the publish round-tripped the relay.
+ *  - "failed"     — the send attempt threw. Eligible for retry via the same
+ *                   `OutboxEntry` (createdAt/rumorId unchanged).
+ */
+export type OutboxStatus = "pending" | "sent" | "reconciled" | "failed";
+
+/**
+ * A durable record of one locally-initiated publish intent for a `TaskEvent`
+ * mutation. See architecture.md "Seam Contracts › OutboxEntry" (createdAt/
+ * rumorId frozen there in Phase 5; this finalizes the remaining fields in
+ * Phase 6, per S10).
+ *
+ * Invariants:
+ *  - `createdAt` is set ONCE before the first send attempt and MUST NOT be
+ *    mutated on retry (Boundary Rule 7). `rumorId` is deterministically
+ *    derived from (createdAt, taskEvent, the publishing pubkey) — freezing
+ *    createdAt/taskEvent is what keeps rumorId byte-identical across
+ *    retries; it is never independently re-assigned.
+ *  - `sentEventId` is the kind-445 relay event id learned via own-publish
+ *    correlation (marmot-adapter.ts's outbox bridge) at the moment a send is
+ *    unambiguously attributed. `null` until then.
+ *  - `ownEchoObservedAt` is set exactly once, monotonically, the first time
+ *    `sentEventId` is observed returning through `group.ingest()`'s
+ *    self-echo skip path. Never unset once populated.
+ *  - `attempts` increments on every send attempt (including retries) that
+ *    actually calls `sendApplicationRumor`, whether it succeeds or fails.
+ *  - Own-echo matching MUST be by exact `sentEventId` equality only — never
+ *    by `taskEvent`/task-content equality — so a same-content event
+ *    authored by a DIFFERENT device/pubkey (necessarily a different
+ *    content-addressed kind-445 id, since the MLS ciphertext and/or the
+ *    rumor's per-device `updatedByDevice` field differ) can never be
+ *    misclassified as this device's own echo.
+ */
+export interface OutboxEntry {
+  rumorId: string;
+  groupId: string;
+  createdAt: number;
+  taskEvent: TaskEvent;
+  status: OutboxStatus;
+  attempts: number;
+  lastAttemptAt: number | null;
+  lastError: string | null;
+  sentEventId: string | null;
+  ownEchoObservedAt: number | null;
+}
+
+// ---------------------------------------------------------------------------
 // IDB key schema (Boundary Rule 8/9: every new epic IDB key is defined HERE
 // and nowhere else — enforced by ./engine-boundary.structural.test.ts,
 // AC-BOUND-3)
@@ -510,11 +572,14 @@ export const ACCEPTED_EVENTS_KEY_PREFIX = "notestr:accepted-events:";
 export const ENGINE_CHECKPOINTS_KEY_PREFIX = "notestr:engine-checkpoints:";
 /** Owner: src/persistence/deferred-store.ts (new in S4). */
 export const DEFERRED_IDS_KEY_PREFIX = "notestr:deferred-ids:";
+/** Owner: src/integration/publish-outbox.ts (new in S10). */
+export const OUTBOX_KEY_PREFIX = "notestr:outbox:";
 
 // Note: the legacy `notestr:events:${groupId}` key (owned by
 // src/store/persistence.ts, read-only during migration, removed Phase 8)
-// is NOT redefined here — it is not one of "the epic's" four new keys and
-// AC-BOUND-3 only protects the four above.
+// is NOT redefined here — it is not one of "the epic's" five new keys and
+// AC-BOUND-3 only protects the five above (widened S13 to include the
+// outbox key alongside the original four).
 
 export function rawFactsKey(groupId: string): string {
   return `${RAW_FACTS_KEY_PREFIX}${groupId}`;
@@ -530,4 +595,8 @@ export function engineCheckpointsKey(groupId: string): string {
 
 export function deferredIdsKey(groupId: string): string {
   return `${DEFERRED_IDS_KEY_PREFIX}${groupId}`;
+}
+
+export function outboxKey(groupId: string): string {
+  return `${OUTBOX_KEY_PREFIX}${groupId}`;
 }

@@ -1,0 +1,18 @@
+{
+  "story_id": "S10",
+  "captured_at": "2026-07-14T00:00:00Z",
+  "tests": {
+    "command": "npx vitest run",
+    "status": "PASS",
+    "test_files": 42,
+    "tests": 908
+  },
+  "typecheck": {
+    "command": "npx tsc --noEmit",
+    "status": "clean"
+  },
+  "lint": {
+    "status": "NO_LINT",
+    "note": "No .eslintrc*/eslint.config* and no package.json lint script found in this repo."
+  }
+}

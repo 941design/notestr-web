@@ -1,0 +1,69 @@
+{
+  "module_name": "recovery-sequencing",
+  "purpose": "Completes PersistenceAdapter (architecture.md 'Seam Contracts – PersistenceAdapter') by adding the checkpoint and deferred-id stores (real IDB, resolving MOCK-05-002), composing them with S4's raw-event-log-store into acceptDeferredFact (accepted-first crash-safe ordering, R-INV-3) and clearGroupState (checkpoint-first clear ordering), and hardening receive-engine.ts's already-partially-implemented R1-R4 recovery sequencing (S5's 'recovering-r1-r3-best-effort' judgment call) up to full AC-REC-1..9 / AC-PERS-2 / AC-INV-3 conformance with dedicated per-step test coverage.",
+  "public_api": [
+    { "name": "saveCheckpoint", "signature": "(checkpoint: EngineCheckpoint) => Promise<void>", "description": "checkpoint-store.ts. Whole-object overwrite (setItem) keyed by engineCheckpointsKey(checkpoint.groupId) -- the caller (receive-engine.ts's buildCheckpoint()) always supplies every field, so no read-modify-write is needed for this method." },
+    { "name": "loadCheckpoint", "signature": "(groupId: string) => Promise<EngineCheckpoint | null>", "description": "checkpoint-store.ts. Plain getItem; null if absent. Returns whatever is stored AS-IS (no shape validation) -- shape/deserialization validation is the engine's own responsibility (isValidCheckpoint in receive-engine.ts, AC-PERS-2 / Implementation Constraint 12), so a malformed persisted value round-trips faithfully rather than being silently coerced or throwing here." },
+    { "name": "clearCheckpoint", "signature": "(groupId: string) => Promise<void>", "description": "checkpoint-store.ts. Plain removeItem; no-op if absent. Exported (not just used internally) so deferred-store.ts's clearGroupState composition can call it FIRST per the checkpoint-first clear-ordering invariant." },
+    { "name": "saveDeferredIds", "signature": "(groupId: string, ids: string[]) => Promise<void>", "description": "deferred-store.ts. Whole-list overwrite (setItem) keyed by deferredIdsKey(groupId) -- the caller (receive-engine.ts) always supplies the full recomputed id list, so no RMW needed here. IDS ONLY (architecture.md 'Recovery Sequencing' R2 -- no DeferredReason/queuedAt/attempts; that lossiness is SETTLED by design)." },
+    { "name": "loadDeferredIds", "signature": "(groupId: string) => Promise<string[]>", "description": "deferred-store.ts. Plain getItem; [] if absent." },
+    { "name": "clearDeferredIds", "signature": "(groupId: string) => Promise<void>", "description": "deferred-store.ts. Plain removeItem; no-op if absent." },
+    { "name": "acceptDeferredFact", "signature": "(groupId: string, factId: string, event: AcceptedDomainEvent) => Promise<void>", "description": "deferred-store.ts. Composes raw-event-log-store.ts's appendAcceptedEvent (called FIRST, idempotent on event.id) with an atomic updateItem-based removal of factId from this group's deferred-id list (called only after the append resolves). Implements R-INV-3's accepted-first crash-safe ordering: a crash between the two steps leaves factId in BOTH stores (never neither); recovery's R2a prune (in receive-engine.ts) reconciles it (accepted wins). Never reverses the order; never interleaves other writes between the two steps." },
+    { "name": "clearGroupState", "signature": "(groupId: string) => Promise<void>", "description": "deferred-store.ts. Full per-group purge implementing FSM L11 reset(): awaits clearCheckpoint(groupId) FIRST (checkpoint-first discipline -- a crash mid-reset must never strand a usable bootstrapCompleted checkpoint over already-emptied logs), THEN Promise.all([raw-event-log-store.ts's clearRawAndAcceptedLogs(groupId), this file's own clearDeferredIds(groupId)]). Composes S4's exported partial verbatim -- never reconstructs its store names." },
+    { "name": "createPersistenceAdapter", "signature": "() => PersistenceAdapter", "description": "deferred-store.ts. Assembles the full 10-method PersistenceAdapter by combining raw-event-log-store.ts's four methods, checkpoint-store.ts's two, and this file's four (saveDeferredIds/loadDeferredIds/acceptDeferredFact/clearGroupState) into one object. This is what makes MOCK-05-002 concretely resolved: a real, fully-functional PersistenceAdapter can now be constructed with one call. Not yet wired into any composition root (out of this story's file scope -- that is a later/app-wiring concern) but structurally complete and exercised end-to-end by deferred-store.test.ts against real IDB." },
+    { "name": "enterCatchingUp (health-timing fix)", "signature": "receive-engine.ts internal function, unchanged signature", "description": "AC-PERS-2 conformance fix: the 'preserve-and-replay-recovery' degradation reason (set by enterRecovering's viaPreserveAndReplay arm) is now cleared inside enterCatchingUp, immediately after its own transitionTo(gen,'catching_up') checkpoint save resolves -- not inside enterRecovering, immediately after ITS OWN transitionTo(gen,'recovering') save, as S5/S6 shipped it. Rationale: fsm.md mandates that 'recovering' always reports health:nominal regardless of degradationReasons (only ACTIVE lifecycles can show degraded), so the S5/S6 clear point made the degraded window UNOBSERVABLE -- the engine reached catching_up already nominal on the happy path, violating AC-PERS-2's literal text ('MUST enter catching_up with health: degraded until the first successful checkpoint save'). Moving the clear to enterCatchingUp means transitionTo's own synchronous emitStateChanged() (which fires BEFORE its awaited checkpoint save) now correctly reports health:degraded on the FIRST catching_up engine_state_changed event, and a second engine_state_changed reporting health:nominal follows once that save lands. No-op for the ordinary joining->catching_up paths (L4/L5), which never add this reason." }
+  ],
+  "private_files": [],
+  "owned_data": [
+    "IDB notestr:engine-checkpoints:${groupId} (key from src/engine/engine-types.ts engineCheckpointsKey) -- EngineCheckpoint per group, whole-object overwrite",
+    "IDB notestr:deferred-ids:${groupId} (key from src/engine/engine-types.ts deferredIdsKey) -- string[] (fact ids only) per group"
+  ],
+  "dependencies_allowed": [
+    "src/engine/engine-types.ts (types EngineCheckpoint/AcceptedDomainEvent/PersistenceAdapter/RawProtocolFact* + key builders engineCheckpointsKey/deferredIdsKey ONLY -- the sanctioned architecture.md Forbidden-Rule-3 carve-out)",
+    "src/marmot/storage.ts (createKVStore, updateItem -- IDB infrastructure)",
+    "src/persistence/raw-event-log-store.ts (sibling persistence module; appendAcceptedEvent + clearRawAndAcceptedLogs, both composed by deferred-store.ts -- persistence-to-persistence imports are unrestricted by architecture.md's boundary rules)",
+    "src/persistence/checkpoint-store.ts (sibling module; clearCheckpoint, composed by deferred-store.ts's clearGroupState/createPersistenceAdapter)"
+  ],
+  "dependencies_forbidden": [
+    "src/engine/receive-engine.ts and every other src/engine/* file besides engine-types.ts (Forbidden Rule 3)",
+    "src/integration/*",
+    "react, next, next/navigation",
+    "src/store/* (legacy persistence.ts owns notestr:events:${groupId} exclusively -- AC-MIG-1)"
+  ],
+  "external_ports": [
+    "PersistenceAdapter (now FULLY implemented across raw-event-log-store.ts + checkpoint-store.ts + deferred-store.ts) -- the engine's sole persistence seam. receive-engine.ts's tests continue to consume a high-fidelity in-memory replica per the AC-BOUND-1 boundary (src/engine/* -- tests included -- may never import src/persistence/*, established S5/S6 precedent, mocks-registry.json), so this story's proof that the REAL stores satisfy the same contract lives entirely in checkpoint-store.test.ts / deferred-store.test.ts (real fake-indexeddb round trips), never in a cross-boundary integration test -- see judgment_calls 'no-cross-boundary-integration-test'."
+  ],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "src/persistence/checkpoint-store.test.ts",
+    "src/persistence/deferred-store.test.ts",
+    "src/engine/receive-engine.recovery.test.ts",
+    "src/engine/receive-engine.recovery.property.test.ts"
+  ],
+  "seam": {
+    "cross_story": false
+  },
+  "judgment_calls": [
+    {
+      "id": "composed-methods-and-full-adapter-factory-live-in-deferred-store-ts",
+      "decision": "acceptDeferredFact, clearGroupState, and the createPersistenceAdapter() full-composition factory are all placed in deferred-store.ts rather than checkpoint-store.ts or a new fourth file. Rationale: (a) neither method is checkpoint-only or deferred-only in isolation -- both are genuinely cross-store compositions -- but deferred-store.ts is created chronologically/dependency-wise LAST (it needs both raw-event-log-store.ts and checkpoint-store.ts to exist), making it the natural final-assembly point, mirroring how S4's clearRawAndAcceptedLogs doc comment already anticipates 'S11's real clearGroupState COMPOSES this partial with its own checkpoint/deferred clears' without naming a specific S11 file; (b) stories.json's scope.includes for S11 enumerates exactly 7 files (checkpoint-store.ts/.test.ts, deferred-store.ts/.test.ts, receive-engine.ts + 2 test files) with NO fourth persistence file -- adding a separate persistence-adapter.ts would be an undeclared scope widening the anti-pattern guidance explicitly forbids without an escalation. Keeping the composition inside an already-in-scope file avoids that.",
+      "escalation_needed": false
+    },
+    {
+      "id": "no-cross-boundary-integration-test",
+      "decision": "VQ-S11-001 (pre-impl) asks whether receive-engine.ts's R1-R4 sequencing performs the actual rebuild against REAL store contents, which on first read suggested adding a cross-boundary integration test (e.g. under src/integration/, the only layer architecture.md permits to import both src/engine/* and src/persistence/*) wiring createReceiveEngine to createPersistenceAdapter(). Rejected: stories.json's S11 scope.includes is a closed 7-file list that does NOT include any src/integration/ file, and the anti-pattern guidance (scope.includes is the contract) forbids widening it without an explicit scope-amendment escalation for what is, at most, a nice-to-have drift-guard (already an open ledger watch item attributed to S8/S9, not a hard S11 blocker). AC-BOUND-1 makes the alternative -- importing the real stores directly into receive-engine.recovery.test.ts -- structurally impossible (established S5/S6 precedent: 'tests included' in the src/engine/* import ban). Resolution: the 'real store contents' half of VQ-S11-001 is satisfied entirely by checkpoint-store.test.ts / deferred-store.test.ts (real fake-indexeddb round trips proving the stores independently honor the exact PersistenceAdapter contract -- idempotency, ordering, atomicity -- that the S5/S6-precedented in-memory mock replicates); the 'engine sequencing actually wired' half is satisfied by receive-engine.recovery.test.ts's dedicated per-R-step scenarios plus TypeScript structural conformance (both the mock and the real stores satisfy the identical PersistenceAdapter interface, tsc-verified). Recorded as a post-impl verification.json question rather than silently dropped.",
+      "escalation_needed": false
+    },
+    {
+      "id": "ac-pers-2-health-timing-fix-is-in-scope-not-a-rewrite",
+      "decision": "S5/S6 shipped enterRecovering clearing the 'preserve-and-replay-recovery' degradation reason immediately after recovering's OWN checkpoint save succeeds -- before catching_up is ever entered. Since fsm.md forces health:nominal for the non-ACTIVE 'recovering' lifecycle regardless of degradationReasons, this made the degraded window structurally unobservable and violates AC-PERS-2's literal text ('MUST enter catching_up with health: degraded until the first successful checkpoint save'), caught only now because VQ-S11-016 is the first dedicated test for this exact observable. Moving the clear call from enterRecovering to enterCatchingUp is a small, targeted diff (relocate one function call, add one doc comment) -- not a rewrite of S5/S6's FSM, which the story brief explicitly forbids. Proceeding without escalation: this is squarely an AC-PERS-2 conformance defect within S11's assigned ACs, not a design dispute.",
+      "escalation_needed": false
+    },
+    {
+      "id": "checkpoint-store-loadCheckpoint-does-not-validate-shape",
+      "decision": "checkpoint-store.ts's loadCheckpoint returns whatever createKVStore.getItem resolves with, untyped-cast to EngineCheckpoint | null, with NO runtime shape validation. AC-PERS-2's 'exists but fails to deserialize' handling is deliberately entirely the ENGINE's responsibility (receive-engine.ts's pre-existing isValidCheckpoint type guard, unchanged by this story) -- the store layer's job is faithful byte-for-byte round-trip, not schema enforcement; duplicating validation in both layers would let them drift.",
+      "escalation_needed": false
+    }
+  ]
+}

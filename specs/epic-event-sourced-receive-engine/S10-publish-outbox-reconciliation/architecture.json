@@ -1,0 +1,94 @@
+{
+  "module_name": "publish-outbox",
+  "purpose": "Owns the local publish-intent lifecycle for outgoing TaskEvent mutations: durable OutboxEntry creation with immutable createdAt/rumorId, send-attempt bookkeeping, failure observability, and own-echo reconciliation (confirming the publisher's own relayed kind-445 event round-tripped back through the group's ratchet). Extends marmot-adapter.ts's outbox bridge (new module-level OutboxEntry registry + own-publish kind-445 correlation) so publish-outbox.ts can attribute a send to its resulting relay event id and later reconcile it when that id reappears via group.ingest()'s self-echo skip path.",
+  "public_api": [
+    {
+      "name": "OutboxStatus",
+      "signature": "type OutboxStatus = \"pending\" | \"sent\" | \"reconciled\" | \"failed\"",
+      "description": "Real state-machine values for OutboxEntry.status, driven by actual send attempts (pending->sent/failed) and actual own-echo observation (sent->reconciled) -- never a set-once field (VQ-S10-001)."
+    },
+    {
+      "name": "OutboxEntry",
+      "signature": "interface OutboxEntry { rumorId: string; groupId: string; createdAt: number; taskEvent: TaskEvent; status: OutboxStatus; attempts: number; lastAttemptAt: number | null; lastError: string | null; sentEventId: string | null; ownEchoObservedAt: number | null; }",
+      "description": "engine-types.ts finalized seam contract. createdAt is set ONCE before first send and NEVER mutated on retry (Boundary Rule 7); rumorId is deterministically derived from (createdAt, taskEvent, pubkey) so it stays byte-identical across retries by construction, not by caching. sentEventId is the kind-445 relay event id learned via own-publish correlation; ownEchoObservedAt is set exactly once, monotonically, when that id is later observed returning through group.ingest()'s self-echo skip path."
+    },
+    {
+      "name": "outboxKey / OUTBOX_KEY_PREFIX",
+      "signature": "OUTBOX_KEY_PREFIX = \"notestr:outbox:\"; function outboxKey(groupId: string): string",
+      "description": "New Rule-9 IDB key constant in engine-types.ts (the sole authority), required for AC-PUB-1's real restart-durability claim -- an in-memory-only outbox cannot satisfy 'restart the engine ... before own-echo observed' in production. See judgment call below."
+    },
+    {
+      "name": "registerOutboxEntry / getOutboxEntry / rehydrateOutboxEntries / resetOutboxBridgeForTests",
+      "signature": "marmot-adapter.ts module-level OutboxEntry registry (Map<rumorId, OutboxEntry>), keyed independently of any MarmotIngestAdapter instance",
+      "description": "Owned by marmot-adapter.ts per architecture.md's Module Map ('owns outbox bridge'). registerOutboxEntry tracks a fresh publish intent; rehydrateOutboxEntries restores unreconciled entries loaded from durable storage after a restart so a later own-echo can still be matched; resetOutboxBridgeForTests clears all module state for test isolation."
+    },
+    {
+      "name": "beginOutboxPublishWindow / endOutboxPublishWindow / markOutboxFailed",
+      "signature": "see marmot-adapter.ts",
+      "description": "Own-publish kind-445 correlation, algorithmically mirroring device-sync.ts's pre-existing GAP-2 tracker (per-hTag FIFO + in-window kind-445 count disambiguation) but a FRESH, independent implementation local to marmot-adapter.ts (see judgment call: no device-sync.ts/network.ts edit this story). endOutboxPublishWindow attributes the observed kind-445 id to the OutboxEntry only when exactly one kind-445 fired in the window; ambiguous/zero cases leave sentEventId null (documented degraded case, does not block AC-PUB-1's test scenario, which controls for it)."
+    },
+    {
+      "name": "reconcileOwnEcho",
+      "signature": "function reconcileOwnEcho(fact: RawProtocolFactInput, now: number): OutboxEntry | null",
+      "description": "Wired into MarmotIngestAdapter.doIngestBatch's existing skipped/rejected branch. Matches STRICTLY by exact fact.id === entry.sentEventId equality -- never by taskId/content -- which is what makes a same-content event from a different device/pubkey structurally unable to match (different pubkey and/or different per-device updatedByDevice content -> different kind-445 ciphertext -> different content-addressed event id). Closes VQ-S10-006."
+    },
+    {
+      "name": "registerOutboxPersistHook / unregisterOutboxPersistHook",
+      "signature": "function registerOutboxPersistHook(groupId: string, hook: (entry: OutboxEntry) => void): void",
+      "description": "Per-group callback registry (not a single global hook -- multi-group safety) that marmot-adapter.ts's bridge fires on every OutboxEntry status mutation (register/sent/failed/reconciled), letting publish-outbox.ts persist every transition durably without polling or an engine-output-event round trip."
+    },
+    {
+      "name": "createPublishOutbox",
+      "signature": "function createPublishOutbox(deps: PublishOutboxDeps): PublishOutbox",
+      "description": "src/integration/publish-outbox.ts (new). PublishOutbox = { publish(taskEvent): Promise<OutboxEntry>; retry(rumorId): Promise<OutboxEntry>; loadPersisted(): Promise<OutboxEntry[]>; getEntry(rumorId): OutboxEntry | undefined; dispose(): void }. publish() builds a deterministic rumor draft from (createdAt=now, taskEvent, pubkey), persists a 'pending' OutboxEntry, sends via deps.sendApplicationRumor, and never throws to the caller (failure is durably recorded + observable via lastError, matching the pre-existing task-store.tsx fire-and-forget-with-CustomEvent behavior). retry() reuses the persisted createdAt/taskEvent unchanged so rumorId is byte-identical (VQ-S10-005)."
+    }
+  ],
+  "private_files": [
+    "src/integration/publish-outbox.ts"
+  ],
+  "owned_data": [
+    "IDB key notestr:outbox:${groupId} (OutboxEntry[] per group, via createKVStore, mirrors raw-event-log-store.ts's single-array-per-group layout)",
+    "marmot-adapter.ts module-level outboxEntries Map<rumorId, OutboxEntry> (in-memory correlation/reconciliation state, rehydrated from the durable store on publish-outbox construction)"
+  ],
+  "dependencies_allowed": [
+    "src/integration/* -> src/engine/* (OutboxEntry, RawProtocolFactInput types)",
+    "src/integration/* -> src/domain/* (TaskEvent, TASK_EVENT_KIND)",
+    "src/integration/* -> marmot-ts (Rumor via applesauce-common, MarmotClient/MarmotGroup types already imported by marmot-adapter.ts)",
+    "src/integration/publish-outbox.ts -> src/integration/marmot-adapter.ts (same-module sibling, outbox bridge exports)",
+    "src/integration/publish-outbox.ts -> src/marmot/device-sync.ts (existing, UNCHANGED public functions only: enqueueExpectedPublish/beginDispatchPublishWindow/endDispatchPublishWindow/removeExpectedPublishByRumorId -- preserves the mlsTrace 'publish-task' diagnostic the COMPLETE mls-live-delivery-race epic's e2e trace classifier depends on; see judgment call below)",
+    "src/store/task-store.tsx -> src/integration/publish-outbox.ts (delegation call; see judgment call below)"
+  ],
+  "dependencies_forbidden": [
+    "publish-outbox.ts / marmot-adapter.ts importing src/store/task-store.tsx or src/marmot/device-sync.ts (would invert the legacy-shrinks-toward-new-code direction)",
+    "engine-types.ts gaining any runtime logic beyond the OutboxEntry field contract + its one new IDB key constant/builder (Boundary Rule 9 authority only)"
+  ],
+  "external_ports": [
+    "createKVStore<OutboxEntry[]>(\"outbox\") (src/marmot/storage.ts, same IndexedDB infra raw-event-log-store.ts uses)",
+    "group.sendApplicationRumor(rumor) (marmot-ts, injected by the caller as PublishOutboxDeps.sendApplicationRumor)",
+    "client.network.publish (marmot-ts NostrNetworkInterface; wrapped once, idempotently, by marmot-adapter.ts's outbox bridge to observe the resulting kind-445 event id -- see judgment call)"
+  ],
+  "events_emitted": [
+    "window CustomEvent 'notestr:taskPublishFailed' (relocated from task-store.tsx, same detail shape {groupId, taskEvent, error}) on a send failure, preserving existing UI-observability contract"
+  ],
+  "events_consumed": [
+    "IngestSignal.skipped / IngestSignal.rejected (marmot-adapter.ts's own doIngestBatch translation loop) -- the trigger for reconcileOwnEcho"
+  ],
+  "test_targets": [
+    "src/integration/publish-outbox.test.ts (new)",
+    "src/integration/marmot-adapter.test.ts (extended, own-echo + outbox-bridge coverage added to the existing S7 suite)"
+  ],
+  "judgment_calls": [
+    {
+      "id": "s10-outbox-idb-key-in-scope",
+      "text": "stories.json's scope.includes excludes 'no new IDB key literals outside the existing Rule-9 authority' for engine-types.ts. Read literally as 'don't hardcode a key literal anywhere outside engine-types.ts' (i.e. reinforcing Rule 9, not forbidding a new key altogether): added exactly one new key constant (OUTBOX_KEY_PREFIX/outboxKey) to engine-types.ts, mirroring the existing four, because AC-PUB-1 explicitly requires real restart durability -- an in-memory-only outbox cannot satisfy 'restart the engine ... before own-echo observed' as a production claim. No other engine-types.ts change made beyond this + the OutboxEntry field contract."
+    },
+    {
+      "id": "s10-independent-outbox-wrap-not-network-ts-hook",
+      "text": "architecture.md's Module Map says outbox bridge Maps are 'moved from device-sync.ts:93-141', and device-sync.ts's existing GAP-2 tracker is wired into the GLOBAL src/marmot/network.ts publish() interceptor. stories.json's scope.includes for this story is exactly {marmot-adapter.ts, publish-outbox.ts, publish-outbox.test.ts, engine-types.ts} -- it does NOT list device-sync.ts or network.ts. Rather than relocate/delete device-sync.ts's tracker (which would require editing network.ts's import and risks device-sync.test.ts's 39 existing assertions on that exact tracker, serving an unrelated epic's mlsTrace diagnostics), this story builds a FRESH, independent own-publish correlation mechanism scoped entirely inside marmot-adapter.ts: it idempotently wraps client.network.publish (passed in via PublishOutboxDeps) with the same proven per-hTag-FIFO + in-window-kind-445-count algorithm, rather than hooking device-sync.ts's global interceptor. device-sync.ts's original GAP-2 tracker is left fully intact, unmoved, still serving its existing (different-epic) diagnostic purpose. The literal relocation architecture.md describes is deferred to S12 (legacy-listener-removal, Phase 8), whose explicit job is retiring device-sync.ts's remaining live paths. IMPORTANT COROLLARY: task-store.tsx was the ONLY call site that ever populated device-sync.ts's GAP-2 FIFO (via enqueueExpectedPublish); if dispatch's send path were rewritten to call ONLY the new independent bridge, the GAP-2 FIFO would go permanently empty and the mlsTrace 'publish-task' diagnostic event (consumed by the COMPLETE mls-live-delivery-race epic's e2e/fixtures/mls-trace-classify.ts) would silently stop firing -- a real, if low-severity (diagnostic-only, env-flag-gated), regression to a shipped epic. publish-outbox.ts's send path therefore calls BOTH bridges (device-sync.ts's existing enqueueExpectedPublish/begin/end/removeExpectedPublishByRumorId, UNCHANGED, preserving the mlsTrace emission; and marmot-adapter.ts's own begin/endOutboxPublishWindow for this story's OutboxEntry correlation) bracketing the same single sendApplicationRumor call -- redundant tracking, deliberately, to avoid the silent regression."
+    },
+    {
+      "id": "s10-task-store-dispatch-delegation-out-of-listed-scope-includes",
+      "text": "stories.json's scope.includes for S10 does NOT list src/store/task-store.tsx, yet the story's own description ('replacing task-store.tsx:dispatch's mixed optimistic-apply/persist/send path') and the immutable pre-impl commitment VQ-S10-002 both require it, and this story's own dispatch brief explicitly reads task-store.tsx as context and states 'task-store.tsx is a Boundary-Rule-5 shrink-only file -- reducing its dispatch to delegation is allowed'. Treating the dispatch brief as the controlling, more current authority (it explicitly pre-authorizes exactly this edit, scoped to delegation-only, matching Boundary Rule 5's shrink-only constraint for this file), task-store.tsx's dispatch send-path is edited to delegate to publish-outbox.ts. No new task-state decision logic is added; the diff is a net deletion (GAP-2 mutex/rumor-build/window-tracking/CustomEvent code deleted from task-store.tsx, replaced by one delegated call)."
+    }
+  ]
+}

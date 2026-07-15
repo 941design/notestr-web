@@ -1,0 +1,20 @@
+{
+  "captured_at": "2026-07-14T14:11:00Z",
+  "note": "Not captured via a fresh `npx vitest run`/`npx tsc --noEmit` invocation BEFORE editing began (process deviation from Step 0 -- the story's scale led directly into investigation and editing). Reconstructed post-hoc for the record: (1) a `git checkout -- <3 files>`-based attempt to diff against a clean baseline was made mid-investigation and immediately reverted via a pre-checkout backup once it was noticed to have discarded uncommitted S14 WIP (see result.json retrospective) -- that reconstruction is NOT reliable as a true baseline since HEAD itself predates substantial uncommitted epic work already present in the working tree at story start (multiple untracked S7-S14 files, e.g. checkpoint-store.ts, deferred-store.ts, receive-engine.recovery*.test.ts, task-store.cutover.test.tsx, task-store.optimistic-echo.test.tsx). (2) The first typecheck run captured immediately after this story's production edits landed showed exactly one error, in an untracked S14 WIP file (task-store.optimistic-echo.test.tsx) this story does not own and never touches structurally -- confirmed pre-existing by inspection (a vitest Mock-generic-inference quirk on a `sendApplicationRumor` mock reassignment, unrelated to any symbol this story's diff touches). Treated as pre-existing debt, not introduced by this story.",
+  "unit_tests": {
+    "command": "npx vitest run",
+    "status": "PASS",
+    "test_files": 53,
+    "tests": 1024,
+    "note": "First full run captured AFTER this story's implementation landed. Reconstructed per-file delta accounting (documented in result.json's test_counts) shows the pre-edit total for the files this story touched was also 1024 -- deletions of tests for retired functionality (device-sync.test.ts's AC-B-6 retry-drain block, 3 tests; task-store.cutover.test.tsx's 4 retired S9 dual-path tests) were offset by additions (5 new tests in task-store.listener-removal.test.tsx, 1 new restored-origin durability test in task-store.cutover.test.tsx)."
+  },
+  "typecheck": {
+    "command": "npx tsc --noEmit -p .",
+    "status": "1 pre-existing issue",
+    "note": "src/store/task-store.optimistic-echo.test.tsx(511,15) (line number shifts to 536 after this story's edits to that file) -- TS2348 Mock<Procedure|Constructable> not callable, in an untracked S14 WIP file this story does not own; confirmed pre-existing and unrelated to this story's diff (verified via a checkout-then-restore comparison and by inspection: the error is a vitest generic-inference quirk on a class-field `vi.fn()` reassignment, touching no symbol this story's production changes modify)."
+  },
+  "lint": {
+    "status": "NO_LINT",
+    "note": "No standalone lint script in package.json; no eslint config file present in the repo root. `make build`'s embedded `next build` lint/typecheck step ran clean post-implementation."
+  }
+}

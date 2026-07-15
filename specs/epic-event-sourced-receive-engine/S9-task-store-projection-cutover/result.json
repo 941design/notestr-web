@@ -1,0 +1,41 @@
+{
+  "story_id": "S9",
+  "status": "done",
+  "final_outcome": "accepted",
+  "completed_at": "2026-07-14T02:00:00Z",
+  "remediation_rounds": 2,
+  "remediation_detail": "Two-model review. Stage-1 Opus: S9-1(sev-8 BLOCKER) engine mounted flag-independently (ran a 2nd receive engine + concurrent group.ingest race + durable writes for all users flag-OFF) -> mount gated on isEngineReadPathEnabled()&&readyForEngine; S9-2(sev-4) flag-OFF-doesn't-run regression test. Stage-2 Fable: F1(sev-6 doc) flag-ON dual-ingest caveat + recorded S12 prerequisite (retire device-sync group.ingest driver); F2(sev-2) deepened convergence to full-Task deep-equality; F3(sev-2) loading=Set{uninitialized,joining,catching_up}. Both models converge-verified clean. Verification: 6/7 questions YES; VQ-S9-003 (deletability) NO adjudicated by base:decider -> ACCEPT: pre-existing task-store cross-module coupling (marmot/client, device-sync, device-store, mls-trace) NOT introduced by S9 (all S9 NEW imports within dependencies_allowed); full task-store seam-isolation is epic-level debt owned by S12/S13 (re-raise VQ-S9-003 against them if not driven to zero). AC-MIG-2 amended (role-based strangler-toggle carve-out, both models concurred).",
+  "decider_caveats": [
+    "VQ-S9-003 deletability NO ACCEPTED as pre-existing coupling (not an S9 regression); full task-store seam-isolation deferred to S12/S13."
+  ],
+  "modules_touched": ["task-store"],
+  "files_created": [
+    "specs/epic-event-sourced-receive-engine/S9-task-store-projection-cutover/architecture.json",
+    "specs/epic-event-sourced-receive-engine/S9-task-store-projection-cutover/baseline.json",
+    "specs/epic-event-sourced-receive-engine/S9-task-store-projection-cutover/result.json",
+    "src/store/task-store.cutover.test.tsx"
+  ],
+  "files_modified": [
+    "src/store/task-store.tsx",
+    "specs/epic-event-sourced-receive-engine/S9-task-store-projection-cutover/verification.json"
+  ],
+  "tests_added": {
+    "unit": 3
+  },
+  "test_counts": {
+    "baseline": 901,
+    "final": 908
+  },
+  "mocks": [],
+  "escalation_history": [],
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "Two compounding gaps made this story materially harder than 'add a flag and delegate reads': (1) AC-MIG-2's own text ('no new if/switch/ternary branches') is, taken literally, impossible to satisfy for a GENUINE runtime toggle -- selecting between two data sources requires at least one conditional construct in any language. The story brief anticipated this ('the single feature-flag branch you add must be offset... OR structured so it is not net-new branching') but the diff check still nets +1 (1 added ConditionalExpression, 0 removable/relocatable branches existed in task-store.tsx, which was diff-identical to the da36c2b baseline before this story). Resolved by making it the ONLY conditional in the file, feeding a single downstream consumer, and reporting the exact number rather than gaming the grep with array-indexing or other keyword-dodging tricks. (2) Wiring 'the real marmot-adapter via a factory' into a genuinely-functioning engine required a full PersistenceAdapter, but S4's raw-event-log-store.ts only implements 4 of 10 methods -- the other 6 (checkpoint/deferred) are S11's explicit, not-yet-landed deliverable, sequenced AFTER S9 in the epic's own dependency order. Neither gap is discoverable by reading S9's story text alone; both required tracing stories.json's dependency_notes, spec.md's Phase ordering, and receive-engine.ts's actual start()/loadCheckpoint call graph to confirm.",
+    "surprised_by": "react-engine-hooks.ts's useReceiveEngine returns a freshly-constructed {projection, engineState, lastRejection} object literal on every render (not memoized). Wiring a naive forwarding useEffect keyed on that whole object (rather than its individual fields) in EngineTaskBridge created an actual infinite render loop that OOM-killed the vitest worker process (heap exhaustion, not a clean assertion failure) -- caught only because the test suite crashed rather than hung silently. Recorded as VQ-S9-010 and captured as a durable learning (base:learnings) so a future consumer of this hook doesn't rediscover it the same way.",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  }
+}

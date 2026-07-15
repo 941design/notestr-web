@@ -1,0 +1,48 @@
+{
+  "story_id": "S12",
+  "status": "done",
+  "final_outcome": "accepted",
+  "completed_at": "2026-07-14T09:30:00Z",
+  "files_created": [
+    "specs/epic-event-sourced-receive-engine/S12-legacy-listener-removal/architecture.json",
+    "specs/epic-event-sourced-receive-engine/S12-legacy-listener-removal/result.json",
+    "src/store/task-store.listener-removal.test.tsx",
+    "src/store/task-store.local-echo-readiness.test.tsx"
+  ],
+  "files_modified": [
+    "src/marmot/device-sync.ts",
+    "src/store/task-store.tsx",
+    "src/store/persistence.ts",
+    "src/integration/publish-outbox.ts",
+    "src/marmot/device-sync.test.ts",
+    "src/store/task-store.cutover.test.tsx",
+    "src/store/task-store.optimistic-echo.test.tsx",
+    "specs/epic-event-sourced-receive-engine/S12-legacy-listener-removal/verification.json"
+  ],
+  "tests_added": {
+    "unit": 5,
+    "integration": 1,
+    "readiness_regression": 4
+  },
+  "test_counts": {
+    "baseline": 1024,
+    "final": 1030
+  },
+  "mocks": [],
+  "remediation_rounds": 3,
+  "review_outcome": "THE FULL CUTOVER — two-model review (Opus Stage-1 + Fable Stage-2). Stage-1 Opus: S12-1(sev-5 re-join reset gap, RULED NON-BLOCKING — not a regression, legacy equally broken) + S12-2(sev-3 origin-proxy weakness -> fixed: restored when checkpoint||logs-non-empty). Stage-2 Fable (caught what Opus missed): S12-Fable-1(sev-5 CUTOVER REGRESSION — silent own-edit drop with false-success, window B = edit sent-but-permanently-invisible-to-author -> fixed: dispatch drives dispatchLocal DIRECTLY, decoupled from outbox, shared computeRumorId, readiness gates for both windows). Fable independently confirmed S12-1 non-blocking. Both models converge-verified clean on S12-2 + S12-Fable-1. Verification: 7/7 questions YES. Discovered+fixed: S11's durable createPersistenceAdapter was never wired to production (S9 interim was non-durable) — S12 is first prod use. Engine is now SOLE receive path (dual-ingest CLOSED). Protocol guard HELD.",
+  "accepted_caveats": [
+    "S12-1 (sev-5 re-join reset gap): a forget-device->re-invite is misrouted to origin:restored and recovers STALE state instead of a fresh bootstrap. Ruled NON-BLOCKING by BOTH review models (not a regression — the removed legacy path was equally broken; deferred-fact symptom cap-bounded at 500). HIGH-PRIORITY tracked follow-up: MUST land (integration-layer fresh-Welcome-vs-rehydrated detection -> stop/reset/start(welcome) per ADR-002) before forget-device->re-invite is advertised as fully supported. Recorded in ledger + retro for backlog promotion."
+  ],
+  "modules_touched": ["task-store", "device-sync", "persistence"],
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "Two sources of friction. (1) The pre-existing working tree had substantial uncommitted S7-S14 WIP (multiple dev teammates' output layered on the last commit, which was itself 'S1-S6 WIP: paused pre-S7') with no committed baseline to diff against -- there was no clean git ref to capture a true Step-0 test-count/typecheck baseline, so I had to reconstruct it analytically per touched file instead of via a single diff. Mid-investigation I attempted a `git checkout -- <3 files>` to get a clean comparison point, which (as CLAUDE.md warns) reverted those 3 files' uncommitted content -- caught immediately because task-store.tsx's restored HEAD version was structurally different from what I'd been reading (missing pendingTaskIds/engineIngestSourceOverride, i.e. S14 fields), which is exactly the tell that the checkout had discarded uncommitted work. Recovered with zero loss (I had a pre-checkout backup of my own edited files, which already incorporated whatever uncommitted S14 content existed when I first read them, so restoring my backup made the working tree whole again) but the detour cost time and should have been avoided entirely -- the fix going forward is to diff via `git stash`+`--include-untracked` (or just never checkout at all) rather than a bare `git checkout -- <path>` on a repo already known to carry uncommitted work. (2) Wiring the real, durable PersistenceAdapter (deferred-store.ts's createPersistenceAdapter) into the composition root for the first time -- a change this story's origin-routing mandate made structurally necessary, see architecture.json's judgment call -- introduced a genuine extra async hop (an IDB round-trip) before EngineTaskBridge mounts, which broke three existing tests' rigid single-act()-block timing assumptions (task-store.cutover.test.tsx's loading-semantics test, and three tests in the uncommitted task-store.optimistic-echo.test.tsx) in ways that manifested as full test-timeout hangs, not clean assertion failures -- diagnosing that required temporary debug instrumentation (console.error tracing) since the failure gave no direct signal about WHERE in the async chain things stalled.",
+    "surprised_by": "S11's real, durable PersistenceAdapter (checkpoint-store.ts + deferred-store.ts's createPersistenceAdapter) had been built and fully unit-tested but was NEVER actually wired into any production composition root -- S9's EngineTaskBridge still used its own session-scoped, non-durable interim in-memory adapter for checkpoint/deferred, meaning every engine restart in production would have silently lost checkpoint state regardless of origin routing. This wasn't called out as a blocking gap anywhere in the story notes or ownership-ledger prerequisite list I read going in; it surfaced only because this story's own origin-routing requirement (loadCheckpoint-based restored-vs-welcome selection) is meaningless against a non-durable adapter, forcing the wiring gap into view.",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  }
+}

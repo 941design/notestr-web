@@ -1,6 +1,20 @@
 import { createKVStore } from "@/marmot/storage";
 import type { TaskEvent } from "./task-events";
 
+/**
+ * DEPRECATED (Phase 8 / S12 legacy->engine cutover) — the receive-pipeline
+ * read/write round-trip this module used to provide (`loadEvents`/
+ * `saveEvents`/`appendEvent`) is retired: task-store.tsx now reads
+ * exclusively from the engine's durable accepted-event log
+ * (`src/persistence/raw-event-log-store.ts`), and device-sync.ts's
+ * `publishTaskStateSync` was moved onto the same source (see
+ * architecture.md module map: "persistence — DEPRECATED — removed Phase
+ * 8"). `clearEvents` is KEPT — `GroupManager.tsx`'s leave-group flow still
+ * calls it to purge this legacy `notestr:events:${groupId}` IDB namespace
+ * on explicit leave. Any legacy entries for a group the user never
+ * explicitly leaves are accepted-abandoned-in-place (VQ-S12-006): never
+ * read again, only removed via the leave path above.
+ */
 const EVENT_LOG_KEY = "notestr:events";
 
 // Pubkey-partitioned task event log. Routing through createKVStore (rather than
@@ -12,27 +26,6 @@ const taskEventStore = createKVStore<TaskEvent[]>("task-events");
 
 function storageKey(groupId: string): string {
   return `${EVENT_LOG_KEY}:${groupId}`;
-}
-
-export async function loadEvents(groupId: string): Promise<TaskEvent[]> {
-  const events = await taskEventStore.getItem(storageKey(groupId));
-  return events ?? [];
-}
-
-export async function saveEvents(
-  groupId: string,
-  events: TaskEvent[],
-): Promise<void> {
-  await taskEventStore.setItem(storageKey(groupId), events);
-}
-
-export async function appendEvent(
-  groupId: string,
-  event: TaskEvent,
-): Promise<void> {
-  const events = await loadEvents(groupId);
-  events.push(event);
-  await taskEventStore.setItem(storageKey(groupId), events);
 }
 
 export async function clearEvents(groupId: string): Promise<void> {

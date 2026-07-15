@@ -1,0 +1,79 @@
+{
+  "story_id": "S14",
+  "authored_by": "lead (inserted 2026-07-14 after S12 Phase-1 gap discovery)",
+  "authored_at": "2026-07-14T06:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S11B-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does a locally-dispatched task enter the ENGINE's projection via a real engine-boundary accept path (a domain_event_accepted folded by react-engine-hooks and appended to the durable accepted-log), rather than a task-store-local useState/Map overlay that merely masks the engine projection? I.e. is the optimistic value genuinely in the engine's projection (so it survives restart), not a UI-only shim that would evaporate on reload or when task-store is deleted in S12?"
+    },
+    {
+      "question_id": "VQ-S11B-002",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-OPT-1",
+      "question": "Does a test dispatch a task through the engine-backed dispatch path with NO remote/group.ingest message delivered, and assert the engine projection (as exposed by react-engine-hooks) contains the task — proving immediate own-edit visibility without any relay round-trip?"
+    },
+    {
+      "question_id": "VQ-S11B-003",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-OPT-2",
+      "question": "Does a test dispatch a task, restart the engine (start({origin:'restored'})), and assert the recovered projection (rebuilt from the durable accepted-log) still contains the task with correct content — proving the local accept was persisted to the accepted-log, not held only in volatile React state?"
+    },
+    {
+      "question_id": "VQ-S11B-004",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-OPT-3",
+      "question": "Does a test dispatch a task (local accept) then feed the own-echo 'skipped' signal for the same task AND a same-id remote delivery, and assert the projection has EXACTLY ONE entry for that task with correct final content (dedupe by the shared deterministic AcceptedDomainEvent.id via appendAcceptedEvent idempotency); and does a companion assertion prove the optimistic-then-echo projection deep-equals a pure remote-only projection of the same edit (convergence preserved)?"
+    },
+    {
+      "question_id": "VQ-S11B-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-OPT-4",
+      "question": "Does the projected state let the UI distinguish a not-yet-confirmed local edit from a confirmed one (a pending-sync signal derived from OutboxEntry status / own-echo-observed), and does a test prove it transitions pending -> confirmed on outbox reconciliation / own-echo, self-clearing?"
+    },
+    {
+      "question_id": "VQ-S11B-006",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "ac_id": "AC-OPT-5",
+      "question": "Is the local-accept AcceptedDomainEvent.id derived by the SAME deterministic function the outbox uses to compute the rumor id (not a separate/ad-hoc id), so the own-echo and any remote delivery of the same content collide on id and dedupe correctly — with no path where a locally-accepted task could be silently overwritten by, or falsely reconciled against, a DIFFERENT device's same-content edit (distinct pubkey/updatedByDevice -> distinct content -> distinct id)?"
+    },
+    {
+      "question_id": "VQ-S11B-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "ac_id": "AC-OPT-5",
+      "question": "Does optimistic local echo introduce NO wire-format or convergence-rule change — the rumor bytes the outbox sends are unchanged, taskWinsOver/TaskEvent are untouched, no new rumor field or reducer branch is added, and the parent ../protocol/task-protocol.md needs no amendment? (Protocol guard: if the mechanism required a wire/convergence change, the story should have escalated instead.)"
+    },
+    {
+      "question_id": "VQ-S11B-008",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Is task-store.tsx's dispatch optimistic path routed through the engine boundary (delegation), adding NO new task-state decision logic to task-store.tsx (Boundary Rule 5), such that S12 can subsequently delete the legacy optimistic state/appendEvent machinery with no behavioral regression — i.e. after this story the engine boundary is the single source of both remote AND own-edit projection truth?"
+    },
+    {
+      "question_id": "VQ-S11B-009",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "acceptLocal() deliberately does NOT append a RawProtocolFact and instead sets AcceptedDomainEvent.factId to the placeholder `local:${rumorId}` (architecture.json judgment calls 's11b-factid-deterministic-placeholder' / 's11b-no-raw-fact-for-local-accept'). This placeholder is never backfilled with the real kind-445 id once the send completes and the own-echo is observed. Does ANY consumer of AcceptedDomainEvent.factId (present or reasonably foreseeable — e.g. a future diagnostic view, an export/debug tool, or a future recovery-path change) rely on factId resolving to a real RawProtocolFact for every accepted-log entry, such that a permanently-unresolvable `local:` prefixed factId would silently break it? (Today's only structural reader is R2a's acceptedFactIds Set-membership check, which is a documented no-op for this placeholder — this question is about whether that remains true as the codebase evolves, not about today's behavior.)"
+    },
+    {
+      "question_id": "VQ-S11B-010",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "acceptLocal() uses enqueue() (generation captured fresh at execution time inside the closure) rather than enqueueGen() (generation captured at call time), specifically so a dispatchLocal call racing engine.start()'s synchronous generation bump is never silently dropped (architecture.json judgment call 's11b-generation-captured-at-execution-not-call-time'). Is there a test that actually exercises this exact race — calling acceptLocal (or dispatchLocal) BEFORE engine.start() has been invoked / before its promise resolves, then confirming the accept still lands once the engine reaches live — or does the current test suite only ever call acceptLocal/dispatchLocal AFTER the engine has already reached 'live', leaving this specific ordering guarantee unverified by an executable test rather than only by the code comment?"
+    },
+    {
+      "question_id": "VQ-S11B-011",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "pendingTaskIds (AC-OPT-4's pending/confirmed signal) is exposed by react-engine-hooks.ts's ReceiveEngineHookState and forwarded by EngineTaskBridge's onState callback, but is NOT threaded further into TaskStoreContextValue / useTaskStore()'s public surface — no UI in this repo can currently read it. Is this an acceptable, deliberately-out-of-scope stopping point for S11B (the mechanism exists and is proven at the engine-boundary/hook layer, per AC-OPT-4's literal observable, which does not require UI surfacing), or does AC-OPT-4's intent ('the projected state MUST let the UI distinguish...') implicitly require reaching an actual UI-consumable surface before this story can be considered fully closed?"
+    }
+  ]
+}

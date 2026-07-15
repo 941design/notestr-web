@@ -1,0 +1,70 @@
+{
+  "story_id": "S14",
+  "status": "done",
+  "final_outcome": "accepted",
+  "completed_at": "2026-07-14T13:00:00Z",
+  "files_created": [
+    "specs/epic-event-sourced-receive-engine/S11B-optimistic-local-echo/architecture.json",
+    "specs/epic-event-sourced-receive-engine/S11B-optimistic-local-echo/baseline.json",
+    "specs/epic-event-sourced-receive-engine/S11B-optimistic-local-echo/result.json",
+    "src/engine/receive-engine.optimistic-local-echo.test.ts",
+    "src/integration/publish-outbox.local-echo.test.ts",
+    "src/integration/react-engine-hooks.optimistic-local-echo.test.tsx",
+    "src/store/task-store.optimistic-echo.test.tsx"
+  ],
+  "files_modified": [
+    "src/engine/receive-engine.ts",
+    "src/integration/publish-outbox.ts",
+    "src/integration/react-engine-hooks.ts",
+    "src/store/task-store.tsx",
+    "src/integration/react-engine-hooks.test.tsx",
+    "specs/epic-event-sourced-receive-engine/S11B-optimistic-local-echo/verification.json"
+  ],
+  "tests_added": {
+    "unit": 32
+  },
+  "test_counts": {
+    "baseline": 983,
+    "final": 1023
+  },
+  "mocks": [],
+  "remediation_rounds": 2,
+  "review_outcome": "Two-model review (Opus Stage-1 + Fable Stage-2, Codex exec down). Stage-1 Opus: sev-3 pending signal not reachable by useTaskStore -> threaded pendingTaskIds into TaskStoreContextValue (pass-through, dispatch unchanged). Stage-2 Fable: convergence+durability sound under adversarial probing (LWW commutativity, unlinked-factId restart, cutover interleave); F1(sev-3) pending could stick forever + ref-Map leak (confirmLocal only on reconcile) -> onReconciled renamed onPendingCleared (fires reconciled|failed) + new eviction hook from enforceOutboxCap; clears in all 3 terminal cases, idempotent, unregistered on dispose, failed!=confirmed; F2(sev-2) direct LWW supersession tests. Both models converge-verified clean. Verification: 8/8 questions YES. Protocol guard HELD.",
+  "architect_skipped": false,
+  "modules_touched": [
+    "receive-engine",
+    "publish-outbox",
+    "react-engine-hooks",
+    "task-store"
+  ],
+  "escalation_history": [],
+  "judgment_calls": [
+    {
+      "id": "s11b-factid-deterministic-placeholder",
+      "summary": "AcceptedDomainEvent.factId for a locally-accepted event is set to the deterministic placeholder `local:${rumorId}`, never backfilled once the real kind-445 id is learned (appendAcceptedEvent is idempotent-on-id -- first write wins, no update path exists). Confirmed inert everywhere factId is structurally read (R2a's Set-membership check). Flagged forward as VQ-S11B-009 (post-impl) for future-proofing, not a currently-open defect."
+    },
+    {
+      "id": "s11b-no-raw-fact-for-local-accept",
+      "summary": "acceptLocal() does not append a RawProtocolFact or advance lastIngestedSeq -- a local accept has no relay envelope yet, and faking one would get replayed through R3's crash-gap adapter.ingestPersisted() on the next restart against ciphertext that doesn't exist. The local accept lives ONLY in the accepted-log, which is exactly what AC-OPT-2 requires and exactly what R1/R2a/R3 already tolerate by construction."
+    },
+    {
+      "id": "s11b-generation-captured-at-execution-not-call-time",
+      "summary": "acceptLocal() uses enqueue() (plain FIFO) rather than receive-engine.ts's enqueueGen() helper, reading `generation` fresh INSIDE the enqueued closure at execution time rather than at call time. enqueueGen's call-time capture is correct for adapter-sourced signals tied to a specific historical session, but wrong here: a user-initiated dispatch racing engine.start()'s synchronous generation bump must never be silently dropped. Directly verified by a new test (VQ-S11B-010) that calls acceptLocal before start() resolves and confirms the accept still lands once the engine reaches live."
+    },
+    {
+      "id": "s11b-legacy-optimistic-apply-untouched-until-s12",
+      "summary": "task-store.tsx's dispatch() body is UNCHANGED -- zero new lines inside it. The engine-boundary local-accept is reached entirely through dispatch()'s pre-existing `if (publishOutbox) { await publishOutbox.publish(taskEvent) }` delegation call, via two new optional deps (onLocalAccept/onReconciled) threaded into the existing publishOutbox-construction effect. The legacy applyEvent/setState/appendEvent optimistic-apply block is deliberately left in place: the strangler flag still defaults OFF in production, and removing that block now (before S12 makes the engine read-path unconditional) would regress the CURRENT default production behavior. S12 removes it once the flag-gate itself is removed."
+    }
+  ],
+  "protocol_guard_confirmation": "No wire-format or convergence-rule change. deriveMlsAcceptedEventId is confirmed (by a dedicated regression test) to be the identity function -- acceptLocal's AcceptedDomainEvent.id is the exact rumorId argument, byte-identical to what publish-outbox.ts's computeRumorId(createdAt, taskEvent, pubkey) already derives for the SAME send (onLocalAccept is invoked with that exact value, before any send is attempted). taskWinsOver/TaskEvent/the rumor draft (kind/content/tags/created_at/pubkey) are untouched -- acceptLocal and onLocalAccept/onReconciled are purely local bookkeeping (accepted-log writes, in-memory pending-tracking) that never influence what is published or how it is serialized. The parent repo's ../protocol/task-protocol.md required no amendment. AC-OPT-3's convergence test proves the optimistic-then-echo projection deep-equals a pure remote-only projection of the identical edit, folded through the SAME applyEvent reducer both paths already share.",
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "Wiring a genuinely new engine-boundary capability (ReceiveEngine.acceptLocal) safely required reasoning through several subtle cross-file invariants at once, none visible from any single file in isolation: reusing receive-engine.ts's generation/serial-FIFO discipline correctly meant deliberately NOT reusing its existing enqueueGen helper, since its call-time generation capture would silently drop an accept issued before start() resolves -- only visible after tracing the FSM's start()/stop()/reset() generation-bump ordering start to finish. Getting AcceptedDomainEvent.factId right (no real backing RawProtocolFact exists yet for a not-yet-sent local edit) meant confirming, by reading raw-event-log-store.ts, engine-types.ts, and receive-engine.ts's R1-R3 recovery logic together, that a deterministic placeholder is genuinely inert everywhere it's read.",
+    "surprised_by": "Using the Agent tool a second time with the same descriptive name to check on an already-running background dev agent spawns a NEW, independent agent rather than resuming the original one -- SendMessage (with the agent's actual spawned name) is required for that. Caught it via a file-hash check before it could clobber already-passing work, but it cost one wasted duplicate dev-agent run.",
+    "scope": "meta",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  }
+}

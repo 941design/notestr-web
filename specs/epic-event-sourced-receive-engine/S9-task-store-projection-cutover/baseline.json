@@ -1,0 +1,24 @@
+{
+  "story_id": "S9",
+  "captured_at": "2026-07-14T07:38:51Z",
+  "tests": {
+    "command": "npx vitest run",
+    "status": "PASS",
+    "test_files": 41,
+    "tests": 901
+  },
+  "lint": {
+    "status": "NO_LINT",
+    "note": "No eslint config or lint script present in package.json; not introduced by this story. `next build`'s integrated 'Linting and checking validity of types' step ran clean both before and after this story's implementation (see result.json)."
+  },
+  "typecheck": {
+    "command": "npx tsc --noEmit",
+    "status": "clean",
+    "exit_code": 0
+  },
+  "notes": [
+    "Captured by stashing this story's own uncommitted src/store/task-store.tsx edit (git stash push -u) to reproduce the exact pre-implementation tree, running the checks, then popping the stash back -- src/store/task-store.cutover.test.tsx did not exist yet at capture time.",
+    "Ambient pre-existing uncommitted WIP unrelated to this story was present at baseline and preserved throughout (not reverted, not authored by this story): package.json/package-lock.json, src/engine/engine-types.ts, vitest.config.ts, and several specs/epic-event-sourced-receive-engine/* files (S7/S8 in-flight artifacts). This story touches none of them.",
+    "S1-S8 are 'done' per stories.json at baseline; src/integration/ (marmot-adapter.ts, react-engine-hooks.ts + tests) exist untracked/modified at baseline, consistent with S7/S8 not yet committed."
+  ]
+}

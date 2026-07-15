@@ -1,21 +1,24 @@
 {
   "created_at": "2026-07-12T12:36:58Z",
-  "updated_at": "2026-07-12T20:15:00Z",
+  "updated_at": "2026-07-14T10:25:00Z",
   "mocks": [
     {
       "mock_id": "MOCK-05-001",
       "description": "In-memory mock IngestSource/IngestSignal producer standing in for the real marmot-adapter, used to unit-test receive-engine FSM transitions and the cutover protocol without live marmot-ts wiring.",
       "interface_mocked": "IngestSource (src/engine/engine-types.ts)",
       "introduced_by": "S5",
-      "resolved_by": "S7"
+      "resolved_by": "S7",
+      "resolved": true
     },
     {
       "mock_id": "MOCK-05-002",
       "description": "In-memory mock of PersistenceAdapter's checkpoint/deferred methods (saveCheckpoint/loadCheckpoint/saveDeferredIds/loadDeferredIds) standing in for checkpoint-store.ts/deferred-store.ts, used to unit-test FSM checkpoint-call-count (AC-FSM-4) and reset behavior (AC-FSM-5) before real recovery persistence lands. In practice S5's test mocks ALL ten PersistenceAdapter methods in one in-memory adapter (including facts/accepted-events) rather than composing the real S4 raw-event-log-store, because engine-boundary.structural.test.ts's AC-BOUND-1 scanner forbids any file under src/engine/ (tests included) from importing src/persistence/* -- see verification.json VQ-S5-018 (post-impl). The mock's fact/accepted-event methods replicate raw-event-log-store.ts's algorithm rather than importing it.",
       "interface_mocked": "PersistenceAdapter (checkpoint + deferred portion)",
       "introduced_by": "S5",
-      "resolved_by": "S11"
+      "resolved_by": "S11",
+      "resolved": true,
+      "resolution_note": "src/persistence/checkpoint-store.ts and src/persistence/deferred-store.ts (S11) implement all six remaining PersistenceAdapter methods (checkpoint CRUD, deferred-id CRUD, acceptDeferredFact, clearGroupState) as real IDB-backed stores via createKVStore, proven by real fake-indexeddb round-trip tests (including fault-injection and submission-order-race coverage). deferred-store.ts's createPersistenceAdapter() assembles a fully real, production-usable PersistenceAdapter. receive-engine.ts's own tests continue to use a high-fidelity in-memory replica (AC-BOUND-1 forbids importing src/persistence/* from src/engine/*, tests included) -- see S11 architecture.json 'no-cross-boundary-integration-test' and post-impl verification.json VQ-S11-019 for the open question on whether a future src/integration/ proof is still warranted."
     }
   ],
-  "all_resolved": false
+  "all_resolved": true
 }

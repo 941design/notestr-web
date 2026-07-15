@@ -52,6 +52,36 @@
       "category": "SPEC",
       "ac_id": "AC-ADPT-1",
       "question": "does the implementation satisfy AC-ADPT-1's observable -- does an adapter unit/integration test drive a real or contract-faithful stub MarmotGroup through each outcome (decryptable message, unreadable ciphertext, duplicate delivery, epoch advance, ratchet-only advance, malformed payload) and assert the exact IngestSignal sequence emitted for each (message with decoded TaskEvent payload and correct receiptSource; deferred with reason unreadable/epoch_mismatch; skipped for own-echo/duplicate; epoch_advanced only on a real epoch change with a bare ratchet advance producing NO signal; malformed for decrypted-but-undecodable payload), plus a type-level/structural assertion that emitted signal payloads contain no marmot-ts imports?"
+    },
+    {
+      "question_id": "VQ-S7-009",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "MarmotAdapterDeps.getNostrGroupIdHex/getGroupMembers were added as override seams (defaulting to the real marmot-ts getNostrGroupIdHex/getGroupMembers) purely because the test suite's contract-faithful stub MarmotGroup cannot satisfy the real functions' requirement for a decoded MarmotGroupData extension / populated ratchet tree in ClientState. Does the real S8 integration-layer construction path leave both fields undefined (so production always exercises the REAL marmot-ts functions against a real ClientState), or could a future caller accidentally wire a stub/override into production and silently break #h-tag filtering or the fetchBootstrap author-authenticity gate?"
+    },
+    {
+      "question_id": "VQ-S7-010",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "The ingest mutex test (marmot-adapter.test.ts, 'MarmotIngestAdapter \u2014 ingest mutex') proves no overlap between exactly two concurrent group.ingest()-triggering calls (ingestPersisted + one live event). Does this generalize to the real engine's actual concurrency pattern -- R3 crash-gap replay (ingestPersisted) running while openLive() is already delivering live events, PLUS a concurrent L8 deferred-retry ingestPersisted() call -- or would three-way overlap need a dedicated test before S8 wires this adapter into receive-engine.ts?"
+    },
+    {
+      "question_id": "VQ-S7-011",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "architecture.json's judgment call 's7-processed-commit-proposal-no-fact-signal' documents that a freshly-processed commit/proposal's own Nostr event is NOT durably appended to the raw-fact log on first delivery (only a fact-less epoch_advanced signal is emitted) -- it only gets a fact-carrying signal on a LATER redelivery (where marmot-ts's ingest() recognizes it as already-applied and yields 'skipped'). Given catchUp() only runs once per engine start(), does this mean a commit ingested during 'catching_up' and never redelivered before the next restart could leave its Nostr event permanently absent from the raw-fact log (harmless since the epoch state itself already advanced and persisted via the engine's checkpoint, but worth an explicit non-regression check), or does the live subscription's own relay replay window guarantee eventual redelivery in practice?"
+    },
+    {
+      "question_id": "VQ-S7-012",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "fetchBootstrap() emits N 'message' IngestSignals (one per CRDT-winning task) that all share the IDENTICAL RawProtocolFactInput object reference (by design -- 'one fact per resolved bootstrap fetch', see architecture.json's 's7-fetchbootstrap-shared-fact-and-crdt-merge' judgment call). Does receive-engine.ts's PersistenceAdapter.appendFact handle being called N times with the same fact.id but a fresh (seq-less) object each time correctly (idempotent no-op after the first, per its documented contract), and does the AcceptedDomainEvent id derivation (deriveBootstrapAcceptedEventId, keyed on groupId+taskId, NOT on factId) correctly keep the N synthetic task.created events distinct despite sharing one fact?"
+    },
+    {
+      "question_id": "VQ-S7-013",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "VQ-S7-009 (PARTIAL, sev-5, root_cause missing_test) flagged that MarmotAdapterDeps.getNostrGroupIdHex/getGroupMembers are test-only override seams with no in-code warning against production use. Remediation applied: both fields' JSDoc in marmot-adapter.ts now states explicitly that production callers MUST leave them undefined, and names the concrete failure mode of supplying an override in production (silently broken #h-tag filtering / broken fetchBootstrap author-authenticity gate). This closes the S7-side documentation gap. No runtime assertion was added and none is owed by S7 -- the production-wiring test (asserting the real S8 integration-layer construction path never supplies these overrides) is explicitly deferred to S8 as a recorded watch-item; does S8's construction of MarmotAdapterDeps in fact leave both fields undefined, and does S8 add the deferred assertion test?"
     }
   ]
 }

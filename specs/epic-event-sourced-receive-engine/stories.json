@@ -2,7 +2,7 @@
   "epic_name": "event-sourced-receive-engine",
   "created_at": "2026-07-12T15:30:00Z",
   "updated_at": "2026-07-12T20:57:28.666Z",
-  "total_stories": 13,
+  "total_stories": 14,
   "dependency_notes": "Ordering follows the lead's explicit staging: pure core (S1-S3) -> raw-event-log persistence (S4) -> engine FSM (S5-S6) -> adapter (S7) -> React integration (S8) -> UI read-path cutover (S9) -> publish/outbox (S10, Phase 6) -> recovery persistence (S11, Phase 7) -> legacy removal (S12, Phase 8) -> hardening (S13, Phase 9). This mirrors spec.md's Phase 1-9 migration but reorders Phase-3/4 UI cutover ahead of Phase-6 outbox and Phase-7 recovery, per the lead's instruction to sequence by module dependency rather than raw phase number; Phase 3's shadow/parallel-run mechanism was rejected by ADR-002 and downgraded to listener-observation-only, so it produces no dedicated story or AC of its own -- it is satisfied as a side effect of S3 (task-projector) + S4 (raw-event-log-store) landing before S9's feature-flagged cutover, which is the observation/comparison point. EXPLICIT SHARED MODULE OWNERSHIP (Validation Checks exception): receive-engine is owned by S5 (core FSM, Phase 5), S6 (ingest hardening, Phase 5 continuation), and S11 (recovery sequencing, Phase 7) -- the epic's own phase structure separates these concerns onto the same file at different times, each independently testable via its own AC subset and its own mock boundary. marmot-adapter is owned by S7 (Phase 5, IngestSource/IngestSignal) and S10 (Phase 6, outbox bridge) for the same reason. task-store is owned by S9 (Phase 4 cutover, delegation-only) and S12 (Phase 8 removal, deletion-only) -- both are Boundary-Rule-5-compliant (no new decision logic). ingest-policy.ts (S5), checkpoint-store.ts and deferred-store.ts (S11) are folded into their sole consumer's story rather than given standalone stories: none of the 35 ACs tests them in isolation (they are thin CRUD/wrapper modules with no independent behavioral contract), and Story Design Principle 3 (vertical slices) disfavors a horizontal story with no observable result. `specs/epic-event-sourced-receive-engine/**` is implicitly in scope for every story (state bookkeeping) and is not repeated in each story's scope.includes.",
   "mock_resolution_plan": "MOCK-05-001 (mock IngestSource/IngestSignal producer) is introduced in S5 to unit-test the FSM without live marmot-ts wiring; resolved when S7 lands the real marmot-adapter.ts implementation of the same IngestSource contract. MOCK-05-002 (mock checkpoint/deferred persistence methods) is introduced in S5, also consumed by S6; resolved when S11 lands real checkpoint-store.ts/deferred-store.ts and wires R1-R4 recovery. Both mocks are internal to receive-engine's unit-test suite only -- no production code path depends on them, and neither blocks any story's independent verifiability since each mocked contract is frozen in S1 (engine-types.ts) before any consumer is planned.",
   "seams": [
@@ -246,6 +246,7 @@
     "S9",
     "S10",
     "S11",
+    "S14",
     "S12",
     "S13"
   ],
@@ -458,7 +459,7 @@
         ]
       },
       "complexity": "high",
-      "status": "pending",
+      "status": "done",
       "owning_module": "marmot-adapter",
       "creates_seam": false,
       "consumes_seams": [
@@ -483,7 +484,7 @@
         ]
       },
       "complexity": "medium",
-      "status": "pending",
+      "status": "done",
       "owning_module": "react-engine-hooks",
       "creates_seam": false,
       "consumes_seams": [
@@ -509,7 +510,7 @@
         ]
       },
       "complexity": "medium",
-      "status": "pending",
+      "status": "done",
       "owning_module": "task-store",
       "creates_seam": false,
       "consumes_seams": [],
@@ -535,7 +536,7 @@
         ]
       },
       "complexity": "high",
-      "status": "pending",
+      "status": "done",
       "owning_module": "marmot-adapter",
       "creates_seam": false,
       "consumes_seams": [],
@@ -571,13 +572,48 @@
         ]
       },
       "complexity": "high",
-      "status": "pending",
+      "status": "done",
       "owning_module": "receive-engine",
       "creates_seam": false,
       "consumes_seams": [
         "PersistenceAdapter"
       ],
       "notes": "checkpoint-store.ts and deferred-store.ts are folded into this story rather than given their own earlier stories because none of the 35 ACs tests their round-trip persistence in isolation -- their entire behavioral contract is the R1-R4 recovery sequencing proven here (Phase 7, 'Persist recovery metadata explicitly'). Resolves MOCK-05-002 introduced in S5. Shares owning_module with S5/S6; justified in top-level dependency_notes. CONTRACT AMENDED 2026-07-12: S11 owns PersistenceAdapter.acceptDeferredFact (accepted-first crash-safe ordering per revised R-INV-3 — append accepted, then remove deferred) AND the new R2a prune step (deferred ∩ accepted -> prune, accepted wins) which runs before R2. Also wires IngestSource.ingestPersisted for R3 crash-gap replay and L8 deferred retry. CLEAR-ORDERING INVARIANT (S4 review, 2026-07-12): full clearGroupState spans >=2 IDB databases (non-atomic). Clear the CHECKPOINT FIRST: a crash mid-reset must degrade toward L2-joining / L1-second-arm, never leave a usable bootstrapCompleted checkpoint over already-emptied logs (stranded empty recovery). Compose S4 exported clearGroupState partial for raw/accepted stores; reuse S4 appendAcceptedEvent inside acceptDeferredFact."
+    },
+    {
+      "id": "S14",
+      "name": "optimistic-local-echo",
+      "title": "Optimistic Local Echo: Own-Task Visibility and Reconciliation at the Engine Boundary",
+      "sequencing_note": "id S14 (schema requires S+digits, no letter suffix) but sequenced BEFORE S12/S13 per story_order — this is the mid-epic-inserted optimistic-echo story (colloquially 'S11B' in prose/AC-OPT/VQ-S11B ids); it MUST land before the S12 cutover.",
+      "description": "Close the cutover-blocking gap discovered during S12 validation: MLS never feeds a device its own outgoing message back (own-echo -> skipped, never domain_event_accepted), so the engine projection omits the device's own tasks — which the legacy path showed via task-store's optimistic applyEvent/setState + legacy appendEvent (the machinery S12 deletes). Build the optimistic-local-echo mechanism at the ENGINE BOUNDARY (spec Layer 4): on dispatch, accept the locally-produced task into the engine's accepted-log + projection immediately (id = the deterministic rumor id the outbox sends), so it appears at once and survives restart; reconcile/dedupe by that id so the eventual own-echo/relay round-trip never double-counts; expose a pending-until-confirmed signal (derivable from OutboxEntry status) that self-clears on reconciliation. Route task-store dispatch's optimistic path through this engine-boundary mechanism so S12 can delete the legacy optimistic state with no regression.",
+      "acceptance_criteria": [
+        "AC-OPT-1",
+        "AC-OPT-2",
+        "AC-OPT-3",
+        "AC-OPT-4",
+        "AC-OPT-5"
+      ],
+      "scope": {
+        "includes": [
+          "src/engine/receive-engine.ts",
+          "src/integration/publish-outbox.ts",
+          "src/integration/react-engine-hooks.ts",
+          "src/store/task-store.tsx"
+        ],
+        "excludes": [
+          "no wire-format or convergence-rule change (AC-OPT-5); the deterministic id must be the same rumor id the outbox already computes; taskWinsOver/TaskEvent untouched"
+        ]
+      },
+      "complexity": "high",
+      "status": "done",
+      "owning_module": "receive-engine",
+      "creates_seam": false,
+      "consumes_seams": [
+        "AcceptedDomainEvent",
+        "EngineOutputEvent",
+        "OutboxEntry"
+      ],
+      "notes": "INSERTED 2026-07-14 (user decision) after S12 Phase-1 validation found the own-edit-visibility gap — see spec.md 2026-07-14 amendment + AC-OPT-1..5. Sequenced BEFORE S12 so the cutover does not regress own-edit visibility. The local-accept path is the engine-boundary realization of Layer 4's 'optimistic local publish intent + reconciliation against durable receive truth' that S10 explicitly deferred. Design surface (architect finalizes): a locally-dispatched task is accepted into the engine (a new engine accept-local entry point OR publish-outbox feeding the engine), producing a domain_event_accepted with id = rumorId (deterministic, = what the outbox sends) and appended to the accepted-log (durability); the own-echo skipped fact and any same-id remote delivery dedupe by id (appendAcceptedEvent idempotency). Pending signal derives from OutboxEntry status (pending/sent -> pending; reconciled -> confirmed). Shares owning_module receive-engine with S5/S6/S11. Boundary Rule 5 applies to task-store.tsx (dispatch delegates to the engine boundary; no new task-state decision logic added there). PROTOCOL GUARD: local bookkeeping only, no wire/convergence change."
     },
     {
       "id": "S12",
@@ -598,12 +634,12 @@
           "deletions only -- no new branches or exported functions in device-sync.ts or task-store.tsx, per Boundary Rule 5 / AC-MIG-2"
         ]
       },
-      "complexity": "medium",
-      "status": "pending",
+      "complexity": "high",
+      "status": "done",
       "owning_module": "task-store",
       "creates_seam": false,
       "consumes_seams": [],
-      "notes": "Shares owning_module with S9 (Phase 4 cutover vs. Phase 8 removal); justified in top-level dependency_notes. Depends on S8, S10, and S11 all being complete so the new paths fully cover what the deleted listeners provided."
+      "notes": "COMPLEXITY RAISED medium->high (2026-07-14): this is the full legacy->engine cutover (user-authorized), not just listener deletion. Shares owning_module with S9 (Phase 4 cutover vs. Phase 8 removal); justified in top-level dependency_notes. Depends on S8, S10, and S11 all being complete so the new paths fully cover what the deleted listeners provided. CRITICAL PREREQUISITE (added 2026-07-14, S9 Fable Stage-2 sev-6 dual-ingest finding): S12 MUST retire/gate device-sync.ts's GROUP INGEST DRIVER (device-sync.ts:908-971, the kind-445 group subscription that calls group.ingest at :701), not ONLY the applicationMessage listeners at 874-892. Rationale: once the engine read-path flag is enabled, the engine's marmot-adapter drives group.ingest() on the same MarmotGroup that device-sync's group ingest also drives — two uncoordinated ingest pipelines (independent mutexes) on one stateful MLS group = the documented-unsafe concurrent-ingest hazard. The engine's marmot-adapter must become the SOLE group.ingest() driver at cutover. If S12 removes only the listeners but leaves device-sync's ingest driver active, flag-ON dual-ingest persists. S9 documented flag-ON as dev/test-only-until-S12 for exactly this reason (see isEngineReadPathEnabled JSDoc + spec.md 2026-07-14 amendment)."
     },
     {
       "id": "S13",
@@ -624,7 +660,7 @@
         ]
       },
       "complexity": "low",
-      "status": "pending",
+      "status": "done",
       "owning_module": "receive-engine",
       "creates_seam": false,
       "consumes_seams": [],

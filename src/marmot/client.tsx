@@ -44,6 +44,7 @@ import { useDeviceSync, groupHasKeyPackageLeaf } from "./device-sync";
 import { mlsTrace } from "./mls-trace";
 import { computeDetachedGroupIds } from "./detached-groups";
 import { removeLeafByIndex } from "./per-leaf-remove";
+import { resetOutboxEntriesForIdentityChange } from "../integration/marmot-adapter";
 
 import type { MarmotGroup } from "@internet-privacy/marmot-ts";
 import { DEFAULT_RELAYS, NDK_CONNECT_TIMEOUT_MS } from "../config/relays";
@@ -509,6 +510,12 @@ export function MarmotProvider({
       // subsequent access without a fresh bindStores throws rather than silently
       // resolving the prior user's partition.
       unbindStores();
+      // S10-2: the outbox bridge's in-memory OutboxEntry registry
+      // (src/integration/marmot-adapter.ts) is process-global module state
+      // with no other identity-scoped teardown path — clear it here so a
+      // prior identity's publish intents don't linger into the next
+      // identity's session (compounds S10-1's unbounded-growth exposure).
+      resetOutboxEntriesForIdentityChange();
     };
   }, [init]);
 
